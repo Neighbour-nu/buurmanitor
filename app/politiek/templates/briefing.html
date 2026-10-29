@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Ochtendbriefing</h1>
+<p class="uitleg">Elke dag om {{ tijd }} uur via Telegram en mail. Dit is hoe de briefing er nu uit zou zien.
+{% if taak %}Laatst verstuurd {{ geleden(taak.laatst) }}{% if taak.resultaat %} ({{ taak.resultaat }}){% endif %}.{% endif %}</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+<form method="post" action="/briefing/stuur"><button class="knop vol" type="submit">Stuur nu (test)</button></form>
+
+<div class="raster" style="margin-top:14px">
+  <div>
+    <h2 class="sub" style="margin-top:0">Mail: {{ onderwerp }}</h2>
+    <div class="kaart">{{ mail_html|safe }}</div>
+  </div>
+  <div>
+    <h2 class="sub" style="margin-top:0">Telegram</h2>
+    <div class="kaart" style="white-space:pre-wrap;font-size:14px">{{ telegram|safe }}</div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Dashboard</h1>
+<p class="uitleg">Vooruitblik op de komende week, het overzicht van een maand en wat Claude kostte. De vooruitblik komt op zondagavond via Telegram en mail, het maandoverzicht op de eerste werkdag van de maand.</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+
+<div class="tegels">
+  <a class="tegel" href="/agenda"><b>{{ w.vergaderingen|length }}</b><span>vergaderingen komende week</span></a>
+  <a class="tegel {{ 'let' if w.deadlines|selectattr('verlopen')|list }}" href="/agenda"><b>{{ w.deadlines|length }}</b><span>deadlines komende week</span></a>
+  <a class="tegel" href="/acties?wie=ik"><b>{{ w.acties|length }}</b><span>open acties voor {{ w.voornaam or 'jou' }}</span></a>
+  <a class="tegel {{ 'let' if w.vragen_laat }}" href="/vragen"><b>{{ w.vragen_open }}</b><span>raadsvragen wachten{% if w.vragen_laat %}, {{ w.vragen_laat|length }} te laat{% endif %}</span></a>
+  <a class="tegel" href="#kosten"><b>{{ euro(m.kosten.totaal) }}</b><span>Claude in {{ m.naam }}</span></a>
+</div>
+
+<div class="rij" style="align-items:center;margin-top:26px">
+  <h2 class="sub" style="margin:0;flex:1 1 auto">Komende week ({{ datum_nl(w.van) }} tot {{ datum_nl(w.tot) }})</h2>
+  <form method="post" action="/dashboard/stuur/weekvooruitblik" style="flex:0 0 auto"><button class="knop" type="submit">Stuur vooruitblik nu</button></form>
+</div>
+{% if w.fout %}<div class="melding">{{ w.fout }}</div>{% endif %}
+<div class="raster" style="margin-top:10px">
+  <div>
+    <div class="kaart"><h3>Vergaderingen</h3>
+      {% if w.vergaderingen %}<ul class="lijst">{% for v in w.vergaderingen %}
+        <li><b>{{ dagen[v.start.weekday()] }} {{ v.start.strftime('%d-%m %H.%M') }}</b>: {{ v.naam }}
+          {% if v.alleen_leden %}<span class="label rood">! alleen met inloggen</span>{% endif %}
+          {% if v.soort == 'raad' and v in w.zonder_advies %}<a class="label rood" href="/stemadvies" style="text-decoration:none">nog geen stemadvies</a>{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="noot">Geen vergaderingen.</p>{% endif %}</div>
+    <div class="kaart"><h3>Jouw agendapunten</h3>
+      {% if w.mijn_punten %}<ul class="lijst">{% for p in w.mijn_punten %}
+        <li><a href="/agenda#p-{{ p.sleutel.replace(' ', '-')[:60] }}">{{ p.onderwerp }}</a> <span class="noot">({{ p.vergadering }} {{ datum_nl(p.datum) }}): {{ p.stappen|length - p.open|length }} van {{ p.stappen|length }} stappen</span></li>{% endfor %}</ul>
+      {% else %}<p class="noot">Geen agendapunten voor jou deze week.</p>{% endif %}</div>
+  </div>
+  <div>
+    <div class="kaart"><h3>Deadlines</h3>
+      {% if w.deadlines %}<ul class="lijst">{% for d in w.deadlines %}
+        <li><b class="{{ 'rood-tekst' if d.verlopen }}">{{ dagen[d.datum.weekday()] }} {{ datum_nl(d.datum) }}</b>: {{ d.naam }} <span class="noot">({{ d.punt.onderwerp }})</span></li>{% endfor %}</ul>
+      {% else %}<p class="noot">Geen deadlines.</p>{% endif %}</div>
+    <div class="kaart"><h3>Acties</h3>
+      <p class="noot" style="margin:0 0 6px">Hele fractie: {% for k, n in w.open_acties.items() %}{{ statussen.get(k, k) }} {{ n }}{{ ', ' if not loop.last }}{% else %}geen open acties{% endfor %}.</p>
+      {% if w.acties %}<ul class="lijst">{% for a in w.acties[:8] %}<li>{{ a.actie }}{% if a.wanneer %} <span class="noot">({{ a.wanneer }})</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+      <p class="noot"><a href="/acties">Naar het actiebord</a></p></div>
+  </div>
+</div>
+
+<div class="rij" style="align-items:center;margin-top:26px">
+  <h2 class="sub" style="margin:0;flex:1 1 auto">Maandoverzicht {{ m.naam }}</h2>
+  <div style="flex:0 0 auto"><a class="knop" href="/dashboard?maand={{ vorige }}">◀ Vorige</a>{% if volgende %} <a class="knop" href="/dashboard?maand={{ volgende }}">Volgende ▶</a>{% endif %}</div>
+  <form method="post" action="/dashboard/stuur/maandoverzicht" style="flex:0 0 auto"><button class="knop" type="submit" title="Stuurt het overzicht van de vorige maand">Stuur maandoverzicht nu</button></form>
+</div>
+<div class="tegels" style="margin-top:10px">
+  <a class="tegel" href="/vragen?toon=alles"><b>{{ m.vragen|length }}</b><span>raadsvragen gesteld, {{ m.beantwoord }} beantwoord</span></a>
+  <a class="tegel" href="/concepten"><b>{{ m.concepten|sum(attribute='n') }}</b><span>concepten</span></a>
+  <a class="tegel" href="/fractie"><b>{{ m.notulen }}</b><span>fractievergaderingen genotuleerd, {{ m.besluiten }} besluiten</span></a>
+  <a class="tegel" href="/acties"><b>{{ m.acties_klaar }}</b><span>acties afgerond, {{ m.acties_nieuw }} nieuw</span></a>
+  <a class="tegel" href="/whaller"><b>{{ m.whaller }}</b><span>Whaller-berichten geplaatst</span></a>
+  <a class="tegel" href="/inbox?soort=raadsvoorstel"><b>{{ m.raadsstukken }}</b><span>raadsvoorstellen en informatiebrieven</span></a>
+  <a class="tegel" href="/inbox?soort=toezegging"><b>{{ m.toezeggingen_open }}</b><span>toezeggingen nog open (alle)</span></a>
+</div>
+<div class="raster" style="margin-top:12px">
+  <div class="kaart"><h3>Concepten per soort</h3>
+    {% if m.concepten %}<ul class="lijst">{% for x in m.concepten %}<li>{{ x.soort.replace('_', ' ')|capitalize }}: {{ x.n }}</li>{% endfor %}</ul>
+    {% else %}<p class="noot">Geen concepten deze maand.</p>{% endif %}
+    {% if m.vragen %}<h3 style="margin-top:12px">Raadsvragen</h3><ul class="lijst">{% for v in m.vragen %}<li>{{ v.titel }} <span class="noot">({{ datum_nl(v.datum) }})</span></li>{% endfor %}</ul>{% endif %}
+  </div>
+  <div class="kaart"><h3>Hoe werkte het filter?</h3>
+    {% set n = m.nieuws %}
+    <p style="margin:0 0 4px">{{ n.gewogen }} berichten gewogen, {{ n.relevant }} relevant (score 60 of hoger).</p>
+    <p style="margin:0 0 4px">{{ n.bewaard }} bewaard, {{ n.genegeerd }} genegeerd.</p>
+    {% if n.te_hoog %}<p class="noot" style="margin:0">{{ n.te_hoog }} genegeerde berichten hadden een hoge score. Kijk bij <a href="/filter">Filter</a> of er een vaste regel bij moet.</p>
+    {% elif n.gewogen %}<p class="noot" style="margin:0">Geen genegeerde berichten met een hoge score: het filter zat goed.</p>{% endif %}
+  </div>
+</div>
+
+<h2 class="sub" id="kosten">Kosten van Claude in {{ m.naam }}</h2>
+<div class="kaart">
+  <p style="margin:0 0 8px"><b>{{ euro(m.kosten.totaal) }}</b> in totaal <span class="noot">(schatting op basis van de tokens; de echte rekening staat bij Anthropic)</span></p>
+  {% if m.kosten.dagen %}
+  <figure class="staafjes" role="img" aria-label="Kosten per dag in {{ m.naam }}">
+    {% for x in m.kosten.dagen %}{% set h = (x.eur / m.kosten.hoogste * 100) if m.kosten.hoogste else 0 %}
+    <div class="staaf" tabindex="0" title="{{ dagen[x.dag.weekday()] }} {{ datum_nl(x.dag) }}: {{ euro(x.eur) }}"><span style="height:{{ '%.1f'|format(h) }}%"></span>
+      {% if x.dag.day == 1 or x.dag.day % 7 == 1 %}<small>{{ x.dag.day }}</small>{% endif %}</div>{% endfor %}
+  </figure>
+  <p class="noot" style="margin:2px 0 0">Per dag; hoogste dag {{ euro(m.kosten.hoogste) }}. Wijs een staaf aan voor het bedrag.</p>
+  {% endif %}
+  {% if m.kosten.per_onderdeel %}
+  <div class="tabelvak" style="margin-top:12px"><table class="tabel">
+    <thead><tr><th>Onderdeel</th><th style="text-align:right">Aanroepen</th><th style="text-align:right">Kosten</th></tr></thead>
+    <tbody>{% for r in m.kosten.per_onderdeel %}<tr><td>{{ r.onderdeel }}</td><td style="text-align:right">{{ r.keer }}</td><td style="text-align:right">{{ euro(r.eur|float) }}</td></tr>{% endfor %}</tbody>
+  </table></div>{% endif %}
+</div>
+
+<p class="noot">Vooruitblik laatst verstuurd: {{ geleden(taken.weekvooruitblik.laatst) if taken.weekvooruitblik else 'nog niet' }}.
+  Maandoverzicht laatst verstuurd: {{ geleden(taken.maandoverzicht.laatst) if taken.maandoverzicht else 'nog niet' }}.</p>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block kop %}{% if d.analyse_status == 'bezig' %}<meta http-equiv="refresh" content="8">{% endif %}{% endblock %}
+{% block inhoud %}
+<p class="noot" style="margin:18px 0 0"><a href="/dossiers">Dossiers</a>{% if d.status == 'archief' %} · <span class="label grijs">archief</span>{% endif %}</p>
+<h1 class="titel">{{ d.naam }}</h1>
+<p class="uitleg">{{ 'Woordvoerder: ' ~ d.woordvoerder if d.woordvoerder else 'Nog geen woordvoerder' }} · zoektermen: {{ d.zoektermen or d.naam }}</p>
+
+<div class="raster">
+<div>
+  <div class="kaart">
+    <div class="rij" style="align-items:center;margin-bottom:6px">
+      <h3 style="margin:0;flex:1 1 auto">Stand van het dossier</h3>
+      <form method="post" action="/dossiers/kaart/{{ d.id }}/analyse" style="flex:0 0 auto">
+        <button class="knop {{ 'vol' if not a }}" type="submit" {{ 'disabled' if d.analyse_status == 'bezig' }}>{{ 'Werk bij met Claude' if a else 'Maak samenvatting met Claude' }}</button>
+        <label class="keuze noot"><input type="checkbox" name="vertrouwelijk" value="1"> ook vertrouwelijke stukken</label></form>
+    </div>
+    {% if d.analyse_status == 'bezig' %}<p><b>Claude leest het dossier.</b> <span class="noot">Deze pagina ververst vanzelf.</span></p>
+    {% elif d.analyse_status == 'fout' %}<p><span class="label rood">fout</span> {{ d.analyse_fout[:300] }}</p>{% endif %}
+    {% if a %}
+      <p class="noot" style="margin:0 0 8px">Bijgewerkt {{ geleden(d.analyse_tijd) }}{% if d.model %} · {{ d.model }}{% endif %}</p>
+      {% if a.samenvatting %}<p>{{ a.samenvatting }}</p>{% endif %}
+      {% if a.stand_van_zaken %}<p><b>Stand van zaken.</b> {{ a.stand_van_zaken }}</p>{% endif %}
+      {% if a.standpunt %}<p><b>Standpunt PRO Helmond (uit de bronnen).</b> {{ a.standpunt }}</p>{% endif %}
+      {% if a.coalitie %}<p><b>College en coalitie.</b> {{ a.coalitie }}</p>{% endif %}
+      {% for kop, sleutel in (('Open vragen', 'open_vragen'), ('Kansen', 'kansen'), ('Volgende stappen', 'volgende_stappen')) %}
+        {% if a[sleutel] %}<p style="margin-bottom:2px"><b>{{ kop }}</b></p><ul style="margin-top:2px">{% for x in a[sleutel] %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+      {% endfor %}
+      {% if a.bronnen %}<p class="noot">Bronnen: {{ a.bronnen|join('; ') }}</p>{% endif %}
+    {% elif d.analyse_status != 'bezig' %}<p class="noot">Nog geen samenvatting. Claude leest de tijdlijn, je notities en de kennisbank en maakt er een dossierkaart van.</p>{% endif %}
+  </div>
+
+  <h2 class="sub">Tijdlijn</h2>
+  {% if v.tijdlijn %}
+  <ul class="lijst kaart tijdlijn">
+    {% for t in v.tijdlijn %}<li><span class="noot" style="display:inline-block;min-width:88px">{{ datum_nl(t.datum) if t.datum else '' }}</span>
+      <span class="label {{ 'rood' if t.soort in ('Raadsvoorstel', 'RIB', 'Raadsinformatiebrief') else 'grijs' if t.soort in ('Nieuws', 'Concept') else '' }}">{{ t.soort }}</span>
+      {% if t.url %}<a href="{{ t.url }}" {{ 'target=_blank rel=noopener' if t.url.startswith('http') }}>{{ t.titel }}</a>{% else %}{{ t.titel }}{% endif %}
+      {% if t.extra %}<br><span class="noot">{{ t.extra[:220] }}</span>{% endif %}</li>{% endfor %}
+  </ul>
+  {% else %}<div class="leeg">Nog niets gevonden met deze zoektermen. Voeg zoektermen toe in de kaart hiernaast.</div>{% endif %}
+
+  {% if v.acties %}
+  <h2 class="sub">Acties uit de fractie</h2>
+  <ul class="lijst kaart">{% for x in v.acties %}<li>{{ x.actie }} <span class="noot">({{ [x.wie, statussen.get(x.status, x.status)]|select|join(', ') }})</span></li>{% endfor %}</ul>
+  <p class="noot"><a href="/acties?zoek={{ (d.zoektermen or d.naam).split(',')[0]|trim|urlencode }}">Naar het actiebord</a></p>
+  {% endif %}
+
+  <h2 class="sub">In de kennisbank</h2>
+  {% for r in v.documenten %}
+  <div class="kaart"><span class="label {{ 'grijs' if r.soort != 'bron' }}">{{ soorten.get(r.soort, r.soort).split(' (')[0] }}</span>
+    <h3><a href="/dossiers/document/{{ r.id }}">{{ r.titel }}</a></h3>
+    <div class="fragment">{{ r.fragment_html|safe }}</div></div>
+  {% else %}<div class="leeg">Niets in de kennisbank met deze zoektermen.</div>{% endfor %}
+</div>
+
+<div>
+  <form method="post" action="/dossiers/kaart/{{ d.id }}/wijzig" class="kaart">
+    <h3 style="margin-top:0">Kaart</h3>
+    <label for="naam">Naam</label><input id="naam" type="text" name="naam" value="{{ d.naam }}" required>
+    <label for="zoektermen">Zoektermen (komma's ertussen)</label>
+    <textarea id="zoektermen" name="zoektermen" style="min-height:70px">{{ d.zoektermen or '' }}</textarea>
+    <label for="woordvoerder">Woordvoerder</label>
+    <select id="woordvoerder" name="woordvoerder"><option value="">Nog niemand</option>
+      {% for p in personen %}<option {{ 'selected' if d.woordvoerder == p.naam }}>{{ p.naam }}</option>{% endfor %}</select>
+    <label for="standpunt">Ons standpunt</label>
+    <textarea id="standpunt" name="standpunt" style="min-height:90px" placeholder="Wat vindt PRO Helmond? Claude neemt dit mee.">{{ d.standpunt or '' }}</textarea>
+    <label for="notitie">Notities</label>
+    <textarea id="notitie" name="notitie" style="min-height:90px" placeholder="Contacten, afspraken, wat je nog wilt uitzoeken.">{{ d.notitie or '' }}</textarea>
+    <p style="margin:10px 0 0"><button class="knop vol" type="submit">Bewaar</button></p>
+  </form>
+  <div class="kaart" style="font-size:15px">
+    <p style="margin:0 0 6px"><b>Snel aan de slag</b></p>
+    <p style="margin:0"><a href="/bijdragen?soort=politieke_vraag">Schriftelijke vragen</a> · <a href="/bijdragen?soort=motie">Motie</a> · <a href="/adviseur">Adviseur</a></p>
+    {% if v.vragen %}<p class="noot" style="margin:8px 0 0">{{ v.vragen|length }} eigen raadsvra{{ 'ag' if v.vragen|length == 1 else 'gen' }} in dit dossier. <a href="/vragen?toon=alles">Raadsvragen</a></p>{% endif %}
+  </div>
+  <div class="rij" style="gap:6px">
+    <form method="post" action="/dossiers/kaart/{{ d.id }}/{{ 'actief' if d.status == 'archief' else 'archief' }}" style="flex:0 0 auto">
+      <button class="knop" type="submit">{{ 'Terug naar actief' if d.status == 'archief' else 'Naar archief' }}</button></form>
+    <form method="post" action="/dossiers/kaart/{{ d.id }}/weg" style="flex:0 0 auto" onsubmit="return confirm('Dit dossier verwijderen? De stukken zelf blijven bewaard.')">
+      <button class="knop rood" type="submit">Verwijder</button></form>
+  </div>
+</div>
+</div>
+{% endblock %}

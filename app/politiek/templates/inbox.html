@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Inbox</h1>
+<p class="uitleg">Nieuws (gewogen door Claude) en raadsinformatie uit Notubiz. Stukken van of over PRO Helmond staan bovenaan. Geef bij Negeer een reden op: daar leert het filter van.</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+
+<nav class="chips" aria-label="Snelfilter op soort">
+  <a class="chip {{ 'actief' if not f.soort }}" href="{{ link(soort='') }}">Alles<small>{{ alle_soorten }}</small></a>
+  {% for k, v in soorten.items() %}{% if per_soort.get(k) or f.soort == k %}
+  <a class="chip {{ 'actief' if f.soort == k }} {{ 'let' if k == 'besloten' }}" href="{{ link(soort=k) }}">{{ '! ' if k == 'besloten' }}{{ v }}<small>{{ per_soort.get(k, 0) }}</small></a>
+  {% endif %}{% endfor %}
+</nav>
+
+<form method="get" action="/inbox" class="kaart filters" id="filters">
+  <input type="hidden" name="soort" value="{{ f.soort }}">
+  <div class="rij">
+    <div style="flex:3 1 240px"><label for="zoek">Zoeken</label><input id="zoek" type="search" name="zoek" value="{{ f.zoek }}" placeholder="Titel, nummer, fractie of agendapunt"></div>
+    <div><label for="status">Status</label><select id="status" name="status" onchange="this.form.submit()">
+      {% for k, v in statussen.items() %}<option value="{{ k }}" {{ 'selected' if f.status == k }}>{{ v }}</option>{% endfor %}</select></div>
+    <div><label for="drempel">Nieuws</label><select id="drempel" name="drempel" onchange="this.form.submit()">
+      {% for k, v in drempels.items() %}<option value="{{ k }}" {{ 'selected' if f.drempel == k }}>{{ v }}</option>{% endfor %}</select></div>
+    <div><label for="periode">Periode</label><select id="periode" name="periode" onchange="this.form.submit()">
+      {% for k, v in periodes.items() %}<option value="{{ k }}" {{ 'selected' if f.periode == k }}>{{ v }}</option>{% endfor %}</select></div>
+  </div>
+  <div class="rij">
+    <div><label for="fractie">Fractie (bij vragen en moties)</label><select id="fractie" name="fractie" onchange="this.form.submit()">
+      <option value="">Alle fracties</option>
+      {% for fr in fracties %}<option value="{{ fr }}" {{ 'selected' if f.fractie == fr }}>{{ fr }}</option>{% endfor %}</select></div>
+    <div><label for="sorteer">Sorteren</label><select id="sorteer" name="sorteer" onchange="this.form.submit()">
+      {% for k, v in sorteringen.items() %}<option value="{{ k }}" {{ 'selected' if f.sorteer == k }}>{{ v }}</option>{% endfor %}</select></div>
+    <div style="flex:0 0 auto"><label><input type="checkbox" name="pro" value="1" {{ 'checked' if f.pro }} onchange="this.form.submit()"> Alleen PRO</label></div>
+    <div style="flex:0 0 auto"><button class="knop vol" type="submit">Zoek</button></div>
+    {% if f.zoek or f.pro or f.periode or f.fractie or f.soort or f.status != 'nieuw' or f.sorteer != 'slim' or f.drempel != '40' %}
+    <div style="flex:0 0 auto"><a class="knop" href="/inbox">Wis filters</a></div>{% endif %}
+  </div>
+</form>
+
+<p class="noot">{{ totaal }} stuk{{ 'ken' if totaal != 1 }}.
+  Raadsinformatie: {% if taak %}{{ geleden(taak.laatst) }}{% if taak.resultaat %} ({{ taak.resultaat }}){% endif %}{% if taak.fout %} <span class="label rood">fout</span>{% endif %}{% else %}nog niet opgehaald{% endif %}.
+  Nieuws: {% if taak_nieuws %}{{ geleden(taak_nieuws.laatst) }}{% if taak_nieuws.resultaat %} ({{ taak_nieuws.resultaat[:160] }}){% endif %}{% if taak_nieuws.fout %} <span class="label rood">fout</span>{% endif %}{% else %}nog niet opgehaald{% endif %}.</p>
+<div class="rij" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">
+  <form method="post" action="/inbox/vernieuw" style="flex:0 0 auto"><input type="hidden" name="wat" value="nieuws"><button class="knop" type="submit">Nieuws nu ophalen</button></form>
+  <form method="post" action="/inbox/vernieuw" style="flex:0 0 auto"><button class="knop" type="submit">Notubiz nu ophalen</button></form>
+  {% if f.status == 'nieuw' and rijen %}<form method="post" action="/inbox/alles-gezien" style="flex:0 0 auto">
+    {% for k in ('soort', 'pro', 'periode', 'fractie', 'zoek', 'drempel') %}<input type="hidden" name="{{ k }}" value="{{ f[k] }}">{% endfor %}
+    <button class="knop" type="submit">{{ 'Deze ' ~ totaal ~ ' als gezien markeren' if (f.soort or f.pro or f.periode or f.fractie or f.zoek) else 'Alles als gezien markeren' }}</button></form>{% endif %}
+</div>
+
+{% for r in rijen %}
+<div class="kaart" id="s{{ r.id }}">
+  <p style="margin:0 0 4px">
+    {% if r.soort == 'besloten' %}<span class="label rood" title="De stukken zijn alleen te zien als je bent ingelogd in Notubiz">! alleen met inloggen</span>{% endif %}
+    <span class="label {{ 'rood' if r.soort in ('raadsvoorstel', 'rib') else 'grijs' if r.soort in ('bijlage', 'besloten') }}">{{ soorten.get(r.soort, r.soort) }}</span>
+    {% if r.soort == 'nieuws' and r.score is not none and r.score >= 0 %}<span class="label {{ 'rood' if r.score >= 80 else '' if r.score >= 60 else 'grijs' }}" title="Score van Claude">{{ r.score }}</span>{% elif r.soort == 'nieuws' and r.score is none %}<span class="label grijs">nog niet gewogen</span>{% endif %}
+    {% if r.pro %}<span class="label">PRO</span>{% endif %}
+    {% if r.actie and r.actie not in ('geen', 'volgen') %}<span class="label rood">{{ r.actie }}</span>{% endif %}
+    {% if r.bijgewerkt %}<span class="label grijs">bijgewerkt</span>{% endif %}
+    {% if r.status == 'bewaard' %}<span class="label">bewaard</span>{% endif %}
+    <span class="noot">{{ [r.bronnaam, r.nummer, datum_nl(r.datum) if r.datum else '', r.fracties, r.onderwerp]|select|join(' · ') }}</span>
+  </p>
+  <h3 style="margin:2px 0">{% if r.document_url %}<a href="{{ r.document_url }}" target="_blank" rel="noopener">{{ r.titel }}</a>{% else %}{{ r.titel }}{% endif %}</h3>
+  {% if r.reden %}<p style="margin:2px 0 4px"><i>{{ r.reden }}</i></p>{% endif %}
+  {% if r.context %}<p class="noot" style="margin:2px 0 6px">{{ r.context[:400] }}</p>{% endif %}
+  {% if r.negeer_reden %}<p class="noot" style="margin:2px 0 6px">Genegeerd: {{ r.negeer_reden }}</p>{% endif %}
+  <div class="rij" style="flex-wrap:wrap;gap:6px">
+    {% if r.tekst_id %}<a class="knop" style="flex:0 0 auto" href="/dossiers/document/{{ r.tekst_id }}">Lees tekst</a>{% endif %}
+    {% if r.soort != 'besloten' %}<a class="knop" style="flex:0 0 auto" href="/bijdragen?stuk={{ r.id }}">Maak concept</a>{% endif %}
+    {% if not r.gezien %}<form method="post" action="/inbox/{{ r.id }}/gezien" style="flex:0 0 auto"><button class="knop" type="submit">Gezien</button></form>{% endif %}
+    {% if r.status != 'bewaard' %}<form method="post" action="/inbox/{{ r.id }}/bewaar" style="flex:0 0 auto"><button class="knop" type="submit">Bewaar</button></form>{% endif %}
+    {% if r.status != 'genegeerd' %}<form method="post" action="/inbox/{{ r.id }}/negeer" class="rij" style="flex:1 1 260px;gap:6px;align-items:center">
+      <input type="text" name="reden" placeholder="Waarom niet relevant? (optioneel)" aria-label="Reden" style="flex:1 1 160px">
+      <button class="knop rood" type="submit" style="flex:0 0 auto">Negeer</button></form>{% endif %}
+  </div>
+</div>
+{% else %}
+<div class="leeg">Niets gevonden met deze filters. {% if f.status == 'nieuw' %}<a href="{{ link(status='alles') }}">Toon ook wat je al gezien hebt.</a>{% endif %}</div>
+{% endfor %}
+
+{% if totaal > 50 * pagina_nr %}
+<p><a class="knop" href="{{ link(pagina_nr=pagina_nr + 1) }}">Volgende 50</a></p>
+{% endif %}
+{% endblock %}

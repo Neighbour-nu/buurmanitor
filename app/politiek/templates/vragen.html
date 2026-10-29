@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Raadsvragen</h1>
+<p class="uitleg">De vragen die PRO Helmond aan het college stelde, uit Notubiz. Zo zie je welke nog op antwoord wachten en welke over de termijn zijn. Is een antwoord binnen, dan staat het hier met een link. <a href="/bijdragen?soort=politieke_vraag">Nieuwe vragen opstellen</a></p>
+
+<nav class="chips" aria-label="Filter op status">
+  {% for k, v in filters.items() %}<a class="chip {{ 'actief' if toon == k }} {{ 'let' if k == 'laat' }}" href="/vragen?toon={{ k }}{{ '&jaar=' ~ jaar if jaar }}">{{ v }}<small>{{ tellers[k] }}</small></a>{% endfor %}
+  {% if jaren|length > 1 %}<span style="flex:0 0 12px"></span>
+  <a class="chip {{ 'actief' if not jaar }}" href="/vragen?toon={{ toon }}">Elk jaar</a>
+  {% for j in jaren %}<a class="chip {{ 'actief' if jaar == j }}" href="/vragen?toon={{ toon }}&jaar={{ j }}">{{ j }}</a>{% endfor %}{% endif %}
+</nav>
+
+{% if rijen %}
+<div class="tabelvak"><table class="tabel">
+  <thead><tr><th>Nummer</th><th>Vraag</th><th>Gesteld</th><th>Antwoord</th></tr></thead>
+  <tbody>
+  {% for r in rijen %}<tr class="{{ 'controleren' if r.vstatus == 'laat' }}">
+    <td style="white-space:nowrap">{{ r.nummer }}</td>
+    <td>{% if r.vraag_url %}<a href="{{ r.vraag_url }}" target="_blank" rel="noopener">{{ r.titel }}</a>{% else %}{{ r.titel }}{% endif %}
+      {% if r.categorie %}<br><span class="noot">{{ r.categorie }}{{ ' · ' ~ r.fracties if r.fracties and r.fracties != 'PRO Helmond' }}</span>{% endif %}</td>
+    <td style="white-space:nowrap">{{ datum_nl(r.datum) if r.datum else '' }}</td>
+    <td>{% if r.vstatus == 'beantwoord' %}<span class="label">beantwoord</span>
+          {% if r.datum_antwoord %}<span class="noot">{{ r.antwoord_nl }}</span>{% endif %}
+          {% if r.antwoord_url %}<br><a href="{{ r.antwoord_url }}" target="_blank" rel="noopener">Lees het antwoord</a>{% endif %}
+          {% if r.tekst_id %} · <a href="/dossiers/document/{{ r.tekst_id }}">tekst</a>{% endif %}
+        {% elif r.vstatus == 'laat' %}<span class="label rood">over de termijn</span> <span class="noot">verwacht {{ r.verwacht_nl }}</span>
+        {% else %}<span class="label grijs">wacht</span>{% if r.verwacht %} <span class="noot">verwacht {{ r.verwacht_nl }}</span>{% endif %}{% endif %}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="leeg">{% if toon == 'open' %}Geen vragen die nog op antwoord wachten.{% else %}Geen vragen gevonden.{% endif %}
+  <a href="/vragen?toon=alles">Toon alle vragen</a></div>
+{% endif %}
+<p class="noot">Vragen komen hier vanzelf bij als Notubiz ze publiceert (elk uur bijgewerkt). Een vraag telt als PRO-vraag als PRO Helmond, GroenLinks of PvdA bij de fracties staat of "(PRO)" in de titel.</p>
+{% endblock %}

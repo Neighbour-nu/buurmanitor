@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">{{ s.titel }}</h1>
+<p class="uitleg">{{ s.uitleg }}</p>
+<div class="kaart">
+  <p><span class="label">Fase {{ s.fase }}</span> <span class="noot">Onderdelen {{ s.onderdelen }} van de functionele beschrijving</span></p>
+  <h3>Wat hier komt</h3>
+  <ul>{% for regel in s.straks %}<li>{{ regel }}</li>{% endfor %}</ul>
+</div>
+{% if s.nu %}
+<h2 class="sub">Werkt nu al</h2>
+{% for titel, pad, uitleg in s.nu %}<a class="kaart" style="display:block;text-decoration:none;color:inherit" href="{{ pad }}"><h3 style="color:var(--groendonker)">{{ titel }}</h3><span class="noot">{{ uitleg }}</span></a>{% endfor %}
+{% endif %}
+<div class="leeg">Dit scherm wordt gebouwd in fase {{ s.fase }}.</div>
+{% endblock %}

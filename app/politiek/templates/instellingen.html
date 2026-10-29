@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Instellingen</h1>
+<p class="uitleg">Vaste gegevens die Promonitor gebruikt, onder meer voor de Whaller-berichten. Een link kopieer je in Whaller via de drie puntjes bij een map of document. Alleen de links met een sterretje zijn nodig voor de vaste berichten.</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+
+<form action="/instellingen" method="post">
+{% for groep, rijen in groepen %}
+  <h2 class="sub">{{ groep }}</h2>
+  <div class="kaart">
+  {% for r in rijen %}
+    <label for="inst_{{ r.sleutel }}">{{ r.uitleg or r.sleutel }}{% if r.sleutel in nodig %} *{% endif %}</label>
+    <input id="inst_{{ r.sleutel }}" type="text" name="inst_{{ r.sleutel }}" value="{{ r.waarde or '' }}"{% if '_map_' in r.sleutel or '_box' in r.sleutel or '_doc_' in r.sleutel or r.sleutel.endswith('_formulier') %} placeholder="https://my.whaller.com/..."{% endif %}>
+  {% endfor %}
+  </div>
+{% endfor %}
+<p><button class="knop vol" type="submit">Opslaan</button></p>
+</form>
+
+<h2 class="sub" id="personen">Fractie en steunfractie</h2>
+<p class="uitleg">De Whaller-naam komt achter de @ in de berichten. Rollen en portefeuilles helpen Promonitor bij het voorstellen van woordvoerders.</p>
+{% for p in personen %}<form id="p{{ p.id }}" action="/instellingen/persoon" method="post"><input type="hidden" name="pid" value="{{ p.id }}"></form>{% endfor %}
+<form id="pnieuw" action="/instellingen/persoon" method="post"></form>
+<div class="tabelvak"><table class="tabel">
+<thead><tr><th>Naam</th><th>Whaller</th><th>Rol</th><th>Portefeuilles</th><th>Volgorde</th><th>Actief</th><th></th></tr></thead>
+<tbody>
+{% for p in personen %}{% set f = 'p' ~ p.id %}
+<tr>
+  <td><input form="{{ f }}" type="text" name="naam" value="{{ p.naam }}" aria-label="Naam"></td>
+  <td><input form="{{ f }}" type="text" name="whaller" value="{{ p.whaller or '' }}" placeholder="zonder @" aria-label="Whaller-naam"></td>
+  <td><input form="{{ f }}" type="text" name="rol" value="{{ p.rol or '' }}" aria-label="Rol"></td>
+  <td><input form="{{ f }}" type="text" name="portefeuilles" value="{{ p.portefeuilles or '' }}" aria-label="Portefeuilles"></td>
+  <td style="width:80px"><input form="{{ f }}" type="number" name="volgorde" value="{{ p.volgorde }}" aria-label="Volgorde"></td>
+  <td><input form="{{ f }}" type="checkbox" name="actief" value="1" {{ 'checked' if p.actief }} aria-label="Actief"></td>
+  <td><button form="{{ f }}" class="knop" type="submit">Bewaar</button></td>
+</tr>
+{% endfor %}
+<tr>
+  <td><input form="pnieuw" type="text" name="naam" placeholder="Nieuwe persoon" required aria-label="Naam nieuwe persoon"></td>
+  <td><input form="pnieuw" type="text" name="whaller" placeholder="zonder @" aria-label="Whaller-naam"></td>
+  <td><input form="pnieuw" type="text" name="rol" aria-label="Rol"></td>
+  <td><input form="pnieuw" type="text" name="portefeuilles" aria-label="Portefeuilles"></td>
+  <td><input form="pnieuw" type="number" name="volgorde" value="50" aria-label="Volgorde"></td>
+  <td></td>
+  <td><button form="pnieuw" class="knop vol" type="submit">Voeg toe</button></td>
+</tr>
+</tbody></table></div>
+
+<h2 class="sub" id="taken">Automatische taken</h2>
+{% if taken %}<div class="tabelvak"><table class="tabel">
+<thead><tr><th>Taak</th><th>Laatste keer</th><th>Resultaat</th></tr></thead>
+<tbody>{% for t in taken %}<tr><td>{{ t.naam }}</td><td>{{ geleden(t.laatst) }}</td>
+<td>{{ t.resultaat or '' }}{% if t.fout %}<details><summary class="label rood">fout</summary><pre class="noot" style="white-space:pre-wrap">{{ t.fout }}</pre></details>{% endif %}</td></tr>{% endfor %}</tbody>
+</table></div>{% else %}<p class="noot">Nog geen taken gedraaid. De eerste keer is een paar minuten na het starten.</p>{% endif %}
+{% endblock %}

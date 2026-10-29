@@ -27,11 +27,19 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 PLANNER_AAN = os.environ.get("BUURMANITOR_PLANNER", "1") != "0"
 BACKUP_MAP = os.environ.get("BACKUP_MAP", "/backups")
 
-# Werkruimtes die (nog) als eigen app draaien. In fase 1 en 2 komen ze onder /politiek en /zerohero.
-WERKRUIMTES = [
-    {"sleutel": "politiek", "naam": "Politiek", "app": "Promonitor", "url": os.environ.get("URL_POLITIEK", "https://promonitor.neighbour.nu")},
-    {"sleutel": "zerohero", "naam": "ZEROHERO", "app": "Doellijn", "url": os.environ.get("URL_ZEROHERO", "https://cockpit.zerohero.one")},
-]
+# Werkruimtes. Politiek draait onder /politiek zodra POLITIEK_DATABASE_URL is ingesteld (fase 1); daarvoor nog als
+# eigen app (Promonitor). ZEROHERO volgt in fase 2 onder /zerohero.
+POLITIEK_ACTIEF = bool(os.environ.get("POLITIEK_DATABASE_URL"))
+
+
+def werkruimtes():
+    return [
+        {"sleutel": "politiek", "naam": "Politiek", "app": "Promonitor",
+         "url": "/politiek" if POLITIEK_ACTIEF else os.environ.get("URL_POLITIEK", "https://promonitor.neighbour.nu")},
+        {"sleutel": "zerohero", "naam": "ZEROHERO", "app": "Doellijn",
+         "url": os.environ.get("URL_ZEROHERO", "https://cockpit.zerohero.one")},
+    ]
+
 
 DOMEINEN = [
     ("politiek", "Politiek"), ("prive", "Privé"), ("zerohero", "ZEROHERO"), ("fbim", "FB/IM"), ("upperspire", "Upper Spire"),

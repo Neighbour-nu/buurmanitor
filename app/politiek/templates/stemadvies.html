@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block kop %}{% if s.status == 'bezig' %}<meta http-equiv="refresh" content="8">{% endif %}{% endblock %}
+{% block inhoud %}
+<p class="noot" style="margin:18px 0 0"><a href="/stemadvies">Stemadvies</a>{% if s.url %} · <a href="{{ s.url }}" target="_blank" rel="noopener">Notubiz</a>{% endif %}</p>
+<h1 class="titel">Stemadvies {{ datum_nl(s.datum) }}</h1>
+<p class="uitleg">{{ s.titel }} op {{ lang(s.datum) }}.
+  {% if s.status == 'vastgesteld' %}<span class="label">vastgesteld</span>{% elif s.status == 'bezig' %}<span class="label grijs">Claude is bezig</span>{% else %}<span class="label grijs">concept</span>{% endif %}</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+{% if s.status == 'bezig' %}<div class="kaart"><p><b>Claude leest de stukken en wat de fractie vastlegde.</b> Deze pagina ververst vanzelf.</p></div>{% endif %}
+{% if s.status == 'fout' %}<div class="kaart"><p><span class="label rood">fout</span> {{ (s.fout or '')[:300] }}</p></div>{% endif %}
+{% if s.toelichting and s.status != 'bezig' %}<div class="melding"><b>Claude:</b> {{ s.toelichting }}</div>{% endif %}
+
+<div class="rij" style="gap:8px;margin:6px 0 14px">
+  <a class="knop vol" style="flex:0 0 auto" href="/stemadvies/{{ s.id }}/word">Download Word (één A4)</a>
+  <form method="post" action="/stemadvies/{{ s.id }}/claude" style="flex:0 0 auto" onsubmit="return confirm('Claude doet opnieuw voorstellen. Wat je zelf invulde, wordt overschreven. Doorgaan?')">
+    <button class="knop" type="submit" {{ 'disabled' if s.status == 'bezig' }}>{{ 'Opnieuw voorstellen met Claude' if s.model else 'Voorstel van Claude' }}</button></form>
+  <form method="post" action="/stemadvies/{{ s.id }}/vernieuw" style="flex:0 0 auto"><button class="knop" type="submit" title="Haal de agenda opnieuw op; wat je invulde blijft staan">Agenda bijwerken</button></form>
+</div>
+
+<form method="post" action="/stemadvies/{{ s.id }}/opslaan">
+{% for rubriek, label in (('bespreek', 'Bespreekstukken'), ('hamer', 'Hamerstukken')) %}
+  {% set groep = s['items']|selectattr('rubriek', 'equalto', rubriek)|list %}
+  {% if groep %}
+  <h2 class="sub">{{ label }}</h2>
+  {% for p in groep %}
+  <div class="kaart stempunt {{ p.advies }}">
+    <p style="margin:0 0 6px"><b>{{ p.nummer|replace('.', '') }}. {{ p.onderwerp }}</b>{% if p.woordvoerder %} <span class="noot">· {{ p.woordvoerder }}</span>{% endif %}
+      {% if p.documenten %}<span class="noot"> · {% for d in p.documenten[:2] %}<a href="{{ d.url }}" target="_blank" rel="noopener">{{ d.titel[:40] }}</a>{{ ', ' if not loop.last }}{% endfor %}</span>{% endif %}</p>
+    <div class="rij">
+      <div style="flex:0 1 270px"><label for="a{{ p.punt_id }}">Advies</label>
+        <select id="a{{ p.punt_id }}" name="advies_{{ p.punt_id }}">{% for k, naam in adviezen %}<option value="{{ k }}" {{ 'selected' if p.advies == k }}>{{ naam }}</option>{% endfor %}</select></div>
+      <div style="flex:3 1 280px"><label for="m{{ p.punt_id }}">Toelichting</label>
+        <input id="m{{ p.punt_id }}" type="text" name="motivering_{{ p.punt_id }}" value="{{ p.motivering }}"></div>
+      <div style="flex:1 1 160px"><label for="s{{ p.punt_id }}">Stemverklaring</label>
+        <input id="s{{ p.punt_id }}" type="text" name="stemverklaring_{{ p.punt_id }}" value="{{ p.stemverklaring }}" placeholder="bijvoorbeeld: ja, Martijn"></div>
+    </div>
+    {% if p.bron %}<p class="noot" style="margin:4px 0 0">Gebaseerd op: {{ p.bron }}</p>{% endif %}
+    {% if p.advies in ('voor_kanttekening', 'tegen') %}<p class="noot" style="margin:4px 0 0"><a href="/bijdragen?punt={{ p.punt_id }}&soort=stemverklaring">Maak een stemverklaring</a></p>{% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+{% else %}{% endfor %}
+{% if not s['items'] %}<div class="leeg">Geen hamer- of bespreekstukken gevonden. Is de agenda al gepubliceerd? Probeer "Agenda bijwerken".</div>{% endif %}
+<div class="rij" style="gap:8px;margin-top:12px">
+  <button class="knop vol" type="submit" style="flex:0 0 auto">Opslaan</button>
+  {% if s.status != 'vastgesteld' %}<button class="knop" type="submit" name="vastgesteld" value="1" style="flex:0 0 auto">Opslaan als vastgesteld door de fractie</button>{% endif %}
+</div>
+</form>
+{% if s.status == 'vastgesteld' %}<form method="post" action="/stemadvies/{{ s.id }}/concept" style="margin-top:8px"><button class="knop" type="submit">Terug naar concept</button></form>{% endif %}
+
+<form method="post" action="/stemadvies/{{ s.id }}/weg" style="margin-top:24px" onsubmit="return confirm('Dit stemadvies verwijderen?')">
+  <button class="knop rood" type="submit">Verwijder</button></form>
+{% endblock %}

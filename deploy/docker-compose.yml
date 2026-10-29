@@ -20,6 +20,19 @@ services:
       MAANDPLAFOND_EUR: ${MAANDPLAFOND_EUR:-20}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # Werkruimte Politiek (Promonitor, fase 1). Leeg = nog niet overgestapt; de portal linkt dan naar Promonitor.
+      # deploy/overstap-politiek.sh vult deze waarden vanuit ~/promonitor/.env.
+      POLITIEK_DATABASE_URL: ${POLITIEK_DATABASE_URL:-}
+      POLITIEK_PLANNER: ${POLITIEK_PLANNER:-0}
+      POLITIEK_ANTHROPIC_API_KEY: ${POLITIEK_ANTHROPIC_API_KEY:-}
+      POLITIEK_TELEGRAM_BOT_TOKEN: ${POLITIEK_TELEGRAM_BOT_TOKEN:-}
+      POLITIEK_TELEGRAM_CHAT_ID: ${POLITIEK_TELEGRAM_CHAT_ID:-}
+      POLITIEK_SMTP_HOST: ${POLITIEK_SMTP_HOST:-}
+      POLITIEK_SMTP_PORT: ${POLITIEK_SMTP_PORT:-465}
+      POLITIEK_SMTP_USER: ${POLITIEK_SMTP_USER:-}
+      POLITIEK_SMTP_PASSWORD: ${POLITIEK_SMTP_PASSWORD:-}
+      POLITIEK_MAIL_AAN: ${POLITIEK_MAIL_AAN:-}
+      POLITIEK_MAIL_VAN: ${POLITIEK_MAIL_VAN:-}
       TZ: Europe/Amsterdam
     volumes:
       - ${HOME}/cockpit/backups:/backups/doellijn:ro

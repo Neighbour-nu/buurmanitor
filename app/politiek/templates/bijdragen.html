@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Bijdragen</h1>
+<p class="uitleg">Laat Claude een concept schrijven: een analyse, vragen, een spreektekst, een amendement, motie of stemverklaring. Promonitor leest de stukken van het agendapunt, zoekt passages in de kennisbank en gebruikt de griffie-formats bij Sjablonen. Elk concept krijgt een feitenlijst met bronnen. Jij blijft de schrijver: lees en controleer alles.</p>
+{% if request.query_params.get('melding') %}<div class="melding">{{ request.query_params.get('melding') }}</div>{% endif %}
+{% if fout %}<div class="melding">{{ fout }}</div>{% endif %}
+
+<form method="post" action="/bijdragen" class="kaart" enctype="multipart/form-data">
+  <label for="soort">Wat wil je maken?</label>
+  <select id="soort" name="soort">
+    {% for k, v in soorten.items() %}<option value="{{ k }}" {{ 'selected' if (voorkeur_soort and k == voorkeur_soort) or (not voorkeur_soort and ((k == 'analyse' and not gekozen_stuk) or (k == 'politieke_vraag' and gekozen_stuk and gekozen_stuk.bron == 'nieuws') or (k == 'analyse' and gekozen_stuk and gekozen_stuk.bron != 'nieuws'))) }}>{{ v }}{{ ' (griffie-format)' if k in sjabloon_soorten }}</option>{% endfor %}
+  </select>
+
+  <label>Waar gaat het over?</label>
+  <div class="keuzes">
+    {% if gekozen_stuk %}
+    <label class="keuze"><input type="radio" name="bron" value="stuk" checked> Stuk uit de Inbox:
+      <b>{{ gekozen_stuk.titel }}</b> <span class="noot">({{ soorten_stuk.get(gekozen_stuk.soort, gekozen_stuk.soort) }}{{ ', ' ~ gekozen_stuk.bronnaam if gekozen_stuk.bronnaam }})</span></label>
+    <input type="hidden" name="stuk_id" value="{{ gekozen_stuk.id }}">
+    {% endif %}
+    <label class="keuze"><input type="radio" name="bron" value="agendapunt" {{ 'checked' if not gekozen_stuk and punten }}> Een agendapunt van commissie of raad</label>
+    <select name="punt_id" aria-label="Agendapunt" onfocus="this.form.bron.value='agendapunt'">
+      <option value="">Kies een agendapunt</option>
+      {% for v in punten|groupby('vergadering', default='') %}
+      <optgroup label="{{ v.grouper }}">
+        {% for p in v.list %}<option value="{{ p.punt_id }}" {{ 'selected' if p.punt_id == punt }}>{{ p.nummer ~ '. ' if p.nummer }}{{ p.onderwerp[:110] }} ({{ p.documenten|length }} stuk{{ 'ken' if p.documenten|length != 1 }})</option>{% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select>
+    <label class="keuze"><input type="radio" name="bron" value="idee" {{ 'checked' if not gekozen_stuk and not punten }}> Een eigen idee of tekst (bijvoorbeeld feedback op een tekst van een fractiegenoot)</label>
+  </div>
+
+  <label for="titel">Titel (mag leeg, dan kiest Claude)</label>
+  <input id="titel" type="text" name="titel" maxlength="200">
+
+  <label for="aanwijzingen">Aanwijzingen voor Claude</label>
+  <textarea id="aanwijzingen" name="aanwijzingen" placeholder="Bijvoorbeeld: we steunen het voorstel, maar willen een harde toezegging over de huren voor kleine clubs. Kort, maximaal drie minuten spreektijd."></textarea>
+
+  <label for="bestand">Bestand (optioneel: Word, pdf of tekst)</label>
+  <input id="bestand" type="file" name="bestand" accept=".docx,.pdf,.txt,.md">
+  <p class="noot" style="margin:2px 0 0">Bij feedback op een Word-bestand krijg je hetzelfde bestand terug, met de opmerkingen in de kantlijn.</p>
+  <label for="tekst">Tekst om mee te werken (optioneel)</label>
+  <textarea id="tekst" name="tekst" placeholder="Plak hier een tekst: een eerdere bijdrage, een tekst van een fractiegenoot, een mail of een artikel."></textarea>
+
+  <p style="margin-top:12px"><button class="knop vol" type="submit">Schrijf concept</button>
+  <span class="noot">Duurt meestal een tot twee minuten. Je kunt ondertussen verder werken.</span></p>
+</form>
+
+{% if recent %}
+<h2 class="sub">Laatste concepten</h2>
+<ul class="lijst kaart">
+  {% for k in recent %}<li><a href="/concepten/{{ k.id }}">{{ k.titel }}</a>
+    <span class="noot">{{ soorten.get(k.soort, k.soort) }} · {{ geleden(k.aangemaakt) }}</span>
+    {% if k.status == 'bezig' %}<span class="label grijs">bezig</span>{% elif k.status == 'fout' %}<span class="label rood">fout</span>{% endif %}</li>{% endfor %}
+</ul>
+<p><a href="/concepten">Alle concepten</a></p>
+{% endif %}
+{% endblock %}

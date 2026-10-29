@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<p class="noot" style="margin:18px 0 0"><a href="/agenda">Agenda</a></p>
+<h1 class="titel">Stemadvies</h1>
+<p class="uitleg">Per raadsvergadering het stemadvies van de fractie op één A4. Promonitor zet de hamer- en bespreekstukken op een rij. Claude doet per punt een voorstel op basis van wat de fractie al vastlegde: fractiebesluiten, dossiers, notities bij agendapunten en concepten. De fractie beslist.</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+{% if fout %}<div class="melding">{{ fout }}</div>{% endif %}
+
+<h2 class="sub">Komende raadsvergaderingen</h2>
+{% for v in raden %}{% set b = per_id.get(v.id) %}
+<div class="kaart rij" style="align-items:center">
+  <div style="flex:3 1 260px"><b>{{ lang(v.start.date()) }}</b>: {{ v.naam }} <span class="noot">({{ v.punten|length }} punten)</span>
+    {% if b %}<br><span class="label {{ '' if b.status == 'vastgesteld' else 'grijs' }}">{{ b.status }}</span> <a href="/stemadvies/{{ b.id }}">Open het stemadvies</a>{% endif %}</div>
+  {% if not b %}
+  <form method="post" action="/stemadvies/maak" style="flex:0 0 auto">
+    <input type="hidden" name="notubiz_id" value="{{ v.id }}"><input type="hidden" name="claude" value="1">
+    <button class="knop vol" type="submit">Maak stemadvies met Claude</button></form>
+  <form method="post" action="/stemadvies/maak" style="flex:0 0 auto">
+    <input type="hidden" name="notubiz_id" value="{{ v.id }}"><button class="knop" type="submit">Zelf invullen</button></form>
+  {% endif %}
+</div>
+{% else %}<div class="leeg">Geen raadsvergaderingen in de komende acht weken gevonden.</div>{% endfor %}
+
+{% if bestaand %}
+<h2 class="sub">Eerdere stemadviezen</h2>
+<ul class="lijst kaart">{% for b in bestaand %}<li><a href="/stemadvies/{{ b.id }}">{{ b.titel or 'Raadsvergadering' }} {{ datum_nl(b.datum) }}</a>
+  <span class="label {{ '' if b.status == 'vastgesteld' else 'grijs' }}">{{ b.status }}</span></li>{% endfor %}</ul>
+{% endif %}
+{% endblock %}

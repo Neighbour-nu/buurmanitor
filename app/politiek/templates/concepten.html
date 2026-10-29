@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block kop %}{% if rijen|selectattr('status', 'equalto', 'bezig')|list %}<meta http-equiv="refresh" content="15">{% endif %}{% endblock %}
+{% block inhoud %}
+<h1 class="titel">Concepten</h1>
+<p class="uitleg">Alles wat Claude voor je schreef, met elke versie. <a href="/bijdragen">Nieuw concept</a></p>
+<nav class="chips" aria-label="Filter op soort">
+  <a class="chip {{ 'actief' if not soort }}" href="/concepten">Alles</a>
+  {% for k, v in soorten.items() %}<a class="chip {{ 'actief' if soort == k }}" href="/concepten?soort={{ k }}">{{ v.split(' (')[0] }}</a>{% endfor %}
+</nav>
+{% if rijen %}
+<div class="tabelvak"><table class="tabel">
+  <thead><tr><th>Titel</th><th>Soort</th><th>Vergadering</th><th>Gemaakt</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for k in rijen %}<tr>
+    <td><a href="/concepten/{{ k.id }}">{{ k.titel }}</a>{% if k.ouder_id %} <span class="noot">(herschreven)</span>{% endif %}</td>
+    <td>{{ soorten.get(k.soort, k.soort).split(' (')[0] }}</td>
+    <td>{{ k.vergadering or '' }}</td>
+    <td>{{ geleden(k.aangemaakt) }}</td>
+    <td>{% if k.status == 'bezig' %}<span class="label grijs">bezig</span>{% elif k.status == 'fout' %}<span class="label rood">fout</span>{% else %}<span class="label">klaar</span>{% endif %}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="leeg">Nog geen concepten. <a href="/bijdragen">Maak je eerste concept.</a></div>
+{% endif %}
+{% endblock %}

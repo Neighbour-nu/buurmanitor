@@ -1,0 +1,31 @@
+{
+ "assembly": {
+  "id": 1523603,
+  "type": "assembly",
+  "attributes": [
+   {
+    "id": 1,
+    "value": "Commissieavond"
+   },
+   {
+    "id": 50,
+    "value": "Gemeente Helmond, Huis voor de Stad, Weg o d Heuvel 35"
+   }
+  ],
+  "plannings": [
+   {
+    "start_date": "2026-10-06 19:30:00"
+   }
+  ],
+  "meetings": [
+   {
+    "id": 1523612,
+    "order": 1
+   },
+   {
+    "id": 1523611,
+    "order": 2
+   }
+  ]
+ }
+}

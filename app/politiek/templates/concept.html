@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block kop %}{% if k.status == 'bezig' %}<meta http-equiv="refresh" content="8">{% endif %}{% endblock %}
+{% block inhoud %}
+<p class="noot" style="margin:18px 0 0"><a href="/concepten">Concepten</a> · {{ soorten.get(k.soort, k.soort) }}
+  {% if k.bron and k.bron.vergadering %} · {{ k.bron.vergadering }}{% endif %}
+  {% if versies|length > 1 or kinderen %} · Versies:
+    {% for v in versies %}{% if v == k.id %}<b>{{ loop.index }}</b>{% else %}<a href="/concepten/{{ v }}">{{ loop.index }}</a>{% endif %} {% endfor %}
+    {% for v in kinderen %}<a href="/concepten/{{ v }}">nieuwer</a> {% endfor %}{% endif %}</p>
+<h1 class="titel">{{ k.titel }}</h1>
+
+{% if k.status == 'bezig' %}
+<div class="kaart"><p><b>Claude schrijft dit concept.</b> Dat duurt meestal een tot twee minuten. Deze pagina ververst vanzelf.</p>
+  <p class="noot">Gestart {{ geleden(k.bijgewerkt or k.aangemaakt) }}.</p></div>
+{% elif k.status == 'fout' %}
+<div class="kaart"><p><span class="label rood">fout</span> Het schrijven is niet gelukt.</p>
+  <pre class="document" style="font-size:13px">{{ k.fout }}</pre>
+  <form method="post" action="/concepten/{{ k.id }}/opnieuw"><button class="knop vol" type="submit">Probeer opnieuw</button></form></div>
+{% else %}
+
+<div class="rij" style="gap:8px;margin:6px 0 14px">
+  {% if k.soort == 'feedback' and meta.opmerkingen %}<a class="knop vol" style="flex:0 0 auto" href="/concepten/{{ k.id }}/opmerkingen">Word met opmerkingen in de kantlijn</a>
+  <a class="knop" style="flex:0 0 auto" href="/concepten/{{ k.id }}/word">Feedbacknotitie (Word)</a>
+  {% else %}<a class="knop vol" style="flex:0 0 auto" href="/concepten/{{ k.id }}/word">Download Word{{ ' (griffie-format)' if k.velden }}</a>{% endif %}
+  <button class="knop" style="flex:0 0 auto" type="button" onclick="navigator.clipboard.writeText(document.getElementById('platte-tekst').value);this.textContent='Gekopieerd'">Kopieer tekst</button>
+</div>
+<textarea id="platte-tekst" hidden>{{ weergave }}</textarea>
+
+{% if meta.woorden %}<div class="melding">De tekst telt {{ meta.woorden }} woorden: ongeveer {{ meta.spreektijd|string|replace('.', ',') }} minuten spreektijd (bij 130 woorden per minuut).</div>{% endif %}
+{% if meta.toelichting %}<div class="melding"><b>Claude:</b> {{ meta.toelichting }}</div>{% endif %}
+{% if meta.gemist %}<div class="melding">Niet alle stukken konden worden gelezen: {{ meta.gemist|join(', ') }}. Kijk die zelf na.</div>{% endif %}
+
+<div class="raster">
+  <div>
+    <div class="kaart concepttekst">{{ md(weergave)|safe }}</div>
+  </div>
+  <div>
+    {% if meta.vvv %}
+    <h2 class="sub" style="margin-top:0">Value, Villain, Vision</h2>
+    <div class="kaart" style="font-size:15px">
+      <p style="margin:0 0 6px"><b>Value</b> {{ meta.vvv.value }}</p>
+      <p style="margin:0 0 6px"><b>Villain</b> {{ meta.vvv.villain }}</p>
+      <p style="margin:0"><b>Vision</b> {{ meta.vvv.vision }}</p>
+    </div>{% endif %}
+    {% if meta.opmerkingen %}
+    <h2 class="sub" style="margin-top:0">Opmerkingen in de kantlijn</h2>
+    <ul class="kaart" style="font-size:14px;padding-left:28px">{% for o in meta.opmerkingen %}<li><i>"{{ o.citaat }}"</i><br>{{ o.opmerking }}{% if o.voorstel %}<br><b>Voorstel:</b> {{ o.voorstel }}{% endif %}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if meta.bewaken %}
+    <h2 class="sub" style="margin-top:0">Om op terug te komen</h2>
+    <ul class="kaart" style="font-size:15px;padding-left:28px">{% for b in meta.bewaken %}<li>{{ b }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if meta.slordigheden %}
+    <h2 class="sub">Slordigheden in de stukken</h2>
+    <ul class="kaart" style="font-size:15px;padding-left:30px">{% for s in meta.slordigheden %}<li>{{ s }}</li>{% endfor %}</ul>
+    {% endif %}
+    <p class="noot">Model: {{ k.model or 'onbekend' }}. {{ meta.documenten or 0 }} stuk{{ 'ken' if (meta.documenten or 0) != 1 }} gelezen.</p>
+  </div>
+</div>
+
+{% if meta.feiten %}
+<h2 class="sub">Feiten en bronnen</h2>
+<p class="noot">Rood gemarkeerd: zelf nagaan voordat je dit gebruikt.</p>
+<div class="tabelvak"><table class="tabel">
+  <thead><tr><th>Bewering</th><th>Bron</th><th></th></tr></thead>
+  <tbody>{% for f in meta.feiten %}<tr class="{{ 'controleren' if f.status != 'bron' }}">
+    <td>{{ f.bewering }}</td><td>{{ f.bron }}</td>
+    <td>{% if f.status == 'bron' %}<span class="label">bron</span>{% else %}<span class="label rood">controleren</span>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+{% endif %}
+
+<h2 class="sub">Herschrijven</h2>
+<form method="post" action="/concepten/{{ k.id }}/herschrijf" class="kaart">
+  <label for="aanwijzingen">Wat moet er anders?</label>
+  <textarea id="aanwijzingen" name="aanwijzingen" required placeholder="Bijvoorbeeld: korter, scherper op de huren, laat vraag 3 weg, voeg een vraag toe over de planning."></textarea>
+  <p style="margin-top:10px"><button class="knop vol" type="submit">Maak nieuwe versie</button>
+  <span class="noot">De huidige versie blijft bewaard.</span></p>
+</form>
+{% endif %}
+
+{% if k.invoer and (k.invoer.aanwijzingen or k.invoer.tekst) %}
+<details class="kaart" style="margin-top:12px"><summary>Wat je meegaf</summary>
+  {% if k.invoer.aanwijzingen %}<p><b>Aanwijzingen:</b> {{ k.invoer.aanwijzingen }}</p>{% endif %}
+  {% if k.invoer.tekst %}<div class="document">{{ k.invoer.tekst }}</div>{% endif %}
+</details>{% endif %}
+
+<form method="post" action="/concepten/{{ k.id }}/weg" style="margin-top:24px" onsubmit="return confirm('Dit concept verwijderen?')">
+  <button class="knop rood" type="submit">Verwijder deze versie</button></form>
+{% endblock %}

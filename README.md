@@ -4,21 +4,28 @@ De persoonlijke portal van Martijn Buurman: één login en één overzicht voor 
 Upper Spire, met een team van zes persona's (Iris, Clara, Bram, Noor, Vera en Jesse). Het ontwerp staat in het
 project Personal Assistant (ontwerp versie 0.6).
 
-## Stand: fase 0
+## Stand: fase 1 (Promonitor als werkruimte Politiek)
 
 - Inloggen via Caddy en Authelia (wachtwoord plus TOTP), met het proxygeheim en een exacte herkomstcontrole.
-- Vandaag: meldingen, werkruimtes (Promonitor en de Doellijn, nog als eigen app), het team en de server.
+- Vandaag: meldingen, werkruimtes (Politiek onder /politiek, de Doellijn nog als eigen app), het team en de server.
+- Politiek: Promonitor één op één onder `/politiek` (map `app/politiek`), in de huisstijl van de portal.
 - Iris, de coördinator, om mee te praten. Ze ziet in fase 0 alleen wat de portal zelf weet.
 - Meldingen op drie niveaus, als banner en als systeemmelding op je scherm; urgent ook via Telegram (optioneel).
 - Eén planner voor alle automatische taken, met een slot in PostgreSQL tegen dubbel draaien.
 - Gezondheid: geheugen, schijf, back-ups, verbruik van Claude en de taken.
 
-Volgende fases: Promonitor (1) en de Doellijn (2) verhuizen naar /politiek en /zerohero; daarna Clara (3),
-Bram (4), Noor (5), Vera (6) en Jesse (7).
+Huisstijl: Barlow en Barlow Condensed (zelf gehost, OFL), blauw #2563B8 met donkerblauw #14427E voor tekst.
+Het logo (twee buurhuizen) is eigen werk.
+
+Volgende fases: de Doellijn verhuist naar /zerohero (2); daarna Clara (3), Bram (4), Noor (5), Vera (6) en Jesse (7).
 
 ## Opbouw
 
 - `app/kern`: instellingen, database, toegang, planner, meldingen, Claude-client, gezondheid.
+- `app/kern/prefix.py`: draait een werkruimte-app onder een voorvoegsel (/politiek) zonder de code ervan te
+  veranderen; links, formulieren en doorverwijzingen krijgen het voorvoegsel erbij.
+- `app/politiek`: Promonitor, met een eigen database (`promonitor`, ook in de PostgreSQL van de cockpit) en eigen
+  instellingen met `POLITIEK_` ervoor (eigen Claude-sleutel, Telegram en mail).
 - `app/personas/*.yaml`: de beschrijving van elke persona. Aanpassen en `bijwerken.sh` draaien is genoeg.
 - `app/schema.py`: tabellen van de portal; migraties draaien bij elke start.
 - `deploy/`: installeren, bijwerken, back-up en sleutels.
@@ -57,6 +64,27 @@ Bram (4), Noor (5), Vera (6) en Jesse (7).
 | Sleutels wijzigen | `bash ~/buurmanitor/app/deploy/sleutel.sh` |
 | Logboek | `cd ~/buurmanitor && docker compose logs --tail=100 app` |
 | Back-up | elke nacht 03:37 in `~/buurmanitor/backups`, de laatste 60 |
+| Back-up Politiek | elke nacht 03:27 in `~/promonitor/backups` (na de overstap uit de cockpit-database) |
+
+## Overstap van Promonitor naar /politiek
+
+Na `bijwerken.sh` staat de code klaar, maar draait Promonitor nog gewoon. De overstap gaat in twee stappen:
+
+```
+bash ~/buurmanitor/app/deploy/overstap-politiek.sh proef
+bash ~/buurmanitor/app/deploy/overstap-politiek.sh overstap
+```
+
+- `proef` kopieert de database naar de cockpit en zet /politiek aan, zonder automatische taken. Promonitor blijft
+  de echte; wat je in de proef verandert, gaat bij de overstap verloren. Opnieuw draaien geeft een verse kopie.
+- `overstap` stopt Promonitor, maakt een laatste kopie, vergelijkt per tabel het aantal rijen, zet de automatische
+  taken in /politiek aan, stuurt `promonitor.neighbour.nu` door naar `/politiek` (oude links blijven werken), laat
+  de nachtelijke back-up uit de cockpit-database komen en zet de oude database stil. Lukt een stap niet, dan gaat
+  alles terug naar Promonitor.
+- `terug` zet alles terug zoals het was, inclusief wat je intussen in /politiek hebt gedaan.
+
+Na de overstap niet meer `~/promonitor/app/deploy/bijwerken.sh` draaien. De oude database (volume van
+`~/promonitor`) blijft bewaard voor `terug`; opruimen kan als alles een paar weken goed draait.
 
 ## Back-up buiten de server
 
@@ -88,7 +116,9 @@ restic restore latest --target ~/terug
 
 ```
 pip install -r requirements.txt pytest httpx
-python -m pytest tests
+bash tests/alles.sh
 ```
 
-Met `TEST_DATABASE_URL` naar een lege, wegwerpbare PostgreSQL-database draaien ook de database- en schermtests.
+Met `TEST_DATABASE_URL` en `TEST_POLITIEK_DATABASE_URL` naar twee lege, wegwerpbare PostgreSQL-databases draaien
+ook de database-, scherm- en koppelingstests. `alles.sh` draait de portal, Politiek en de koppeling in aparte
+processen, omdat ze bij het laden elk hun eigen instellingen uit de omgeving lezen.

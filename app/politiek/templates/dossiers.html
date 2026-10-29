@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Dossiers</h1>
+<p class="uitleg">Dossierkaarten per onderwerp en de kennisbank van Promonitor: kerndocumenten, beleid, begroting, eerdere bijdragen en raadsstukken.</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+
+<form class="kaart" action="/dossiers/upload" method="post" enctype="multipart/form-data" id="toevoegen">
+  <h3 style="margin-top:0">Documenten toevoegen</h3>
+  <div class="rij">
+    <div style="flex:3 1 260px"><label for="bestanden">Bestanden</label>
+      <input id="bestanden" type="file" name="bestanden" multiple accept=".md,.txt,.docx,.pdf,.xlsx,.pptx,.zip" required></div>
+    <div><label for="soortup">Soort</label><select id="soortup" name="soort">{% for k, v in soorten.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+    <div style="flex:0 0 auto"><button class="knop vol" type="submit">Toevoegen</button></div>
+  </div>
+  <div class="rij" style="margin-top:6px;align-items:center">
+    <div><label class="keuze"><input type="checkbox" name="vertrouwelijk" value="1"> Vertrouwelijk (nooit gebruiken in iets dat naar buiten gaat)</label></div>
+  </div>
+  <details class="noot" style="margin-top:6px"><summary>Welke bestanden kan ik toevoegen?</summary>
+    <p>Markdown, tekst, Word, pdf, Excel of PowerPoint, of een zip daarvan, zoals de download van een Whaller-box. In een zip bepalen de mappen de soort: Commissie- en Raadsvergaderingen, Raadsvragen en Begroting worden bijdrage, Notulen en Besluitenlijst worden notulen, Columns column. Notulen, besluitenlijsten, strategie en losse stukken uit de fractiebox worden vertrouwelijk. Sjablonen en logo's en afbeeldingen worden overgeslagen. Een document met hetzelfde pad wordt bijgewerkt. Maximaal 60 MB per upload.</p></details>
+</form>
+
+<h2 class="sub">Dossierkaarten</h2>
+<nav class="chips" aria-label="Actief of archief">
+  <a class="chip {{ 'actief' if not archief }}" href="/dossiers">Actief</a>
+  <a class="chip {{ 'actief' if archief }}" href="/dossiers?archief=1">Archief</a>
+</nav>
+{% if kaarten %}
+<div class="kaarten">
+  {% for k in kaarten %}<a class="kaart dossierkaart" href="/dossiers/kaart/{{ k.id }}">
+    <h3>{{ k.naam }}</h3>
+    <p class="noot" style="margin:0 0 6px">{{ k.woordvoerder or 'geen woordvoerder' }}{% if k.analyse_tijd %} · bijgewerkt {{ geleden(k.analyse_tijd) }}{% endif %}</p>
+    <p style="margin:0;font-size:14px">{{ (k.samenvatting or 'Nog geen samenvatting. Open de kaart en laat Claude hem maken.')[:220] }}{{ '…' if k.samenvatting and k.samenvatting|length > 220 }}</p>
+  </a>{% endfor %}
+</div>
+{% else %}<div class="leeg">{{ 'Geen gearchiveerde dossiers.' if archief else 'Nog geen dossiers. Maak er hieronder een.' }}</div>{% endif %}
+
+<form method="post" action="/dossiers/kaart" class="kaart rij" style="margin-top:12px">
+  <div style="flex:2 1 220px"><label for="naam">Nieuw dossier</label><input id="naam" type="text" name="naam" required placeholder="Bijvoorbeeld: Sportaccommodaties"></div>
+  <div style="flex:3 1 260px"><label for="zoektermen">Zoektermen (komma's ertussen)</label><input id="zoektermen" type="text" name="zoektermen" placeholder="sportaccommodaties, deprivatisering, afwegingskader, RV 069"></div>
+  <div><label for="woordvoerder">Woordvoerder</label><select id="woordvoerder" name="woordvoerder"><option value="">Nog niemand</option>{% for p in personen %}<option>{{ p.naam }}</option>{% endfor %}</select></div>
+  <div style="flex:0 0 auto"><button class="knop vol" type="submit">Maak dossier</button></div>
+</form>
+{% if voorstel %}
+<p class="noot">Onderwerpen die vaak terugkomen in je Inbox:
+  {% for v in voorstel %}<form method="post" action="/dossiers/kaart" style="display:inline"><input type="hidden" name="naam" value="{{ v.onderwerp|capitalize }}"><button class="chip" type="submit" title="Maak hier een dossier van">{{ v.onderwerp }}<small>{{ v.aantal }}</small></button></form> {% endfor %}</p>
+{% endif %}
+
+<h2 class="sub">Zoeken in de kennisbank</h2>
+<form action="/dossiers" method="get" class="kaart">
+  <div class="rij">
+    <div style="flex:3 1 300px"><label for="zoek">Zoeken</label><input id="zoek" type="search" name="zoek" value="{{ zoek }}" placeholder="Bijvoorbeeld: klimaatneutraal 2035"></div>
+    <div><label for="soort">Soort</label><select id="soort" name="soort"><option value="">Alle</option>{% for k, v in soorten.items() %}<option value="{{ k }}" {{ 'selected' if soort == k }}>{{ v }}</option>{% endfor %}</select></div>
+    <div style="flex:0 0 auto"><button class="knop vol" type="submit">Zoek</button></div>
+  </div>
+  <p class="noot">Tip: zet woorden tussen aanhalingstekens voor een vaste woordgroep, en gebruik een minteken om een woord uit te sluiten.</p>
+</form>
+
+{% if zoek %}
+<h2 class="sub">{{ resultaten|length }} {{ "resultaat" if resultaten|length == 1 else "resultaten" }} voor "{{ zoek }}"</h2>
+{% for r in resultaten %}
+<div class="kaart">
+  <span class="label {{ 'grijs' if r.soort != 'bron' }}">{{ r.soort }}</span>
+  <h3><a href="/dossiers/document/{{ r.id }}?zoek={{ zoek|urlencode }}">{{ r.titel }}</a></h3>
+  <div class="fragment">{{ r.fragment_html|safe }}</div>
+  <div class="noot">{{ r.pad }}</div>
+</div>
+{% else %}<div class="leeg">Niets gevonden.</div>{% endfor %}
+{% endif %}
+
+<h2 class="sub">Documenten ({{ tel.documenten }}, samen {{ '{:,}'.format(tel.woorden).replace(',', '.') }} woorden)</h2>
+{% if lijst %}
+<div class="tabelvak"><table class="tabel">
+  <thead><tr><th>Titel</th><th>Soort</th><th>Woorden</th><th>Toegevoegd</th></tr></thead>
+  <tbody>
+  {% for d in lijst %}
+  <tr><td><a href="/dossiers/document/{{ d.id }}">{{ d.titel }}</a>{% if d.vertrouwelijk %} <span class="label rood">vertrouwelijk</span>{% endif %}<br><span class="noot">{{ d.pad }}</span></td>
+      <td>{{ d.soort }}</td><td>{{ d.woorden }}</td><td>{{ geleden(d.toegevoegd) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}<div class="leeg">Nog geen documenten. Voeg ze bovenaan toe.</div>{% endif %}
+
+{% endblock %}

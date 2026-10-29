@@ -1,0 +1,186 @@
+{
+ "meeting": {
+  "id": 1523612,
+  "type": "meeting",
+  "attributes": [
+   {
+    "id": 1,
+    "value": "Commissie A"
+   },
+   {
+    "id": 50,
+    "value": "Raadzaal"
+   }
+  ],
+  "plannings": [
+   {
+    "start_date": "2026-10-06 19:30:00"
+   }
+  ],
+  "agenda_items": [
+   {
+    "id": 1,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "1.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Opening en mededelingen - (19.30 uur)"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 2,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "1.a.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Beëdiging burgercommissielid CDA mevr. C. Peters"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 3,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "2.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Vaststellen besluitenlijst vergadering van 1 september 2026"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 4,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "3.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Voorstel hamerstuk en vaststellen agenda"
+      }
+     ]
+    },
+    "agenda_items": [
+     {
+      "id": 41,
+      "type": "agenda_point",
+      "type_data": {
+       "heading": false,
+       "title_prefix": "3.a",
+       "attributes": [
+        {
+         "id": 1,
+         "value": "Hamerstuk: Toestemming gemeenteraad gewijzigde gemeenschappelijke regeling GGD"
+        },
+        {
+         "id": 3,
+         "value": "<p>Portefeuillehouder: wethouder Kox</p>"
+        }
+       ]
+      },
+      "agenda_items": []
+     }
+    ]
+   },
+   {
+    "id": 5,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": true,
+     "title_prefix": null,
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Adviserend"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 6,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "4.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Afwegingskader sportaccommodaties - (19.35-20.50 uur)"
+      },
+      {
+       "id": 3,
+       "value": "<p>Portefeuillehouder: wethouder Rieter</p>"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 7,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": true,
+     "title_prefix": null,
+     "attributes": [
+      {
+       "id": 1,
+       "value": "10 minuten t.b.v. evt. uitloop agendapunt en wissel commissieleden"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 8,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "5.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Fusie onderwijsgroep Oost Brabant (OGOB) - (21.00-21.30 uur)"
+      },
+      {
+       "id": 3,
+       "value": "<p>Portefeuillehouder: wethouder Kox</p>"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 9,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "6.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Sluiting"
+      }
+     ]
+    },
+    "agenda_items": []
+   }
+  ]
+ }
+}

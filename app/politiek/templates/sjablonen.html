@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Sjablonen</h1>
+<p class="uitleg">De formats van de griffie. Promonitor gebruikt ze voor elk amendement, elke motie en elke vraag. Opmaak, logo's en de noten van de griffie blijven staan.</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+
+{% for soort, naam in soorten.items() %}
+<div class="kaart">
+  <h3>{{ naam }}</h3>
+  <p class="noot">
+    {% if eigen.get(soort) %}<span class="label">Eigen versie</span> {{ eigen[soort].bestandsnaam }}, {{ datum_nl(eigen[soort].bijgewerkt) }}
+    {% else %}<span class="label grijs">Standaard</span> format van de griffie (oktober 2026){% endif %}
+  </p>
+  <p class="rij" style="flex-wrap:wrap;gap:8px">
+    <a class="knop vol" href="/sjablonen/{{ soort }}" style="flex:0 0 auto">Invullen</a>
+    <a class="knop" href="/sjablonen/{{ soort }}/voorbeeld" style="flex:0 0 auto">Voorbeeld</a>
+    <a class="knop" href="/sjablonen/{{ soort }}/leeg" style="flex:0 0 auto">Leeg format</a>
+  </p>
+  <details>
+    <summary class="noot" style="cursor:pointer">Nieuwe versie van de griffie uploaden</summary>
+    <form action="/sjablonen/{{ soort }}/vervang" method="post" enctype="multipart/form-data" class="rij" style="margin-top:8px">
+      <input type="file" name="bestand" accept=".docx" required aria-label="Word-bestand">
+      <button class="knop" type="submit" style="flex:0 0 auto">Uploaden</button>
+    </form>
+    {% if eigen.get(soort) %}
+    <form action="/sjablonen/{{ soort }}/standaard" method="post" style="margin-top:8px">
+      <button class="knop rood" type="submit">Terug naar standaard</button>
+    </form>
+    {% endif %}
+    <p class="noot">Promonitor test een nieuwe versie eerst met het voorbeeld. Lukt dat niet, dan blijft de oude staan.</p>
+  </details>
+</div>
+{% endfor %}
+{% endblock %}

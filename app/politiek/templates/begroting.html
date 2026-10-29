@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<p class="noot" style="margin:18px 0 0"><a href="/agenda">Agenda</a></p>
+<h1 class="titel">Begrotingshulp</h1>
+<p class="uitleg">Voor voorjaarsnota, begroting en jaarrekening. Kies een thema en de stukken. Claude zoekt de bedragen met bron (document en pagina) en de beloften uit het coalitieakkoord en ons programma. Promonitor rekent de verschillen zelf uit: tussen de jaren en tussen de stukken. Een nieuw stuk voeg je eerst toe bij <a href="/dossiers#toevoegen">Dossiers</a>.</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+
+<form method="post" action="/begroting" class="kaart">
+  <div class="rij">
+    <div style="flex:2 1 240px"><label for="thema">Thema</label><input id="thema" type="text" name="thema" required placeholder="Bijvoorbeeld: sport en sportaccommodaties"></div>
+    <div style="flex:3 1 300px"><label for="vraag">Vraag (optioneel)</label><input id="vraag" type="text" name="vraag" placeholder="Bijvoorbeeld: wat is er veranderd ten opzichte van vorig jaar?"></div>
+  </div>
+  <label>Stukken</label>
+  <div class="documentkeuze">
+    {% for d in docs %}<label class="keuze"><input type="checkbox" name="doc" value="{{ d.id }}" {{ 'checked' if d.financieel and loop.index <= 3 }}>
+      {{ d.titel }} <span class="noot">({{ '{:,}'.format(d.woorden or 0).replace(',', '.') }} woorden{{ ', financieel' if d.financieel }})</span></label>{% else %}
+    <p class="noot">Nog geen stukken in de kennisbank.</p>{% endfor %}
+  </div>
+  <p style="margin-top:12px"><button class="knop vol" type="submit">Analyseer</button> <span class="noot">Duurt een tot twee minuten. Kost een paar cent.</span></p>
+</form>
+
+{% if analyses %}
+<h2 class="sub">Eerdere analyses</h2>
+<ul class="lijst kaart">{% for a in analyses %}<li><a href="/begroting/{{ a.id }}">{{ a.titel }}</a> <span class="noot">{{ geleden(a.bijgewerkt) }}</span>
+  {% if a.status == 'bezig' %}<span class="label grijs">bezig</span>{% elif a.status == 'fout' %}<span class="label rood">fout</span>{% endif %}</li>{% endfor %}</ul>
+{% endif %}
+{% endblock %}

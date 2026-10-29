@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block kop %}{% if b.status == 'bezig' %}<meta http-equiv="refresh" content="8">{% endif %}{% endblock %}
+{% block inhoud %}
+<p class="noot" style="margin:18px 0 0"><a href="/begroting">Begrotingshulp</a> · thema: {{ b.thema }}</p>
+<h1 class="titel">{{ b.titel }}</h1>
+<p class="uitleg">Stukken: {{ docs|map(attribute='titel')|join('; ') }}</p>
+{% if b.status == 'bezig' %}<div class="kaart"><p><b>Claude zoekt de bedragen en beloften.</b> Deze pagina ververst vanzelf.</p></div>
+{% elif b.status == 'fout' %}<div class="kaart"><p><span class="label rood">fout</span> {{ (b.fout or '')[:300] }}</p>
+  <form method="post" action="/begroting/{{ b.id }}/opnieuw"><button class="knop vol" type="submit">Probeer opnieuw</button></form></div>
+{% else %}
+<div class="rij" style="gap:8px;margin:6px 0 14px">
+  <a class="knop vol" style="flex:0 0 auto" href="/begroting/{{ b.id }}/word">Download Word</a>
+  {% if i.vragen %}<form method="post" action="/begroting/{{ b.id }}/vragen" style="flex:0 0 auto"><button class="knop" type="submit">Maak technische vragen hiervan</button></form>{% endif %}
+  <form method="post" action="/begroting/{{ b.id }}/opnieuw" style="flex:0 0 auto"><button class="knop" type="submit">Opnieuw</button></form>
+</div>
+{% if i.toelichting %}<div class="melding"><b>Claude:</b> {{ i.toelichting }}</div>{% endif %}
+
+<h2 class="sub">Verschillen</h2>
+<p class="noot">Door Promonitor uitgerekend uit de bedragen hieronder. Vet: verschil van 10 procent of meer, of € 100.000 of meer.</p>
+{% if i.berekend %}
+<div class="tabelvak"><table class="tabel">
+  <thead><tr><th>Post</th><th>Van</th><th>Naar</th><th style="text-align:right">Verschil</th><th style="text-align:right">%</th></tr></thead>
+  <tbody>{% for r in i.berekend %}<tr style="{{ 'font-weight:600' if r.opvallend }}">
+    <td>{{ r.post }}{% if r.soort %}<br><span class="noot">{{ r.soort }}</span>{% endif %}</td>
+    <td>{{ r.van }}<br>{{ euro(r.bedrag_van) }}</td><td>{{ r.naar }}<br>{{ euro(r.bedrag_naar) }}</td>
+    <td style="text-align:right;white-space:nowrap" class="{{ 'rood-tekst' if r.verschil < 0 }}">{{ '+' if r.verschil > 0 }}{{ euro(r.verschil) }}</td>
+    <td style="text-align:right">{{ (('+' if r.procent > 0 else '') ~ r.procent|string)|replace('.', ',') ~ '%' if r.procent is not none else '' }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<div class="leeg">Geen bedragen om te vergelijken: Claude vond per post maar één bedrag. Kies meer jaren of een tweede stuk.</div>{% endif %}
+
+<h2 class="sub">Bedragen uit de stukken</h2>
+{% if i.posten %}
+<div class="tabelvak"><table class="tabel">
+  <thead><tr><th>Post</th><th>Jaar</th><th style="text-align:right">Bedrag</th><th>In het stuk</th><th>Bron</th></tr></thead>
+  <tbody>{% for p in i.posten %}{% for x in p.bedragen or [] %}<tr>
+    <td>{% if loop.first %}{{ p.post }}{% if p.programma %}<br><span class="noot">{{ p.programma }}</span>{% endif %}{% endif %}</td>
+    <td>{{ x.jaar }}{% if x.soort %} <span class="noot">{{ x.soort }}</span>{% endif %}</td>
+    <td style="text-align:right;white-space:nowrap">{{ euro(x.bedrag) }}</td>
+    <td class="noot">{{ x.bedrag_bron }} {{ x.eenheid_bron }}</td><td class="noot">{{ x.document }} {{ x.pagina }}</td></tr>{% endfor %}{% endfor %}</tbody>
+</table></div>
+<p class="noot">Controleer een bedrag altijd met de kolom "In het stuk" en de bron voordat je het gebruikt.</p>
+{% else %}<div class="leeg">Geen bedragen gevonden bij dit thema.</div>{% endif %}
+
+{% if i.beloften %}
+<h2 class="sub">Beloften</h2>
+<div class="tabelvak"><table class="tabel">
+  <thead><tr><th>Belofte</th><th>In de stukken</th><th>Toelichting</th></tr></thead>
+  <tbody>{% for x in i.beloften %}<tr><td>{{ x.belofte }}<br><span class="noot">{{ x.bron }}</span></td>
+    <td><span class="label {{ 'rood' if x.in_stukken == 'nee' else 'grijs' if x.in_stukken in ('deels', 'onduidelijk') else '' }}">{{ x.in_stukken }}</span></td>
+    <td>{{ x.toelichting }}</td></tr>{% endfor %}</tbody>
+</table></div>{% endif %}
+
+<div class="raster" style="margin-top:12px">
+  <div>{% if i.opvallend %}<h2 class="sub" style="margin-top:0">Wat opvalt</h2><ul class="kaart" style="padding-left:30px">{% for x in i.opvallend %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}</div>
+  <div>{% if i.vragen %}<h2 class="sub" style="margin-top:0">Vragen voor de raad</h2><ul class="kaart" style="padding-left:30px">{% for x in i.vragen %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}</div>
+</div>
+{% endif %}
+<form method="post" action="/begroting/{{ b.id }}/weg" style="margin-top:24px" onsubmit="return confirm('Deze analyse verwijderen?')">
+  <button class="knop rood" type="submit">Verwijder</button></form>
+{% endblock %}

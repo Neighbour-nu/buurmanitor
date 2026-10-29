@@ -46,7 +46,8 @@ def mb(n):
 def ctx(request: Request, scherm, **kw):
     kw.update(request=request, scherm=scherm, gebruiker=request.headers.get("Remote-Name")
               or request.headers.get("Remote-User") or "", auth_url=config.AUTH_URL,
-              geleden=geleden, datum_lang=datum_lang, domeinen=config.DOMEINEN, euro=euro, mb=mb)
+              geleden=geleden, datum_lang=datum_lang, domeinen=config.DOMEINEN, euro=euro, mb=mb,
+              werkruimtes=config.werkruimtes())
     return kw
 
 

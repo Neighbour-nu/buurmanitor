@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% macro dag(d) %}{{ lang(d) }}{% endmacro %}
+{% macro keuze(naam, waarde, lijst, leeg='(niemand)') %}
+<select name="{{ naam }}" aria-label="{{ naam }}" style="min-width:150px">
+  <option value="">{{ leeg }}</option>
+  {% for p in lijst %}<option value="{{ p.whaller }}" {{ 'selected' if p.whaller == waarde }}>{{ p.naam }}</option>{% endfor %}
+  {% if waarde and waarde not in lijst|map(attribute='whaller')|list %}<option value="{{ waarde }}" selected>@{{ waarde }}</option>{% endif %}
+</select>
+{% endmacro %}
+{% macro anker(p) %}p-{{ p.sleutel.replace(' ', '-')[:60] }}{% endmacro %}
+{% block inhoud %}
+<h1 class="titel">Agenda</h1>
+<p class="noot" style="margin:18px 0 0"><a href="#verdelen">Woordvoering verdelen</a> · <a href="/stemadvies">Stemadvies per raadsvergadering</a> · <a href="/begroting">Begrotingshulp</a></p>
+<p class="uitleg">De vergaderingen van de komende {{ weken }} weken uit Notubiz, met de woordvoering. Die verdeel je hier (of op het scherm <a href="/whaller">Whaller</a>); de namen gaan vanzelf mee in de Whaller-berichten. Per agendapunt het vaste stappenplan met deadlines. Een punt dat eerst in de commissie en daarna in de raad komt, houdt hetzelfde stappenplan.</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+{% if fout %}<div class="melding">{{ fout }}</div>{% endif %}
+
+<form method="get" action="/agenda" class="kaart filters">
+  <div class="rij">
+    <div><label for="wie">Agendapunten van</label>
+      <select id="wie" name="wie" onchange="this.form.submit()">
+        {% for p in personen %}<option value="{{ p.whaller }}" {{ 'selected' if wie == p.whaller }}>{{ p.naam }}{{ ' (jij)' if p.whaller == ik }}</option>{% endfor %}
+        <option value="alle" {{ 'selected' if wie == 'alle' }}>Hele fractie (alleen het overzicht)</option>
+      </select></div>
+    <div><label for="weken">Periode</label>
+      <select id="weken" name="weken" onchange="this.form.submit()">
+        {% for w in (2, 4, 6, 8, 12) %}<option value="{{ w }}" {{ 'selected' if weken == w }}>{{ w }} weken</option>{% endfor %}
+      </select></div>
+    <div style="flex:0 0 auto"><a class="knop" href="/agenda?wie={{ wie }}&weken={{ weken }}&vernieuw=1">Ververs uit Notubiz</a></div>
+  </div>
+</form>
+
+{% if wie != 'alle' %}
+<h2 class="sub">Deadlines komende week</h2>
+{% if deadlines %}
+<ul class="lijst kaart">
+  {% for d in deadlines %}<li>
+    <b class="{{ 'rood-tekst' if d.verlopen }}">{{ dag(d.datum) }}</b>{% if d.verlopen %} <span class="label rood">verlopen</span>{% endif %}:
+    {{ d.naam }} bij <a href="#{{ anker(d.punt) }}">{{ d.punt.onderwerp }}</a>
+    <span class="noot">({{ d.punt.vergadering }} {{ datum_nl(d.punt.datum) }})</span></li>{% endfor %}
+</ul>
+{% else %}<div class="leeg">Geen open deadlines in de komende week.</div>{% endif %}
+
+<h2 class="sub">Agendapunten van {{ (personen|selectattr('whaller', 'equalto', wie)|map(attribute='naam')|first) or wie }}</h2>
+{% for p in mijn %}
+<div class="kaart punt {{ 'klaar' if p.klaar }}" id="{{ anker(p) }}">
+  <p class="noot" style="margin:0">{{ p.vergadering }} · {{ dag(p.datum) }}{% if p.tijd %} · {{ p.tijd }} uur{% endif %}
+    {% if p.commissie %} · {{ p.commissie }}{% endif %}{% if p.sectie %} · {{ p.sectie }}{% endif %}</p>
+  <h3>{{ p.onderwerp }}</h3>
+  <p class="noot" style="margin:0 0 8px">{{ p.namen|join(' en ') if p.namen else 'Nog niet verdeeld' }}
+    {% if p.zit_erbij == wie %}<span class="label grijs">zit erbij</span>{% elif p.woordvoerder == wie %}<span class="label">woordvoerder</span>{% endif %}
+    {% if p.documenten %} · {{ p.documenten|length }} stuk{{ 'ken' if p.documenten|length != 1 }}:
+      {% for doc in p.documenten[:4] %}<a href="{{ doc.url }}" target="_blank" rel="noopener">{{ doc.titel[:60] }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if p.documenten|length > 4 %} en meer{% endif %}{% endif %}</p>
+  <table class="stappen">
+    {% for s in p.stappen %}{% set dl = p.deadlines.get(s) %}
+    <tr class="{{ 'gedaan' if s in p.gedaan else 'nvt' if s in p.nvt else '' }}">
+      <td class="vink">{{ '✓' if s in p.gedaan else '–' if s in p.nvt else '○' }}</td>
+      <td>{{ stap_naam[s] }}{% if s in p.hulp and s not in p.gedaan %} <span class="label grijs">concept klaar</span>{% endif %}</td>
+      <td class="noot">{% if dl %}<span class="{{ 'rood-tekst' if dl < vandaag and s not in p.gedaan and s not in p.nvt }}">{{ 'vóór ' if s in ('technisch', 'standpunt', 'bijdrage') }}{{ dag(dl) }}</span>{% endif %}</td>
+      <td class="acties">
+        {% if s == 'stukken' and p.documenten %}{% else %}
+        <form method="post" action="/agenda/stap">
+          <input type="hidden" name="onderwerp" value="{{ p.onderwerp }}"><input type="hidden" name="stap" value="{{ s }}">
+          <input type="hidden" name="wie" value="{{ wie }}"><input type="hidden" name="weken" value="{{ weken }}">
+          {% if s in p.gedaan or s in p.nvt %}<button class="knop klein" name="actie" value="open">Terug naar open</button>
+          {% else %}<button class="knop klein vol" name="actie" value="gedaan">Gedaan</button> <button class="knop klein" name="actie" value="nvt">N.v.t.</button>{% endif %}
+        </form>{% endif %}
+      </td>
+    </tr>{% endfor %}
+  </table>
+  <div class="rij" style="gap:6px;margin-top:10px;flex-wrap:wrap">
+    {% for soort, label in (('analyse', 'Analyse'), ('technische_vraag', 'Technische vragen'), ('bijdrage', 'Bijdrage'), ('amendement', 'Amendement'), ('motie', 'Motie'), ('stemverklaring', 'Stemverklaring')) %}
+      {% if p.soort == 'raad' or soort not in ('amendement', 'motie', 'stemverklaring') %}
+      <a class="knop klein" style="flex:0 0 auto" href="/bijdragen?punt={{ p.id }}&soort={{ soort }}">{{ label }}</a>{% endif %}
+    {% endfor %}
+  </div>
+  {% if p.concepten %}<p class="noot" style="margin:8px 0 0">Concepten: {% for k in p.concepten %}<a href="/concepten/{{ k.id }}">{{ k.titel[:50] }}</a>{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+  <form method="post" action="/agenda/notitie" class="rij" style="margin-top:8px;gap:6px">
+    <input type="hidden" name="onderwerp" value="{{ p.onderwerp }}"><input type="hidden" name="wie" value="{{ wie }}"><input type="hidden" name="weken" value="{{ weken }}">
+    <input type="text" name="notitie" value="{{ p.notitie }}" placeholder="Notitie, bijvoorbeeld het standpunt of wie je nog spreekt" aria-label="Notitie" style="flex:1 1 240px">
+    <button class="knop klein" type="submit" style="flex:0 0 auto">Bewaar notitie</button>
+  </form>
+</div>
+{% else %}
+<div class="leeg">Geen agendapunten toegewezen in deze periode. De woordvoering leg je vast op het scherm <a href="/whaller">Whaller</a>.</div>
+{% endfor %}
+{% endif %}
+
+<h2 class="sub" id="verdelen">Alle vergaderingen en woordvoering</h2>
+<p class="noot">Verdeel hier de woordvoering. Bij de commissie een woordvoerder en wie erbij zit, bij de raad een raadslid per bespreekstuk. Na opslaan staan de namen meteen in het Whaller-bericht. <span class="label grijs">voorstel</span> betekent: nog niet vastgelegd voor deze vergadering; opslaan legt het vast.</p>
+{% for v in vergaderingen %}
+<div class="kaart" id="v-{{ v.soort }}-{{ v.datum.isoformat() if v.datum else v.id }}">
+  <p style="margin:0"><b>{{ dag(v.start.date()) }}, {{ v.start.strftime('%H.%M') }} uur</b>
+    {% if v.alleen_leden %}<span class="label rood" title="De stukken zijn alleen te zien als je bent ingelogd in Notubiz">! alleen met inloggen</span>{% endif %}
+    {% set open_n = v.punten|rejectattr('rubriek', 'in', ['hamer', 'bijzonder'])|rejectattr('vast')|list|length %}
+    {% if open_n %}<span class="label grijs">{{ open_n }} nog vast te leggen</span>{% endif %}</p>
+  <h3 style="margin:2px 0 6px">{% if v.url %}<a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.naam }}</a>{% else %}{{ v.naam }}{% endif %}
+    {% if v.plek %}<span class="noot" style="font-weight:400">({{ v.plek }})</span>{% endif %}</h3>
+  {% if v.punten %}
+  <form method="post" action="/agenda/toewijzingen">
+    <input type="hidden" name="soort" value="{{ v.soort }}"><input type="hidden" name="datum" value="{{ v.datum.isoformat() }}">
+    <input type="hidden" name="wie" value="{{ wie }}"><input type="hidden" name="weken" value="{{ weken }}">
+    <div class="tabelvak"><table class="tabel">
+      <thead><tr><th>Agendapunt</th><th>{{ 'Woordvoerder' if v.soort == 'commissie' else 'Woordvoerder (raadslid)' }}</th>{% if v.soort == 'commissie' %}<th>Zit erbij</th>{% endif %}<th>Stappen</th></tr></thead>
+      <tbody>{% for p in v.punten %}{% set kies = v.soort == 'commissie' or p.rubriek == 'bespreek' %}<tr>
+        <td>{% if kies %}<input type="hidden" name="onderwerp_{{ loop.index }}" value="{{ p.onderwerp }}">{% endif %}{{ p.onderwerp }}
+          <br><span class="noot">{{ [p.commissie, p.sectie or (p.rubriek == 'hamer' and 'Hamerstuk') or '', p.tijd and p.tijd ~ ' uur']|select|join(' · ') }}</span>
+          {% if kies and not p.vast and (p.woordvoerder or p.voorstel_wv) %}<br><span class="label grijs" title="{{ p.voorstel }}">voorstel: {{ p.voorstel }}</span>{% elif kies and not p.woordvoerder and not p.voorstel_wv %}<br><span class="label rood">nog niemand</span>{% endif %}</td>
+        {% if kies %}
+        <td>{{ keuze('wv_' ~ loop.index, p.woordvoerder or p.voorstel_wv, personen if v.soort == 'commissie' else raadsleden) }}</td>
+        {% if v.soort == 'commissie' %}<td>{{ keuze('erbij_' ~ loop.index, p.zit_erbij, personen) }}</td>{% endif %}
+        {% else %}<td colspan="{{ 2 if v.soort == 'commissie' else 1 }}"><span class="noot">{{ 'hamerstuk' if p.rubriek == 'hamer' else 'kies je in het Whaller-bericht' }}</span></td>{% endif %}
+        <td style="white-space:nowrap">{% if p.woordvoerder %}{{ p.stappen|length - p.open|length }} van {{ p.stappen|length }}{% endif %}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    <p class="rij" style="gap:8px;margin:8px 0 0">
+      <button class="knop vol" type="submit" style="flex:0 0 auto">Opslaan en doorzetten naar Whaller</button>
+      <a class="knop" style="flex:0 0 auto" href="/whaller?week={{ v.datum.isoformat() }}#{{ v.soort }}-{{ v.datum.isoformat() }}">Bekijk het Whaller-bericht</a>
+      {% if v.soort == 'raad' %}<a class="knop" style="flex:0 0 auto" href="/stemadvies">Stemadvies</a>{% endif %}
+    </p>
+  </form>
+  {% elif v.alleen_leden %}<p class="noot">De agenda is alleen te zien als je bent ingelogd in Notubiz.</p>
+  {% elif v.soort not in ('commissie', 'raad') %}<p class="noot">Geen agendapunten voor de fractie.</p>{% endif %}
+</div>
+{% else %}
+<div class="leeg">Geen vergaderingen gevonden.</div>
+{% endfor %}
+{% if fouten %}<p class="noot">Niet gelukt: {{ fouten|join('; ') }}</p>{% endif %}
+<p class="noot">Regio (MRE, Raadstafel21 en gemeenschappelijke regelingen) komt in fase 3 op dit scherm.</p>
+{% endblock %}

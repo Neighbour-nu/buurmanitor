@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<p><a href="/dossiers{{ '?zoek=' ~ zoek|urlencode if zoek }}">&larr; Dossiers</a></p>
+<h1 class="titel" style="text-transform:none">{{ d.titel }}</h1>
+<p class="noot"><span class="label">{{ d.soort }}</span> {{ d.pad }} · {{ d.woorden }} woorden · bijgewerkt {{ geleden(d.bijgewerkt) }}{% if d.vertrouwelijk %} · <span class="label rood">vertrouwelijk</span>{% endif %}</p>
+<div class="document">{{ d.tekst }}</div>
+<form action="/dossiers/document/{{ d.id }}/weg" method="post" style="margin-top:14px" onsubmit="return confirm('Dit document uit de kennisbank halen?')">
+  <button class="knop rood" type="submit">Uit de kennisbank halen</button>
+</form>
+{% endblock %}

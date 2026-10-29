@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Fractie</h1>
+<p class="uitleg">Notulen en actielijst van de fractievergadering. Neem de vergadering op met Notta, exporteer het transcript en voeg het hier toe. Claude maakt er uitgebreide concept-notulen van, met besluiten, acties en de verdeling van de woordvoering. De agenda is het Whaller-bericht op het scherm <a href="/whaller">Whaller</a>.</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+
+<div class="raster">
+<div>
+<h2 class="sub" style="margin-top:6px">Notulen maken</h2>
+<form method="post" action="/fractie/notulen" enctype="multipart/form-data" class="kaart">
+  <div class="rij">
+    <div><label for="datum">Datum vergadering</label><input id="datum" type="date" name="datum" value="{{ vorige.isoformat() }}" required></div>
+    <div><label for="plaats">Plaats</label><input id="plaats" type="text" name="plaats" value="Huis voor de Stad"></div>
+  </div>
+  <label>Aanwezig</label>
+  <div class="vinkjes">{% for p in personen %}<label class="keuze"><input type="checkbox" name="aanwezig" value="{{ p.naam }}" checked> {{ p.naam }}</label>{% endfor %}</div>
+  <div class="rij">
+    <div><label for="voorzitter">Voorzitter</label><select id="voorzitter" name="voorzitter">
+      {% for p in personen %}<option {{ 'selected' if 'fractievoorzitter' in (p.rol or '') }}>{{ p.naam }}</option>{% endfor %}</select></div>
+    <div><label for="notulist">Notulist</label><select id="notulist" name="notulist">
+      <option>Promonitor (uit opname)</option>{% for p in personen %}<option>{{ p.naam }}</option>{% endfor %}</select></div>
+  </div>
+  <label for="bestand">Transcript uit Notta ({{ bestandtypes }})</label>
+  <input id="bestand" type="file" name="bestand" accept=".txt,.md,.docx,.srt,.vtt,.pdf">
+  <label for="tekst">Of plak de tekst</label>
+  <textarea id="tekst" name="tekst" placeholder="Plak hier het transcript, of je eigen aantekeningen."></textarea>
+  <label for="aanwijzingen">Aanwijzingen (optioneel)</label>
+  <input id="aanwijzingen" type="text" name="aanwijzingen" placeholder="Bijvoorbeeld: deel 2 begon pas na de pauze; Spreker 3 is Bert.">
+  <p style="margin-top:12px"><button class="knop vol" type="submit">Maak concept-notulen</button>
+    <span class="noot">Duurt een paar minuten bij een lange vergadering.</span></p>
+</form>
+</div>
+<div>
+<h2 class="sub" style="margin-top:6px">Vergaderingen</h2>
+<div class="kaart" style="font-size:15px">
+  <p style="margin:0 0 6px">Volgende: <b>{{ lang(volgende) }}</b>. <a href="/whaller?week={{ volgende.isoformat() }}">Agenda in Whaller</a></p>
+  <p style="margin:0 0 6px"><a href="/stemadvies">Stemadvies voor de raad</a></p>
+  {% if notulen %}<ul class="lijst">{% for n in notulen %}
+    <li><a href="/fractie/notulen/{{ n.id }}">{{ datum_nl(n.datum) }}</a>
+      {% if n.status == 'vastgesteld' %}<span class="label">vastgesteld</span>{% elif n.status == 'klaar' %}<span class="label grijs">concept</span>{% elif n.status == 'bezig' %}<span class="label grijs">bezig</span>{% else %}<span class="label rood">fout</span>{% endif %}
+      {% if n.open %}<span class="noot">{{ n.open }} open actie{{ 's' if n.open != 1 }}</span>{% endif %}</li>{% endfor %}</ul>
+  {% else %}<p class="noot">Nog geen notulen.</p>{% endif %}
+</div>
+</div>
+</div>
+
+<h2 class="sub" id="acties">Acties</h2>
+<div class="kaart rij" style="align-items:center">
+  <p style="margin:0;flex:3 1 300px">{% for k, naam in statussen %}{{ naam }}: <b>{{ per_status.get(k, 0) }}</b>{{ ' · ' if not loop.last }}{% endfor %}</p>
+  <div style="flex:0 0 auto"><a class="knop vol" href="/acties">Naar het actiebord</a></div>
+</div>
+{% endblock %}

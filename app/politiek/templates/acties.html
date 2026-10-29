@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Acties en besluiten</h1>
+<p class="uitleg">Alle actiepunten en besluiten uit de notulen van de fractievergaderingen. Sleep een actie naar een andere kolom, of gebruik de pijltjes. <a href="#besluiten">Naar de besluiten</a></p>
+
+<form method="get" action="/acties" class="kaart filters">
+  <div class="rij">
+    <div style="flex:2 1 220px"><label for="zoek">Zoeken</label><input id="zoek" type="search" name="zoek" value="{{ zoek }}" placeholder="In acties en besluiten"></div>
+    <div><label for="wie">Van wie</label><select id="wie" name="wie" onchange="this.form.submit()">
+      <option value="alle" {{ 'selected' if wie == 'alle' }}>Hele fractie</option>
+      <option value="ik" {{ 'selected' if wie == 'ik' }}>Alleen {{ voornaam or 'ik' }}</option>
+      {% for p in personen %}{% set v = p.naam.split()[0] %}{% if v != voornaam %}<option value="{{ v }}" {{ 'selected' if wie == v }}>{{ p.naam }}</option>{% endif %}{% endfor %}
+    </select></div>
+    <div><label for="afgerond">Afgerond</label><select id="afgerond" name="afgerond" onchange="this.form.submit()">
+      <option value="recent" {{ 'selected' if afgerond == 'recent' }}>Laatste 30 dagen</option>
+      <option value="alles" {{ 'selected' if afgerond == 'alles' }}>Alles</option></select></div>
+    <div style="flex:0 0 auto"><button class="knop vol" type="submit">Zoek</button></div>
+  </div>
+</form>
+
+<h2 class="sub" id="acties">Acties</h2>
+<div class="bord" id="bord">
+  {% for status, naam, kaarten in kolommen %}
+  <section class="kolom" data-status="{{ status }}" aria-label="{{ naam }}">
+    <h3>{{ naam }} <span>{{ kaarten|length }}</span></h3>
+    {% for a in kaarten %}
+    <article class="kaartje" draggable="true" data-id="{{ a.id }}">
+      <p>{{ a.actie }}</p>
+      <p class="meta">{{ [a.wie, a.wanneer]|select|join(' · ') or 'wie en wanneer onbekend' }}</p>
+      {% if a.wacht_op and status == 'wachten' %}<p class="meta"><b>Wacht op:</b> {{ a.wacht_op }}</p>{% endif %}
+      <p class="meta">{% if a.notulen_id %}<a href="/fractie/notulen/{{ a.notulen_id }}">Fractie {{ datum_nl(a.datum) }}</a>{% if a.punt %} · {{ a.punt[:50] }}{% endif %}{% else %}losse actie{% endif %}</p>
+      <div class="knoppen">
+        {% set i = statussen|map(attribute=0)|list %}{% set pos = i.index(status) %}
+        <form method="post" action="/fractie/actie/{{ a.id }}/status">{% if pos > 0 %}<input type="hidden" name="status" value="{{ i[pos - 1] }}"><input type="hidden" name="terug" value="{{ terug }}"><button class="knop klein" type="submit" title="Naar {{ statussen[pos - 1][1] }}">◀</button>{% endif %}</form>
+        <form method="post" action="/fractie/actie/{{ a.id }}/status">{% if pos < 4 %}<input type="hidden" name="status" value="{{ i[pos + 1] }}"><input type="hidden" name="terug" value="{{ terug }}"><button class="knop klein" type="submit" title="Naar {{ statussen[pos + 1][1] }}">▶</button>{% endif %}</form>
+      </div>
+      <details><summary>Bewerk</summary>
+        <form method="post" action="/fractie/actie/{{ a.id }}/wijzig">
+          <input type="hidden" name="terug" value="{{ terug }}">
+          <input type="text" name="actie" value="{{ a.actie }}" aria-label="Actie">
+          <input type="text" name="wie" value="{{ a.wie or '' }}" placeholder="Wie" aria-label="Wie">
+          <input type="text" name="wanneer" value="{{ a.wanneer or '' }}" placeholder="Wanneer" aria-label="Wanneer">
+          <input type="text" name="wacht_op" value="{{ a.wacht_op or '' }}" placeholder="Wacht op (wie of wat)" aria-label="Wacht op">
+          <div class="knoppen"><button class="knop klein vol" type="submit">Bewaar</button>
+            <button class="knop klein rood" type="submit" formaction="/fractie/actie/{{ a.id }}/weg" onclick="return confirm('Deze actie verwijderen?')">Verwijder</button></div>
+        </form>
+      </details>
+    </article>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</div>
+
+<form method="post" action="/fractie/actie" class="kaart rij" style="margin-top:12px">
+  <input type="hidden" name="terug" value="{{ terug }}">
+  <div style="flex:3 1 260px"><label for="actie">Nieuwe actie (komt bij Nieuw)</label><input id="actie" type="text" name="actie" required></div>
+  <div><label for="nwie">Wie</label><input id="nwie" type="text" name="wie" list="namen"></div>
+  <div><label for="wanneer">Wanneer</label><input id="wanneer" type="text" name="wanneer" placeholder="bijvoorbeeld vrijdag"></div>
+  <div style="flex:0 0 auto"><button class="knop" type="submit">Toevoegen</button></div>
+  <datalist id="namen">{% for p in personen %}<option value="{{ p.naam.split()[0] }}">{% endfor %}</datalist>
+</form>
+
+<h2 class="sub" id="besluiten">Besluiten</h2>
+{% if besluiten %}
+<div class="tabelvak"><table class="tabel">
+  <thead><tr><th>Vergadering</th><th>Agendapunt</th><th>Besluit</th></tr></thead>
+  <tbody>{% for b in besluiten %}<tr>
+    <td style="white-space:nowrap"><a href="/fractie/notulen/{{ b.notulen_id }}">Fractie {{ datum_nl(b.datum) }}</a>{% if not b.vastgesteld %}<br><span class="label grijs">concept</span>{% endif %}</td>
+    <td>{{ b.punt }}</td><td>{{ b.besluit }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<div class="leeg">{{ 'Geen besluiten gevonden met deze zoekterm.' if zoek else 'Nog geen besluiten. Ze komen hier vanzelf bij als je notulen maakt op het scherm Fractie.' }}</div>{% endif %}
+
+<script>
+(function () {
+  var bord = document.getElementById('bord');
+  if (!bord) return;
+  var gesleept = null;
+  bord.addEventListener('dragstart', function (e) {
+    var k = e.target.closest('.kaartje'); if (!k) return;
+    gesleept = k; k.classList.add('sleep'); e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', k.dataset.id); } catch (x) {}
+  });
+  bord.addEventListener('dragend', function () {
+    if (gesleept) gesleept.classList.remove('sleep'); gesleept = null;
+    bord.querySelectorAll('.kolom.over').forEach(function (k) { k.classList.remove('over'); });
+  });
+  bord.querySelectorAll('.kolom').forEach(function (kolom) {
+    kolom.addEventListener('dragover', function (e) { e.preventDefault(); kolom.classList.add('over'); });
+    kolom.addEventListener('dragleave', function () { kolom.classList.remove('over'); });
+    kolom.addEventListener('drop', function (e) {
+      e.preventDefault(); kolom.classList.remove('over');
+      if (!gesleept || gesleept.parentElement === kolom) return;
+      var kaart = gesleept, status = kolom.dataset.status, oud = kaart.parentElement;
+      var data = new URLSearchParams({ status: status });
+      if (status === 'wachten') {
+        var w = window.prompt('Waar of op wie wacht deze actie? (mag leeg)', '');
+        if (w) data.append('wacht_op', w);
+      }
+      kolom.appendChild(kaart);
+      fetch('/fractie/actie/' + kaart.dataset.id + '/status', {
+        method: 'POST', headers: { 'X-Promonitor': 'bord', 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: data.toString(), credentials: 'same-origin'
+      }).then(function (r) {
+        if (!r.ok) throw new Error(r.status);
+        window.location.reload();
+      }).catch(function () { oud.appendChild(kaart); alert('Verplaatsen is niet gelukt. Probeer het opnieuw.'); });
+    });
+  });
+})();
+</script>
+{% endblock %}

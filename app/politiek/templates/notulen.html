@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block kop %}{% if n.status == 'bezig' %}<meta http-equiv="refresh" content="10">{% endif %}{% endblock %}
+{% block inhoud %}
+<p class="noot" style="margin:18px 0 0"><a href="/fractie">Fractie</a> · notulen · bron: {{ n.bron_naam or 'onbekend' }}</p>
+<h1 class="titel">{{ i.titel or ('Fractievergadering ' ~ datum_nl(n.datum)) }}</h1>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+
+{% if n.status == 'bezig' %}
+<div class="kaart"><p><b>Claude schrijft de notulen.</b> Bij een lange vergadering duurt dat een paar minuten. Deze pagina ververst vanzelf.</p>
+  <p class="noot">Transcript: {{ '{:,}'.format(transcript_lengte).replace(',', '.') }} tekens.</p></div>
+{% elif n.status == 'fout' %}
+<div class="kaart"><p><span class="label rood">fout</span> Het is niet gelukt.</p><pre class="document" style="font-size:13px">{{ n.fout }}</pre>
+  <form method="post" action="/fractie/notulen/{{ n.id }}/opnieuw"><button class="knop vol" type="submit">Probeer opnieuw</button></form></div>
+{% else %}
+<div class="rij" style="gap:8px;margin:6px 0 14px">
+  <a class="knop vol" style="flex:0 0 auto" href="/fractie/notulen/{{ n.id }}/word">Download Word</a>
+  {% if n.status == 'vastgesteld' %}<span class="label" style="flex:0 0 auto;align-self:center">vastgesteld</span>
+  {% else %}<span class="label grijs" style="flex:0 0 auto;align-self:center">concept</span>{% endif %}
+</div>
+{% if i.twijfel and n.status != 'vastgesteld' %}
+<div class="kaart" style="border-left:4px solid var(--rood)"><h3>Na te gaan voor vaststelling</h3>
+  <ul style="margin:0;padding-left:22px">{% for t in i.twijfel %}<li>{{ t }}</li>{% endfor %}</ul></div>{% endif %}
+
+<div class="kaart concepttekst">
+  <table class="tabel" style="margin-bottom:10px">
+    <tr><th style="width:130px">Datum</th><td>{{ lang(n.datum) }}</td></tr>
+    {% if n.plaats %}<tr><th>Plaats</th><td>{{ n.plaats }}</td></tr>{% endif %}
+    <tr><th>Aanwezig</th><td>{{ n.aanwezig|join(', ') }}</td></tr>
+    <tr><th>Afwezig</th><td>{{ n.afwezig|join(', ') or 'niemand' }}</td></tr>
+    <tr><th>Voorzitter</th><td>{{ n.voorzitter }}</td></tr>
+    <tr><th>Notulist</th><td>{{ n.notulist }}</td></tr>
+  </table>
+  {% if i.samenvatting %}<h2>Samenvatting</h2><p>{{ i.samenvatting }}</p>{% endif %}
+  {% for p in i.punten or [] %}
+  <h2>{{ p.nummer }}. {{ p.titel }}</h2>
+  {% for alinea in (p.verslag or '').split('\n\n') %}{% if alinea.strip() %}<p>{{ alinea }}</p>{% endif %}{% endfor %}
+  {% if p.besluiten %}<p><b>Besluit{{ 'en' if p.besluiten|length > 1 }}</b></p><ul>{% for b in p.besluiten %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+  {% if p.acties %}<p><b>Acties</b></p><ul>{% for a in p.acties %}<li>{{ a.actie }}{% if a.wie or a.wanneer %} <span class="noot">({{ [a.wie, a.wanneer]|select|join(', ') }})</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% endfor %}
+  {% if i.woordvoering %}<h2>Verdeling woordvoering</h2>
+  <div class="tabelvak"><table class="tabel"><thead><tr><th>Agendapunt</th><th>Vergadering</th><th>Woordvoerder</th><th>Standpunt</th></tr></thead>
+    <tbody>{% for w in i.woordvoering %}<tr><td>{{ w.agendapunt }}</td><td>{{ w.vergadering }}</td><td>{{ w.woordvoerder }}</td><td>{{ w.standpunt }}</td></tr>{% endfor %}</tbody></table></div>
+  <form method="post" action="/fractie/notulen/{{ n.id }}/woordvoering" style="margin-top:8px">
+    <button class="knop vol" type="submit">Zet de woordvoering door naar Agenda en Whaller</button>
+    <span class="noot">Promonitor zoekt de punten op de agenda's van de komende zes weken.</span></form>{% endif %}
+</div>
+
+<h2 class="sub" id="acties">Actielijst van deze vergadering</h2>
+<p class="noot"><a href="/acties">Naar het actiebord</a></p>
+{% if acties %}
+<div class="tabelvak"><table class="tabel">
+  <thead><tr><th>Actie</th><th>Wie</th><th>Wanneer</th><th></th></tr></thead>
+  <tbody>{% for a in acties %}<tr class="{{ 'afgerond' if a.status == 'afgerond' }}">
+    <td colspan="3"><form method="post" action="/fractie/actie/{{ a.id }}/wijzig" class="rij" style="gap:6px">
+      <input type="hidden" name="terug" value="/fractie/notulen/{{ n.id }}#acties">
+      <input type="hidden" name="wacht_op" value="{{ a.wacht_op or '' }}">
+      <input type="text" name="actie" value="{{ a.actie }}" aria-label="Actie" style="flex:3 1 220px">
+      <input type="text" name="wie" value="{{ a.wie or '' }}" aria-label="Wie" style="flex:1 1 90px">
+      <input type="text" name="wanneer" value="{{ a.wanneer or '' }}" aria-label="Wanneer" style="flex:1 1 90px">
+      <button class="knop klein" type="submit" style="flex:0 0 auto">Bewaar</button></form></td>
+    <td style="white-space:nowrap">
+      <form method="post" action="/fractie/actie/{{ a.id }}/status" style="display:inline">
+        <input type="hidden" name="terug" value="/fractie/notulen/{{ n.id }}#acties">
+        <select name="status" aria-label="Status" onchange="this.form.submit()" style="width:auto;padding:3px 6px;font-size:13px">
+          {% for k, naam in statussen %}<option value="{{ k }}" {{ 'selected' if a.status == k }}>{{ naam }}</option>{% endfor %}</select></form>
+      <form method="post" action="/fractie/actie/{{ a.id }}/weg" style="display:inline" onsubmit="return confirm('Deze actie verwijderen?')">
+        <input type="hidden" name="terug" value="/fractie/notulen/{{ n.id }}#acties">
+        <button class="knop klein rood" type="submit" title="Verwijderen">×</button></form></td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<div class="leeg">Geen acties in deze notulen.</div>{% endif %}
+
+{% if n.status != 'vastgesteld' %}
+<h2 class="sub">Opnieuw of vaststellen</h2>
+<div class="kaart">
+  <form method="post" action="/fractie/notulen/{{ n.id }}/opnieuw">
+    <label for="aanwijzingen">Opnieuw laten schrijven, met aanwijzingen</label>
+    <input id="aanwijzingen" type="text" name="aanwijzingen" value="{{ n.aanwijzingen or '' }}" placeholder="Bijvoorbeeld: punt 5 korter, Spreker 2 is Sanae">
+    <p style="margin:8px 0 0"><button class="knop" type="submit">Schrijf opnieuw</button>
+      <span class="noot">Acties die je hebt verplaatst of aangepast, blijven staan.</span></p>
+  </form>
+  <form method="post" action="/fractie/notulen/{{ n.id }}/vastgesteld" style="margin-top:14px" onsubmit="return confirm('Notulen vaststellen? Het transcript wordt dan verwijderd.')">
+    <button class="knop vol" type="submit">Notulen zijn vastgesteld</button>
+    <span class="noot">Daarna wordt het transcript verwijderd; de notulen en acties blijven.</span>
+  </form>
+</div>
+{% endif %}
+{% endif %}
+
+<form method="post" action="/fractie/notulen/{{ n.id }}/weg" style="margin-top:24px" onsubmit="return confirm('Notulen en hun acties verwijderen?')">
+  <button class="knop rood" type="submit">Verwijder deze notulen</button></form>
+{% endblock %}

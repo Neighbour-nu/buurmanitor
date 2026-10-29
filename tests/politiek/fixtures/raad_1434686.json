@@ -1,0 +1,419 @@
+{
+ "meeting": {
+  "id": 1434686,
+  "type": "meeting",
+  "attributes": [
+   {
+    "id": 1,
+    "value": "Raadsvergadering"
+   },
+   {
+    "id": 50,
+    "value": "Gemeente Helmond, Huis voor de Stad, Weg o d Heuvel 35"
+   }
+  ],
+  "plannings": [
+   {
+    "start_date": "2026-10-27 19:30:00",
+    "end_date": null
+   }
+  ],
+  "agenda_items": [
+   {
+    "id": 1,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "1",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Opening"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 2,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "2",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Aanwijzen van een lid als bedoeld in artikel 19 van het Reglement van Orde van de vergaderingen en andere werkzaamheden van de raad Helmond 2024"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 3,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "3",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Vaststellen ontwerpagenda"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 4,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "4",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Vaststellen besluitenlijst raadsvergadering d.d. 23 september 2026"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 5,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "5.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Benoemen van de heer D. Eindhoven als burgercommissielid namens Helder Helmond"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 6,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "6",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Behandeling ingekomen stukken en mededelingen zoals vermeld op de bij deze agenda behorende lijst"
+      }
+     ]
+    },
+    "agenda_items": [
+     {
+      "id": 61,
+      "type": "agenda_point",
+      "type_data": {
+       "heading": false,
+       "title_prefix": "6a",
+       "attributes": [
+        {
+         "id": 1,
+         "value": "Ter kennisname"
+        }
+       ]
+      },
+      "agenda_items": []
+     },
+     {
+      "id": 62,
+      "type": "agenda_point",
+      "type_data": {
+       "heading": false,
+       "title_prefix": "6b",
+       "attributes": [
+        {
+         "id": 1,
+         "value": "Voor advies naar college"
+        }
+       ]
+      },
+      "agenda_items": []
+     },
+     {
+      "id": 63,
+      "type": "agenda_point",
+      "type_data": {
+       "heading": false,
+       "title_prefix": "6d",
+       "attributes": [
+        {
+         "id": 1,
+         "value": "Ter afdoening college/ afschrift naar de raad"
+        }
+       ]
+      },
+      "agenda_items": []
+     },
+     {
+      "id": 64,
+      "type": "agenda_point",
+      "type_data": {
+       "heading": false,
+       "title_prefix": "6e",
+       "attributes": [
+        {
+         "id": 1,
+         "value": "VNG"
+        }
+       ]
+      },
+      "agenda_items": []
+     }
+    ]
+   },
+   {
+    "id": 7,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": true,
+     "title_prefix": null,
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Hamerstukken"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 8,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "7.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Omgevingsplan 'Ensemble' behandeling"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 9,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "8.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Toestemming gemeenteraad gewijzigde gemeenschappelijke regeling GGD"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 10,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "9.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Bouwplan Baroniehof 75 appartementen"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 11,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "10.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Vaststellen Assetsheets 2027-2031"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 12,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "11.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Nota investeringsbeleid Helmond 2026"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 13,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "12.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Voornemen VRBZO deelname aan en de oprichting van de Stichting KCR2"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 14,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "13.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Verlengingsvoorstel Regionaal Veiligheidsplan Oost-Brabant 2027-2028"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 15,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "14.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Verzoek raadsadvies omgevingsvergunning Winteropvang Daklozen 2026"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 16,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": true,
+     "title_prefix": null,
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Bespreekstukken"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 17,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "15.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Afwegingskader sportaccommodaties"
+      },
+      {
+       "id": 3,
+       "value": "<p>Inspreker: Dhr. Verspaget namens korfbalvereniging OEC</p>"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 18,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "16.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Fusie onderwijsgroep Oost Brabant (OGOB)"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 19,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "17.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Participatieverordening"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 20,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "18.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Grondexploitatie Woonzorg zone Helmond Oost (Generaal Snijderstraat)"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 21,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "19.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Moties vreemd aan de orde van de dag"
+      }
+     ]
+    },
+    "agenda_items": []
+   },
+   {
+    "id": 22,
+    "type": "agenda_point",
+    "type_data": {
+     "heading": false,
+     "title_prefix": "20.",
+     "attributes": [
+      {
+       "id": 1,
+       "value": "Sluiting"
+      }
+     ]
+    },
+    "agenda_items": []
+   }
+  ]
+ }
+}

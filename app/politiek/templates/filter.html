@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Filter en bronnen</h1>
+<p class="uitleg">Hoe Promonitor het nieuws kiest en weegt. Claude geeft elk bericht een score van 0 tot 100 op basis van het profiel hieronder, jouw vaste regels en de redenen die je bij Negeer opgeeft.</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+
+<div class="tegels">
+  <div class="tegel"><b>€ {{ '%.2f'|format(kosten.vandaag|float) }}</b><span>Claude vandaag ({{ kosten.aanroepen }} keer), plafond € {{ plafond }}</span></div>
+  <div class="tegel"><b>€ {{ '%.2f'|format(kosten.maand|float) }}</b><span>Claude deze maand</span></div>
+  {% for v in verdeling %}<div class="tegel"><b>{{ v.n }}</b><span>nieuws afgelopen week: {{ v.groep }}</span></div>{% endfor %}
+</div>
+<p class="noot">Laatste keer nieuws opgehaald: {% if taak %}{{ geleden(taak.laatst) }}{% if taak.resultaat %} ({{ taak.resultaat }}){% endif %}{% else %}nog niet{% endif %}. Het dagplafond pas je aan bij <a href="/instellingen">Instellingen</a>.</p>
+
+<form method="post" action="/filter/teksten" class="kaart">
+  <h3>Profiel</h3>
+  <p class="noot">Wie PRO Helmond is, waar je aan werkt en welke dossiers lopen. Hoe beter dit klopt, hoe beter de scores.</p>
+  <textarea name="profiel" rows="10" aria-label="Profiel">{{ profiel }}</textarea>
+  <h3 style="margin-top:14px">Vaste regels</h3>
+  <p class="noot">Eén regel per regel, in gewone taal. Bijvoorbeeld: "Verkeersongelukken zonder beleidskant zijn niet relevant" of "Alles over pleegzorg in de regio minstens 70".</p>
+  <textarea name="regels" rows="5" aria-label="Vaste regels">{{ regels }}</textarea>
+  <p><button class="knop vol" type="submit">Opslaan</button></p>
+</form>
+
+<h2 class="sub" id="redenen">Geleerd van Negeer</h2>
+{% if redenen %}
+<div class="tabelvak"><table class="tabel">
+  <thead><tr><th>Bericht</th><th>Jouw reden</th><th></th></tr></thead>
+  <tbody>{% for r in redenen %}<tr><td>{{ r.titel }}</td><td>{{ r.negeer_reden }}</td>
+    <td><form method="post" action="/filter/reden/{{ r.id }}/weg"><button class="knop" type="submit" title="Deze reden niet meer gebruiken">Vergeet</button></form></td></tr>{% endfor %}</tbody>
+</table></div>
+<p class="noot">De laatste veertig redenen gaan mee bij het wegen.</p>
+{% else %}<div class="leeg">Nog geen redenen. Vul bij Negeer in de Inbox in waarom een bericht niet relevant is.</div>{% endif %}
+
+<h2 class="sub" id="bronnen">Bronnen</h2>
+<div class="tabelvak"><table class="tabel">
+  <thead><tr><th>Bron</th><th>Soort</th><th>Laatste keer</th><th></th></tr></thead>
+  <tbody>
+  {% for b in bronnen %}
+  <tr style="{{ 'opacity:.55' if not b.actief }}">
+    <td><b>{{ b.naam }}</b><br><span class="noot" style="word-break:break-all">{{ b.url }}{% if b.feed_url and b.feed_url != b.url %}<br>feed: {{ b.feed_url }}{% endif %}</span></td>
+    <td>{{ {'feed': 'feed', 'site': 'website', 'google': 'Google News'}[b.soort] }}</td>
+    <td>{% if b.fout %}<span class="label rood">werkt niet</span><br><span class="noot">{{ b.fout }}</span>{% elif b.laatst %}{{ geleden(b.laatst) }}<br><span class="noot">{{ b.status }}</span>{% else %}<span class="noot">nog niet</span>{% endif %}</td>
+    <td class="rij" style="gap:6px;flex-wrap:nowrap">
+      <form method="post" action="/filter/bron"><input type="hidden" name="id" value="{{ b.id }}"><input type="hidden" name="actie" value="{{ 'uit' if b.actief else 'aan' }}"><button class="knop" type="submit">{{ 'Zet uit' if b.actief else 'Zet aan' }}</button></form>
+      <form method="post" action="/filter/bron"><input type="hidden" name="id" value="{{ b.id }}"><input type="hidden" name="actie" value="weg"><button class="knop rood" type="submit">Verwijder</button></form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+<form method="post" action="/filter/bron" class="kaart" style="margin-top:12px">
+  <input type="hidden" name="actie" value="nieuw">
+  <h3>Bron toevoegen</h3>
+  <div class="rij">
+    <div><label for="bnaam">Naam</label><input id="bnaam" type="text" name="naam" required placeholder="Bijvoorbeeld: Peelbelang"></div>
+    <div><label for="bsoort">Soort</label><select id="bsoort" name="soort">
+      <option value="site">Website (Promonitor zoekt de feed)</option><option value="feed">RSS- of Atom-feed</option><option value="google">Google News-zoekopdracht</option></select></div>
+  </div>
+  <label for="burl">Adres of zoekopdracht</label><input id="burl" type="text" name="url" required placeholder="https://... of bijvoorbeeld: Helmond &quot;daklozenopvang&quot;">
+  <p class="noot">Bij Google News werken OR, aanhalingstekens en site:. Promonitor zoekt standaard in de afgelopen drie dagen.</p>
+  <p><button class="knop vol" type="submit">Toevoegen</button></p>
+</form>
+{% endblock %}

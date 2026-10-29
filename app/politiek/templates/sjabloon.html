@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<p class="noot"><a href="/sjablonen">Sjablonen</a></p>
+<h1 class="titel">{{ naam }}</h1>
+<p class="uitleg">Vul in wat je hebt; lege velden blijven leeg in het format. Je krijgt een Word-bestand in het format van de griffie. {% if not voorbeeld %}<a href="?voorbeeld=1">Vul met een voorbeeld</a>{% endif %}</p>
+<form method="post" class="kaart">
+{% for naam_veld, label, aard in velden %}
+  <label for="{{ naam_veld }}">{{ label }}</label>
+  {% set waarde = voorbeeld.get(naam_veld, 'Martijn Buurman' if naam_veld == 'indieners' else '') %}
+  {% if aard == 'regels' %}
+    <textarea id="{{ naam_veld }}" name="{{ naam_veld }}" rows="{{ 2 if naam_veld == 'indieners' else 5 }}">{{ waarde|join('\n') if waarde is not string else waarde }}</textarea>
+  {% elif aard is not string %}
+    <select id="{{ naam_veld }}" name="{{ naam_veld }}">{% for k, v in aard[1] %}<option value="{{ k }}" {{ 'selected' if waarde == k }}>{{ v }}</option>{% endfor %}</select>
+  {% else %}
+    <input id="{{ naam_veld }}" type="text" name="{{ naam_veld }}" value="{{ waarde }}">
+  {% endif %}
+{% endfor %}
+  <p><button class="knop vol" type="submit">Maak Word-bestand</button></p>
+</form>
+{% endblock %}

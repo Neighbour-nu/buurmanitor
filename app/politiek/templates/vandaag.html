@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<div class="tegels">
+  <a class="tegel {{ 'let' if inbox.pro }}" href="/inbox"><b>{{ inbox.nieuw }}</b><span>nieuwe raadsstukken{% if inbox.pro %}, {{ inbox.pro }} over PRO{% endif %}</span></a>
+  <a class="tegel {{ 'let' if vragen.laat }}" href="/vragen"><b>{{ vragen.open }}</b><span>raadsvragen van PRO wachten op antwoord{% if vragen.laat %}, {{ vragen.laat }} over de termijn{% endif %}</span></a>
+  <a class="tegel" href="/whaller"><b>{{ komend|selectattr('soort', 'in', ['raad', 'commissie'])|list|length }}</b><span>commissie- en raadsvergaderingen komende twee weken</span></a>
+  <a class="tegel" href="/dossiers"><b>{{ tel.documenten }}</b><span>documenten in de kennisbank</span></a>
+  <a class="tegel" href="/dossiers?soort=bron"><b>{{ tel.bronnen }}</b><span>bronnen</span></a>
+  <a class="tegel" href="/dossiers?soort=bijdrage"><b>{{ tel.bijdragen }}</b><span>eigen bijdragen</span></a>
+  <a class="tegel" href="/instellingen#personen"><b>{{ personen }}</b><span>personen in fractie en steunfractie</span></a>
+  <a class="tegel {{ 'let' if links_leeg }}" href="/instellingen"><b>{{ links_leeg }}</b><span>vaste Whaller-links nog leeg</span></a>
+</div>
+
+<h1 class="titel">Vandaag in Helmond</h1>
+<p class="uitleg">Het belangrijkste nieuws van de afgelopen 24 uur, nieuwe raadsinformatie en de vergaderingen van de komende twee weken. <a href="/briefing">Bekijk de ochtendbriefing</a>.</p>
+
+<div class="raster">
+  <div>
+    <div class="kaart">
+      <h3>Belangrijkste nieuws</h3>
+      {% if nieuws_top %}<ul class="lijst">{% for r in nieuws_top %}
+        <li><span class="label {{ 'rood' if r.score >= 80 }}">{{ r.score }}</span> <a href="{{ r.document_url }}" target="_blank" rel="noopener">{{ r.titel }}</a> <span class="noot">({{ r.bronnaam }})</span>
+          {% if r.reden %}<br><span class="noot"><i>{{ r.reden }}</i></span>{% endif %}</li>{% endfor %}</ul>
+        <p><a href="/inbox?soort=nieuws">Al het nieuws</a></p>
+      {% else %}<p class="noot">Nog geen nieuws met score 60 of hoger van de afgelopen 24 uur. <a href="/inbox?soort=nieuws&drempel=0">Bekijk al het nieuws</a>.</p>{% endif %}
+    </div>
+    <div class="kaart">
+      <h3>Nieuw in de raadsinformatie</h3>
+      {% if recent %}<ul class="lijst">{% for r in recent %}
+        <li>{% if r.soort == 'besloten' %}<span class="label rood">!</span> {% endif %}{% if r.pro %}<span class="label">PRO</span> {% endif %}<span class="label {{ 'rood' if r.soort in ('raadsvoorstel', 'rib') else 'grijs' }}">{{ soorten.get(r.soort, r.soort) }}</span>
+          {% if r.document_url %}<a href="{{ r.document_url }}" target="_blank" rel="noopener">{{ r.titel }}</a>{% else %}{{ r.titel }}{% endif %}
+          {% if r.context %}<br><span class="noot">{{ r.context[:160] }}</span>{% endif %}</li>{% endfor %}</ul>
+        <p><a href="/inbox">Alles in de Inbox</a></p>
+      {% else %}<p class="noot">Niets nieuws. <a href="/inbox?alles=1">Bekijk de Inbox</a>.</p>{% endif %}
+    </div>
+    <div class="kaart">
+      <h3>Komende twee weken</h3>
+      {% if komend %}<ul class="lijst">{% for v in komend %}
+        <li><b>{{ lang(v.start.date()) }}, {{ v.start.strftime('%H.%M') }} uur</b>: <a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.naam }}</a>{% if v.plek %} <span class="noot">({{ v.plek }})</span>{% endif %}{% if v.alleen_leden %} <span class="label rood" title="De stukken zijn alleen te zien als je bent ingelogd in Notubiz">! alleen met inloggen</span>{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="noot">Geen vergaderingen gevonden, of Notubiz is nu niet bereikbaar.</p>{% endif %}
+    </div>
+    <div class="kaart">
+      <h3>Mijn deadlines</h3>
+      {% if deadlines %}<ul class="lijst">{% for d in deadlines %}
+        <li><b class="{{ 'rood-tekst' if d.verlopen }}">{{ lang(d.datum) }}</b>{% if d.verlopen %} <span class="label rood">verlopen</span>{% endif %}: {{ d.naam }} bij <a href="/agenda#p-{{ d.punt.sleutel.replace(' ', '-')[:60] }}">{{ d.punt.onderwerp }}</a></li>{% endfor %}</ul>
+      {% else %}<p class="noot">Geen open deadlines in de komende week. <a href="/agenda">Naar de Agenda</a></p>{% endif %}
+      {% if mijn_acties %}<h3 style="margin-top:14px">Mijn acties uit de fractie</h3>
+      <ul class="lijst">{% for a in mijn_acties %}<li>{{ a.actie }}{% if a.wanneer %} <span class="noot">({{ a.wanneer }})</span>{% endif %}</li>{% endfor %}</ul>
+      <p class="noot"><a href="/fractie?wie=ik#acties">Alle acties</a></p>{% endif %}
+    </div>
+    <div class="kaart">
+      <h3>Zoek in de kennisbank</h3>
+      <form action="/dossiers" method="get" class="rij">
+        <div><input type="search" name="zoek" placeholder="Bijvoorbeeld: deprivatisering sportaccommodaties" aria-label="Zoekterm"></div>
+        <div style="flex:0 0 auto"><button class="knop vol" type="submit">Zoek</button></div>
+      </form>
+      <p class="noot">Zoekt in programma's, coalitieakkoord, begroting, beleidsnota's en eerdere bijdragen.</p>
+    </div>
+    {% if tel.documenten == 0 %}
+    <div class="kaart">
+      <h3><span class="label rood">Te doen</span> Kerndocumenten inlezen</h3>
+      <p>De kennisbank is nog leeg. Ga naar <a href="/dossiers">Dossiers</a> en upload het zip-bestand met de kerndocumenten uit het project Politiek.</p>
+    </div>
+    {% endif %}
+    {% if links_leeg %}
+    <div class="kaart">
+      <h3><span class="label rood">Te doen</span> Vaste Whaller-links invullen</h3>
+      <p>Voor de vaste Whaller-berichten zijn een paar vaste links nodig. Vul ze in bij <a href="/instellingen">Instellingen</a>.</p>
+    </div>
+    {% endif %}
+  </div>
+  <div>
+    <div class="kaart">
+      <h2 class="sub" style="margin-top:0">Bouwplan</h2>
+      <ul class="lijst">
+      {% for nr, naam, wat, status in fasen %}
+        <li class="fase"><b>{{ nr }}</b><div><strong>{{ naam }}</strong> {% if status == 'bezig' %}<span class="label">bezig</span>{% elif status == 'klaar' %}<span class="label grijs">klaar</span>{% endif %}<br><span class="noot">{{ wat }}</span></div></li>
+      {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

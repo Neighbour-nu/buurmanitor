@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<title>Politiek | {{ (pagina or 'pagina')|capitalize }} · Buurmanitor</title>
+<link rel="stylesheet" href="/static/style.css?v=14">
+{% block kop %}{% endblock %}
+</head>
+<body>
+<header class="kop">
+  <a class="merk" href="https://{{ portal_host }}/" aria-label="Buurmanitor, naar Vandaag">
+    <img src="/static/logo.svg" alt="" width="40" height="40">
+    <span class="naam">BUURMANITOR</span>
+  </a>
+  <a class="werkruimte-naam" href="/" title="Werkruimte Politiek, naar Vandaag in Politiek" style="text-decoration:none">Politiek</a>
+  <nav class="menu" aria-label="Menu Politiek">
+    {% for sleutel, pad, label in menu %}<a href="{{ pad }}" class="{{ 'actief' if pagina == sleutel }}">{{ label }}</a>{% endfor %}
+    <span class="scheiding" aria-hidden="true"></span>
+    <a class="terug" href="https://{{ portal_host }}/">Buurmanitor</a>
+  </nav>
+  {% if gebruiker %}<div class="wie">{{ gebruiker }}</div>{% endif %}
+</header>
+<main class="inhoud">
+{% block inhoud %}{% endblock %}
+</main>
+<footer class="voet">
+  <a href="/instellingen">Instellingen</a>
+  <a href="/sjablonen">Sjablonen</a>
+  <a href="/filter">Filter en bronnen</a>
+  <a href="/briefing">Briefing</a>
+  <a href="{{ auth_url }}/logout">Uitloggen</a>
+</footer>
+</body>
+</html>

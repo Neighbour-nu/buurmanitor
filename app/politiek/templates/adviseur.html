@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Adviseur</h1>
+<p class="uitleg">Spar met Claude over strategie, proces of een lastige keuze. Kies een rol. De adviseur kent het profiel van PRO Helmond, de agenda van de komende weken, je Inbox en de kennisbank. Gesprekken worden bewaard.</p>
+
+<form method="post" action="/adviseur" class="kaart">
+  <label for="rol">Rol</label>
+  <select id="rol" name="rol">{% for k, (naam, uitleg) in rollen.items() %}<option value="{{ k }}" title="{{ uitleg }}">{{ naam }}</option>{% endfor %}</select>
+  <ul class="noot" style="margin:6px 0 0;padding-left:20px">{% for k, (naam, uitleg) in rollen.items() %}<li><b>{{ naam }}:</b> {{ uitleg.split('. ')[0] }}.</li>{% endfor %}</ul>
+  <label for="vraag">Je vraag</label>
+  <textarea id="vraag" name="vraag" required placeholder="Bijvoorbeeld: hoe krijgen we de coalitie mee in ons amendement over betaalbaar sporten?"></textarea>
+  <div><label class="keuze"><input type="checkbox" name="vertrouwelijk" value="1"> Ook vertrouwelijke stukken uit de kennisbank gebruiken (alleen als achtergrond; de adviseur citeert ze niet)</label></div>
+  <p style="margin-top:10px"><button class="knop vol" type="submit">Begin gesprek</button></p>
+</form>
+
+<h2 class="sub">Gesprekken</h2>
+{% if gesprekken %}
+<ul class="lijst kaart">{% for g in gesprekken %}
+  <li><a href="/adviseur/{{ g.id }}">{{ g.titel }}</a>
+    <span class="noot">{{ rollen.get(g.rol, rollen['strateeg'])[0] }} · {{ g.aantal }} bericht{{ 'en' if g.aantal != 1 }} · {{ geleden(g.bijgewerkt) }}</span>
+    {% if g.status == 'bezig' %}<span class="label grijs">bezig</span>{% elif g.status == 'fout' %}<span class="label rood">fout</span>{% endif %}</li>
+{% endfor %}</ul>
+{% else %}<div class="leeg">Nog geen gesprekken.</div>{% endif %}
+{% endblock %}

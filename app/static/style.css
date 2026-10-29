@@ -1,58 +1,125 @@
+/* Buurmanitor: de strakke huisstijl van Promonitor (Barlow, Barlow Condensed), in blauw.
+   Blauw #2563B8 voor vlakken, donkerblauw #14427E voor tekst op wit (voldoende contrast). Rood alleen voor wat aandacht vraagt. */
+@font-face { font-family: Barlow; font-weight: 400; src: url(fonts/barlow-latin-400-normal.woff2) format("woff2"); font-display: swap; }
+@font-face { font-family: Barlow; font-weight: 500; src: url(fonts/barlow-latin-500-normal.woff2) format("woff2"); font-display: swap; }
+@font-face { font-family: Barlow; font-weight: 600; src: url(fonts/barlow-latin-600-normal.woff2) format("woff2"); font-display: swap; }
+@font-face { font-family: "Barlow Condensed"; font-weight: 500; src: url(fonts/BarlowCondensed-Medium.woff) format("woff"); font-display: swap; }
+@font-face { font-family: "Barlow Condensed"; font-weight: 600; src: url(fonts/BarlowCondensed-SemiBold.woff) format("woff"); font-display: swap; }
+
 :root {
-  --inkt: #1f2a37; --stil: #6b7280; --lijn: #cbd5e1; --vlak: #f8fafc; --wit: #fff; --accent: #1e3a5f;
-  --politiek: #c2410c; --prive: #15803d; --zerohero: #1d4ed8; --fbim: #7c3aed; --upperspire: #0f766e;
-  --rood: #be123c; --oranje: #b45309; --groen: #15803d;
+  --blauw: #2563B8;
+  --blauwdonker: #14427E;
+  --ijs: #E3ECF8;
+  --rood: #D32F2F;
+  --rooddonker: #B71C1C;
+  --rozig: #FDE4E4;
+  --oranje: #B45309;
+  --inkt: #1A1A1A;
+  --zacht: #5C5C5C;
+  --lijn: #D5E0EE;
+  --wit: #FFFFFF;
+  --achter: #F5F8FC;
+  --kop: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --politiek: #C2410C; --prive: #15803D; --zerohero: #1D4ED8; --fbim: #7C3AED; --upperspire: #0F766E;
 }
 * { box-sizing: border-box; }
-body { margin: 0; font: 16px/1.5 -apple-system, "Segoe UI", Inter, Roboto, sans-serif; color: var(--inkt); background: var(--vlak); }
-a { color: var(--accent); }
-main { max-width: 1200px; margin: 0 auto; padding: 16px; }
-h1 { font-size: 1.6rem; margin: .4em 0 .2em; }
-h2 { font-size: 1.05rem; margin: 0 0 .6em; display: flex; justify-content: space-between; align-items: baseline; }
-.balk { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; padding: 10px 16px; background: var(--accent); color: #fff; }
-.balk a { color: #fff; text-decoration: none; }
-.merk { font-weight: 700; font-size: 1.1rem; }
-.balk nav { display: flex; flex-wrap: wrap; gap: 4px 16px; flex: 1; }
-.balk nav a { opacity: .8; }
-.balk nav a.actief { opacity: 1; border-bottom: 2px solid #fff; }
-.wie { font-size: .9rem; opacity: .85; }
-.teller { background: var(--rood); border-radius: 10px; padding: 0 6px; font-size: .75rem; }
-.banner { padding: 10px 16px; color: #fff; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--achter); color: var(--inkt); font: 16px/1.5 Barlow, "Helvetica Neue", Arial, sans-serif; }
+a { color: var(--blauwdonker); }
+a:hover { color: var(--blauw); }
+:focus-visible { outline: 3px solid var(--blauw); outline-offset: 2px; }
+
+/* kop */
+.kop { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+       padding: 10px 24px; background: var(--wit); border-bottom: 3px solid var(--blauw); }
+.merk { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.merk img { height: 40px; width: 40px; display: block; }
+.naam { font-family: var(--kop); font-weight: 600; font-size: 26px; letter-spacing: .03em; color: var(--blauwdonker); }
+.werkruimte-naam { font-family: var(--kop); font-weight: 600; font-size: 15px; text-transform: uppercase; color: var(--wit);
+                   background: var(--blauw); border-radius: 3px; padding: 1px 7px; margin-left: 2px; }
+.menu { display: flex; gap: 2px; flex-wrap: wrap; align-items: center; }
+.menu a { font-family: var(--kop); font-weight: 600; font-size: 16px; text-transform: uppercase; letter-spacing: .02em;
+          text-decoration: none; padding: 5px 8px; border-radius: 4px; color: var(--zacht); }
+.menu a.actief { background: var(--blauw); color: var(--wit); }
+.menu a:not(.actief):hover { background: var(--ijs); color: var(--blauwdonker); }
+.menu .scheiding { width: 1px; height: 22px; background: var(--lijn); margin: 0 6px; }
+.teller { background: var(--rood); color: var(--wit); border-radius: 999px; padding: 0 6px; font-size: 12px; margin-left: 3px; }
+.wie { margin-left: auto; color: var(--zacht); font-size: 14px; }
+.wie a { color: var(--zacht); }
+
+.banner { padding: 9px 24px; color: var(--wit); font-weight: 500; }
 .banner.urgent { background: var(--rood); }
 .banner.belangrijk { background: var(--oranje); }
-.banner a { color: #fff; }
+.banner a { color: var(--wit); }
+
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 56px; }
+h1, .titel { font-family: var(--kop); font-weight: 600; font-size: 36px; text-transform: uppercase; letter-spacing: .02em; margin: 22px 0 2px; }
+h1 .noot { font-family: Barlow, sans-serif; text-transform: none; font-size: 16px; font-weight: 400; letter-spacing: 0; }
+h2, .sub { font-family: var(--kop); font-weight: 600; text-transform: uppercase; font-size: 20px; color: var(--blauwdonker);
+           margin: 0 0 10px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.klein { font-family: Barlow, sans-serif; text-transform: none; font-size: 13px; font-weight: 400; }
+.uitleg, .iris-regel, .motto { color: var(--zacht); margin: 0 0 16px; max-width: 760px; }
+.motto { font-style: italic; }
+.noot { color: var(--zacht); font-size: 14px; }
+
 .kopregel { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: end; }
-.iris-regel { color: var(--stil); margin: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { color: #fff; border-radius: 14px; padding: 2px 12px; font-size: .85rem; font-weight: 600; }
+.chip { font-family: var(--kop); font-weight: 600; font-size: 14px; text-transform: uppercase; letter-spacing: .02em;
+        color: var(--wit); border-radius: 3px; padding: 2px 9px; }
 .chip.politiek { background: var(--politiek); } .chip.prive { background: var(--prive); } .chip.zerohero { background: var(--zerohero); }
 .chip.fbim { background: var(--fbim); } .chip.upperspire { background: var(--upperspire); }
-.raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
+
+/* kaarten en raster */
+.raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 16px; }
 .gesprek-raster { display: grid; grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr); gap: 16px; }
-@media (max-width: 760px) { .gesprek-raster { grid-template-columns: 1fr; } }
-.kaart { background: var(--wit); border: 1px solid var(--lijn); border-radius: 10px; padding: 16px; }
+@media (max-width: 760px) { .gesprek-raster { grid-template-columns: 1fr; } .kop { padding: 10px 16px; } .wie { margin-left: 0; } }
+.kaart { background: var(--wit); border: 1px solid var(--lijn); border-radius: 6px; padding: 14px 16px; margin-bottom: 12px; }
+
+/* meldingen en lijsten */
 .item { border-left: 4px solid var(--lijn); padding: 6px 10px; margin: 6px 0; background: var(--wit); }
-.item.urgent { border-color: var(--rood); background: #fff1f2; }
-.item.belangrijk { border-color: var(--oranje); }
+.item.urgent { border-left-color: var(--rood); background: #FFF6F6; }
+.item.belangrijk { border-left-color: var(--oranje); }
 .item.gelezen { opacity: .55; }
-.tegel { display: flex; justify-content: space-between; padding: 10px 12px; margin: 6px 0; border-radius: 8px; color: #fff; text-decoration: none; }
-.tegel.politiek { background: var(--politiek); } .tegel.zerohero { background: var(--zerohero); }
-.tegel span { opacity: .85; }
-.persoon { padding: 4px 0; }
-.noot { color: var(--stil); font-size: .88rem; }
-.klein { font-size: .8rem; font-weight: 400; }
-.label { display: inline-block; font-size: .75rem; padding: 0 8px; border-radius: 10px; background: #e5e7eb; color: var(--inkt); }
-.label.groen { background: #dcfce7; color: var(--groen); } .label.rood { background: #ffe4e6; color: var(--rood); }
-.knop { font: inherit; padding: 6px 14px; border: 1px solid var(--accent); background: var(--wit); color: var(--accent); border-radius: 8px; cursor: pointer; }
-.knop.vol { background: var(--accent); color: #fff; }
-.knop.klein { padding: 1px 8px; font-size: .8rem; }
+.persoon { padding: 5px 0; border-bottom: 1px solid var(--lijn); }
+.persoon:last-child { border-bottom: 0; }
+
+/* werkruimtes */
+.tegel { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 14px; margin: 8px 0; border-radius: 6px;
+         background: var(--wit); border: 1px solid var(--lijn); border-top: 4px solid var(--blauw); color: var(--inkt); text-decoration: none; }
+.tegel b { font-family: var(--kop); font-weight: 600; font-size: 24px; text-transform: uppercase; }
+.tegel span { color: var(--zacht); font-size: 14px; }
+.tegel.politiek { border-top-color: var(--politiek); } .tegel.zerohero { border-top-color: var(--zerohero); }
+.tegel:hover { background: var(--ijs); }
+
+.label { display: inline-block; font-family: var(--kop); font-weight: 600; font-size: 13px; text-transform: uppercase;
+         padding: 1px 7px; border-radius: 3px; background: var(--ijs); color: var(--blauwdonker); }
+.label.groen { background: #DFF3E4; color: #1B6B33; }
+.label.rood { background: var(--rozig); color: var(--rooddonker); }
+
+/* formulieren en knoppen */
+textarea, input[type=text], select { width: 100%; padding: 8px 10px; border: 1px solid #BCD0EA; border-radius: 4px; font: inherit; background: var(--wit); }
+textarea { min-height: 110px; margin-top: 10px; }
+.knop { display: inline-block; font-family: var(--kop); font-weight: 600; font-size: 15px; text-transform: uppercase; letter-spacing: .03em;
+        border: 1px solid var(--blauw); color: var(--blauwdonker); background: var(--wit); padding: 6px 12px; border-radius: 4px;
+        cursor: pointer; text-decoration: none; }
+.knop:hover { background: var(--ijs); }
+.knop.vol { background: var(--blauw); color: var(--wit); }
+.knop.vol:hover { background: var(--blauwdonker); }
+.knop.klein { font-size: 13px; padding: 2px 8px; }
 form.inline { display: inline; margin-left: 6px; }
-textarea { width: 100%; min-height: 90px; font: inherit; padding: 8px; border: 1px solid var(--lijn); border-radius: 8px; margin-top: 10px; }
-.bericht { margin: 10px 0; padding: 10px 12px; border-radius: 8px; }
-.bericht.user { background: #eef2f7; }
-.bericht.assistant { background: #fff7ed; }
+
+/* gesprekken */
+.bericht { border: 1px solid var(--lijn); border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; background: var(--wit); }
+.bericht.user { background: var(--ijs); margin-left: 12%; }
+.bericht.assistant { margin-right: 6%; border-left: 4px solid var(--blauw); }
 .bericht .tekst { white-space: pre-wrap; }
-.motto { color: var(--stil); font-style: italic; margin-top: 0; }
-.meter { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
-.meter span { display: block; height: 100%; background: var(--accent); }
-code { background: #eef2f7; padding: 1px 4px; border-radius: 4px; }
+@media (max-width: 760px) { .bericht.user, .bericht.assistant { margin-left: 0; margin-right: 0; } }
+
+/* meters */
+.meter { height: 8px; background: var(--ijs); border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+.meter span { display: block; height: 100%; background: var(--blauw); }
+code { background: var(--ijs); padding: 1px 4px; border-radius: 3px; }
+
+.voet { max-width: 1100px; margin: 0 auto; padding: 16px; display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--zacht);
+        font-size: 14px; border-top: 1px solid var(--lijn); }
+.voet a { color: var(--zacht); }

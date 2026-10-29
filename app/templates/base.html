@@ -4,22 +4,32 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block titel %}Buurmanitor{% endblock %}</title>
-<link rel="stylesheet" href="/static/style.css">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/style.css?v=2">
 {% block kop %}{% endblock %}
 </head>
 <body>
-<header class="balk">
-  <a class="merk" href="/">Buurmanitor</a>
-  <nav>
+<header class="kop">
+  <a class="merk" href="/" aria-label="Buurmanitor, naar Vandaag">
+    <img src="/static/logo.svg" alt="" width="40" height="40">
+    <span class="naam">BUURMANITOR</span>
+  </a>
+  <nav class="menu" aria-label="Hoofdmenu">
     <a href="/" class="{{ 'actief' if scherm == 'vandaag' }}">Vandaag</a>
     <a href="/iris" class="{{ 'actief' if scherm == 'iris' }}">Iris</a>
-    <a href="/meldingen" class="{{ 'actief' if scherm == 'meldingen' }}">Meldingen <span id="teller" class="teller" hidden></span></a>
-    <a href="/gezondheid" class="{{ 'actief' if scherm == 'gezondheid' }}">Gezondheid</a>
+    <a href="/meldingen" class="{{ 'actief' if scherm == 'meldingen' }}">Meldingen<span id="teller" class="teller" hidden></span></a>
+    <span class="scheiding" aria-hidden="true"></span>
+    {% for w in werkruimtes %}<a href="{{ w.url }}">{{ w.naam }}</a>{% endfor %}
   </nav>
-  <span class="wie">{{ gebruiker }} · <a href="{{ auth_url }}/logout">uitloggen</a></span>
+  <div class="wie">{{ gebruiker }}</div>
 </header>
 <div id="banner" class="banner" hidden></div>
 <main>{% block inhoud %}{% endblock %}</main>
+<footer class="voet">
+  <a href="/gezondheid">Gezondheid</a>
+  <a href="{{ auth_url }}/logout">Uitloggen</a>
+</footer>
 <script>
 // Meldingen: elke 30 seconden kijken of er iets nieuws is. Urgent en belangrijk verschijnen als banner en,
 // als je dat toestaat, als systeemmelding op je scherm (ook als dit tabblad op de achtergrond staat).

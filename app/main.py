@@ -6,17 +6,22 @@ Iris. Promonitor (politiek) en de Doellijn (ZEROHERO) volgen in fase 1 en 2 als 
 import asyncio
 import datetime as dt
 import os
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import iris, personas
-from .kern import claude, config, db, gezondheid, meldingen, planner, web
+from .kern import claude, config, db, gezondheid, meldingen, planner, prefix, web
 from .kern.db import q, q1, uitvoeren
 from .kern.web import controleer_herkomst, ctx, templates
 from .schema import MIGRATIES
+
+# Werkruimte Politiek (Promonitor, één op één) onder /politiek, zodra de database is ingesteld.
+politiek = None
+if config.POLITIEK_ACTIEF:
+    from .politiek import main as politiek  # noqa: E402  pylint: disable=wrong-import-position
 
 
 @planner.taak("gezondheid", elke=dt.timedelta(minutes=15))
@@ -31,7 +36,11 @@ async def lifespan(_app):
         db.migreer(c, MIGRATIES)
         planner.opruimen(c)
     lus = asyncio.create_task(planner.lus(db.pool)) if config.PLANNER_AAN else None
-    yield
+    async with AsyncExitStack() as werkruimtes:
+        # Gekoppelde apps krijgen hun eigen opstart (database, migraties, planner) niet vanzelf; die starten we hier.
+        if politiek:
+            await werkruimtes.enter_async_context(politiek.lifespan(politiek.app))
+        yield
     if lus:
         lus.cancel()
     db.pool.close()
@@ -40,6 +49,8 @@ async def lifespan(_app):
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=os.path.join(web.BASIS, "static")), name="static")
 app.middleware("http")(web.alleen_via_caddy)
+if politiek:
+    app.mount("/politiek", prefix.Voorvoegsel(politiek.app, "/politiek"))
 
 
 # ---------- Vandaag ----------
@@ -53,7 +64,7 @@ def vandaag(request: Request):
     urgent = [m for m in open_ if m["niveau"] == "urgent"]
     g, s = gezondheid.geheugen(), gezondheid.schijf()
     return templates.TemplateResponse("vandaag.html", ctx(
-        request, "vandaag", nu=nu, meldingen=open_, urgent=urgent, werkruimtes=config.WERKRUIMTES,
+        request, "vandaag", nu=nu, meldingen=open_, urgent=urgent, werkruimtes=config.werkruimtes(),
         team=personas.alle().values(), geheugen=g, schijf=s, backups=gezondheid.backups(), besteed=besteed,
         plafond=config.MAANDPLAFOND_EUR))
 

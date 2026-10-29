@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% macro keuze(naam, waarde, lijst, leeg='(niemand)') %}
+<select name="{{ naam }}" aria-label="{{ naam }}">
+  <option value="">{{ leeg }}</option>
+  {% for p in lijst %}<option value="{{ p.whaller }}" {{ 'selected' if p.whaller == waarde }}>{{ p.naam }}</option>{% endfor %}
+  {% if waarde and waarde not in lijst|map(attribute='whaller')|list %}<option value="{{ waarde }}" selected>@{{ waarde }}</option>{% endif %}
+</select>
+{% endmacro %}
+{% block inhoud %}
+<h1 class="titel">Whaller</h1>
+<p class="uitleg">De vaste berichten voor de week van {{ lang(maandag) }}. De agenda's komen uit Notubiz. Controleer de woordvoerders, vul aan wat nodig is en kopieer het bericht met opmaak naar Whaller.</p>
+<p class="rij" style="flex-wrap:wrap;gap:8px">
+  <a class="knop" href="/whaller?week={{ vorige }}" style="flex:0 0 auto">Vorige week</a>
+  <a class="knop" href="/whaller" style="flex:0 0 auto">Volgende week (standaard)</a>
+  <a class="knop" href="/whaller?week={{ volgende }}" style="flex:0 0 auto">Week erna</a>
+</p>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
+{% if fout %}<div class="melding" style="border-left-color:var(--rood);background:var(--rozig)">{{ fout }}</div>{% endif %}
+
+{% for b in berichten %}
+<section class="kaart" id="{{ b.sleutel|replace(':', '-') }}">
+  <p><span class="label {{ 'rood' if b.soort != 'fractie' }}">{{ 'groene sfeer' if b.soort == 'fractie' else 'rode sfeer' }}</span>
+    {% if b.url %}<a class="noot" href="{{ b.url }}" target="_blank" rel="noopener">Notubiz</a>{% endif %}</p>
+  <h2 class="sub" style="margin-top:4px">{{ b.titel }}</h2>
+  {% if b.invoer.gewijzigd_na_plaatsen and b.invoer.whaller_url %}
+  <div class="melding" style="border-left-color:var(--rood);background:var(--rozig)">
+    <b>De woordvoering is gewijzigd ({{ b.invoer.gewijzigd_na_plaatsen }}) nadat dit bericht op Whaller stond.</b>
+    Kopieer het bericht hieronder opnieuw en pas het <a href="{{ b.invoer.whaller_url }}" target="_blank" rel="noopener">geplaatste bericht</a> aan.
+    <form method="post" action="/whaller/invoer" style="margin-top:6px"><input type="hidden" name="sleutel" value="{{ b.sleutel }}">
+      <input type="hidden" name="week" value="{{ maandag }}"><input type="hidden" name="aangepast" value="1">
+      <button class="knop klein" type="submit">Is aangepast in Whaller</button></form>
+  </div>{% endif %}
+
+  {% if b.soort == 'commissie' %}
+  <form method="post" action="/whaller/toewijzingen">
+    <input type="hidden" name="soort" value="commissie"><input type="hidden" name="datum" value="{{ b.datum }}"><input type="hidden" name="week" value="{{ maandag }}">
+    <div class="tabelvak"><table class="tabel">
+      <thead><tr><th>Agendapunt</th><th>Woordvoerder</th><th>Zit erbij</th></tr></thead>
+      <tbody>
+      {% for p in b.punten %}
+      <tr>
+        <td><input type="hidden" name="onderwerp_{{ loop.index }}" value="{{ p.onderwerp }}">
+          <b>{{ p.onderwerp }}</b><br><span class="noot">{{ p.commissie }}{% if p.zaal %} ({{ p.zaal }}){% endif %}, {{ p.sectie|lower }}{% if p.tijd %}, {{ p.tijd }} uur{% endif %}{% if p.portefeuillehouder %}, {{ p.portefeuillehouder }}{% endif %}</span>
+          {% if p.bron == 'eerder' %}<br><span class="label grijs">voorstel uit een eerdere vergadering</span>{% elif not p.bron %}<br><span class="label rood">nog niemand</span>{% endif %}</td>
+        <td>{{ keuze('wv_' ~ loop.index, p.woordvoerder, personen) }}</td>
+        <td>{{ keuze('erbij_' ~ loop.index, p.zit_erbij, personen) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <p><button class="knop vol" type="submit">Woordvoerders opslaan</button></p>
+  </form>
+  {% elif b.soort == 'raad' %}
+  {% if b.indeling.bespreek %}
+  <form method="post" action="/whaller/toewijzingen">
+    <input type="hidden" name="soort" value="raad"><input type="hidden" name="datum" value="{{ b.datum }}"><input type="hidden" name="week" value="{{ maandag }}">
+    <div class="tabelvak"><table class="tabel">
+      <thead><tr><th>Bespreekstuk</th><th>Woordvoerder (raadslid)</th></tr></thead>
+      <tbody>
+      {% for p in b.indeling.bespreek %}
+      <tr><td><input type="hidden" name="onderwerp_{{ loop.index }}" value="{{ p.onderwerp }}"><b>{{ p.onderwerp }}</b>
+        {% if p.bron == 'commissie' %}<br><span class="label grijs">voorstel uit de commissie</span>{% elif not p.woordvoerder %}<br><span class="label rood">nog niemand</span>{% endif %}</td>
+        <td>{{ keuze('wv_' ~ loop.index, p.woordvoerder, personen|selectattr('whaller', 'in', raadsleden)|list) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <p><button class="knop vol" type="submit">Woordvoerders opslaan</button></p>
+  </form>
+  {% endif %}
+  {% endif %}
+
+  <form method="post" action="/whaller/invoer">
+    <input type="hidden" name="sleutel" value="{{ b.sleutel }}"><input type="hidden" name="week" value="{{ maandag }}">
+    {% if b.soort == 'fractie' %}
+    <div class="rij">
+      <div><label for="tijd-{{ loop.index }}">Begintijd (alleen als die afwijkt van {{ inst.fractie_tijd or '19.00' }} uur)</label>
+        <input id="tijd-{{ loop.index }}" type="text" name="tijd" value="{{ b.invoer.tijd or '' }}" placeholder="{{ inst.fractie_tijd or '19.00' }}"></div>
+    </div>
+    <label>Mededelingen (één per regel)</label><textarea name="mededelingen" rows="3">{{ (b.invoer.mededelingen or [])|join('\n') }}</textarea>
+    <label>Ingebrachte agendapunten uit het formulier (één per regel)</label><textarea name="ingebracht" rows="3">{{ (b.invoer.ingebracht or [])|join('\n') }}</textarea>
+    <label>Overige politieke zaken (één per regel)</label><textarea name="overig" rows="3">{{ (b.invoer.overig or [])|join('\n') }}</textarea>
+    <label>Organisatorisch (één per regel)</label><textarea name="organisatorisch" rows="2">{{ (b.invoer.organisatorisch if b.invoer.organisatorisch is defined else ['Kaartjes te versturen deze week'])|join('\n') }}</textarea>
+    {% else %}
+    {% if b.soort == 'raad' %}
+    <label>Extra bijzondere agendapunten, zoals een amendement of motie (één per regel)</label><textarea name="bijzonder" rows="2">{{ (b.invoer.bijzonder or [])|join('\n') }}</textarea>
+    <label>Moties vreemd aan de orde van de dag (één per regel)</label><textarea name="moties" rows="2">{{ (b.invoer.moties or [])|join('\n') }}</textarea>
+    {% endif %}
+    <div class="rij">
+      <div><label>Link naar de map {{ b.datum }} in Whaller</label><input type="text" name="map_url" value="{{ b.invoer.map_url or '' }}" placeholder="https://my.whaller.com/..."></div>
+      <div><label>Link naar het geplaatste bericht (voor het fractiebericht)</label><input type="text" name="whaller_url" value="{{ b.invoer.whaller_url or '' }}" placeholder="https://my.whaller.com/.../message/..."></div>
+    </div>
+    {% endif %}
+    <p><button class="knop" type="submit">Opslaan en bericht bijwerken</button></p>
+  </form>
+
+  <h3 style="margin-top:18px">Bericht</h3>
+  <div class="whaller-voorbeeld" id="tekst-{{ loop.index }}">{{ b.html|safe }}</div>
+  <p><button class="knop vol" type="button" onclick="kopieer('tekst-{{ loop.index }}', this)">Kopieer met opmaak</button></p>
+
+  <h3>Checklist in Whaller</h3>
+  <ol class="noot">{% for r in b.checklist %}<li>{{ r }}</li>{% endfor %}</ol>
+</section>
+{% endfor %}
+
+{% if overig %}
+<h2 class="sub">Ook deze week</h2>
+<ul class="lijst kaart">{% for v in overig %}<li><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.naam }}</a>, {{ lang(v.start.date()) }} om {{ v.start.strftime('%H.%M') }} uur{% if v.plek %}, {{ v.plek }}{% endif %}{% if v.alleen_leden %} <span class="label rood" title="De stukken zijn alleen te zien als je bent ingelogd in Notubiz">! alleen met inloggen</span>{% endif %}</li>{% endfor %}</ul>
+{% endif %}
+
+<script>
+async function kopieer(id, knop) {
+  const el = document.getElementById(id);
+  const tekst = knop.textContent;
+  try {
+    await navigator.clipboard.write([new ClipboardItem({
+      "text/html": new Blob([el.innerHTML], {type: "text/html"}),
+      "text/plain": new Blob([el.innerText], {type: "text/plain"})})]);
+  } catch (e) {
+    const r = document.createRange(); r.selectNodeContents(el);
+    const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    document.execCommand("copy"); s.removeAllRanges();
+  }
+  knop.textContent = "Gekopieerd, plak in Whaller";
+  setTimeout(() => knop.textContent = tekst, 2500);
+}
+</script>
+{% endblock %}

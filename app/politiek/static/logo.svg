@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Buurmanitor">
+  <title>Buurmanitor</title>
+  <rect width="48" height="48" rx="9" fill="#EAF1FB"/>
+  <!-- twee buren: een lager en een hoger huisje naast elkaar -->
+  <path d="M5 24 L15 14.5 L25 24 Z" fill="#14427E"/>
+  <rect x="7.5" y="24" width="15" height="16" fill="#14427E"/>
+  <rect x="11" y="28" width="4" height="4" rx="0.6" fill="#EAF1FB"/>
+  <rect x="16.5" y="32" width="3.5" height="8" rx="0.6" fill="#EAF1FB"/>
+  <path d="M23 21 L34 10.5 L45 21 Z" fill="#2563B8"/>
+  <rect x="25.5" y="21" width="17" height="19" fill="#2563B8"/>
+  <rect x="29" y="25" width="4" height="4" rx="0.6" fill="#EAF1FB"/>
+  <rect x="35" y="25" width="4" height="4" rx="0.6" fill="#EAF1FB"/>
+  <rect x="31.5" y="32" width="4" height="8" rx="0.6" fill="#EAF1FB"/>
+  <rect x="4" y="40" width="40" height="2.5" rx="1.2" fill="#14427E"/>
+</svg>
