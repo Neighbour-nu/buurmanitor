@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titel %}Buurmanitor{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+{% block kop %}{% endblock %}
+</head>
+<body>
+<header class="balk">
+  <a class="merk" href="/">Buurmanitor</a>
+  <nav>
+    <a href="/" class="{{ 'actief' if scherm == 'vandaag' }}">Vandaag</a>
+    <a href="/iris" class="{{ 'actief' if scherm == 'iris' }}">Iris</a>
+    <a href="/meldingen" class="{{ 'actief' if scherm == 'meldingen' }}">Meldingen <span id="teller" class="teller" hidden></span></a>
+    <a href="/gezondheid" class="{{ 'actief' if scherm == 'gezondheid' }}">Gezondheid</a>
+  </nav>
+  <span class="wie">{{ gebruiker }} · <a href="{{ auth_url }}/logout">uitloggen</a></span>
+</header>
+<div id="banner" class="banner" hidden></div>
+<main>{% block inhoud %}{% endblock %}</main>
+<script>
+// Meldingen: elke 30 seconden kijken of er iets nieuws is. Urgent en belangrijk verschijnen als banner en,
+// als je dat toestaat, als systeemmelding op je scherm (ook als dit tabblad op de achtergrond staat).
+(function () {
+  let na = Number(sessionStorage.getItem("melding_na") || 0), eerste = !sessionStorage.getItem("melding_na");
+  function toon(m) {
+    const b = document.getElementById("banner");
+    b.className = "banner " + m.niveau; b.hidden = false;
+    b.innerHTML = "<b></b> <span></span> <a href='/meldingen'>bekijk</a>";
+    b.querySelector("b").textContent = m.niveau === "urgent" ? "Urgent:" : "Belangrijk:";
+    b.querySelector("span").textContent = m.titel;
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification("Buurmanitor: " + m.titel, { body: m.tekst || "", silent: m.niveau !== "urgent", tag: "bm-" + m.id });
+    }
+  }
+  async function kijk() {
+    try {
+      const r = await fetch("/api/meldingen?na=" + na, { credentials: "same-origin" });
+      if (!r.ok) return;
+      const d = await r.json();
+      if (!eerste) d.nieuw.forEach(toon);
+      eerste = false; na = d.hoogste; sessionStorage.setItem("melding_na", na);
+    } catch (e) { /* stil: volgende ronde opnieuw */ }
+  }
+  kijk(); setInterval(kijk, 30000);
+  const knop = document.getElementById("meldingen-aan");
+  if (knop && "Notification" in window && Notification.permission === "default") {
+    knop.hidden = false;
+    knop.onclick = () => Notification.requestPermission().then(() => { knop.hidden = true; });
+  }
+})();
+</script>
+</body>
+</html>

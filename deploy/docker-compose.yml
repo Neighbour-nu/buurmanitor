@@ -1,0 +1,36 @@
+# Buurmanitor: de portal, als derde project naast de cockpit (Doellijn) en Promonitor.
+# Staat na installatie in ~/buurmanitor/docker-compose.yml; de code in ~/buurmanitor/app.
+# De database draait in de bestaande PostgreSQL 17 van de cockpit (database buurmanitor), dus geen extra database-container.
+# Caddy en Authelia uit ~/cockpit bereiken de app via het netwerk van de cockpit (alias buurmanitor-app).
+name: buurmanitor
+
+services:
+  app:
+    build: ./app
+    restart: unless-stopped
+    # Zelfde uid als de gebruiker ubuntu, zodat de app de back-upmappen (rechten 700) kan lezen. Alleen lezen.
+    user: "1000:1000"
+    environment:
+      DATABASE_URL: postgresql://buurmanitor:${BUURMANITOR_DB_PASSWORD}@cockpit-db-1/buurmanitor
+      PORTAL_HOST: ${PORTAL_HOST}
+      AUTH_URL: ${AUTH_URL}
+      PROXY_GEHEIM: ${PROXY_GEHEIM:-}
+      TOEGESTANE_HOSTS: ${TOEGESTANE_HOSTS:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MAANDPLAFOND_EUR: ${MAANDPLAFOND_EUR:-20}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TZ: Europe/Amsterdam
+    volumes:
+      - ${HOME}/cockpit/backups:/backups/doellijn:ro
+      - ${HOME}/promonitor/backups:/backups/promonitor:ro
+      - ${HOME}/buurmanitor/backups:/backups/buurmanitor:ro
+    networks:
+      cockpit:
+        aliases:
+          - buurmanitor-app
+
+networks:
+  cockpit:
+    external: true
+    name: ${COCKPIT_NETWERK}

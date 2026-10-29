@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>{{ datum_lang(nu.date()) | capitalize }}</h1>
+    <p class="iris-regel"><b>Iris:</b>
+      {% if urgent %}{{ urgent | length }} urgente melding{{ 'en' if urgent | length > 1 }}. Begin daar.
+      {% elif meldingen %}{{ meldingen | length }} open melding{{ 'en' if meldingen | length > 1 }}, niets urgents.
+      {% else %}geen open meldingen. De rest van het team komt er in de volgende fases bij.{% endif %}</p>
+  </div>
+  <div class="chips">{% for k, naam in domeinen %}<span class="chip {{ k }}">{{ naam }}</span>{% endfor %}</div>
+</section>
+<p><button id="meldingen-aan" class="knop" hidden>Meldingen op dit apparaat aanzetten</button></p>
+
+<div class="raster">
+  <section class="kaart">
+    <h2>Meldingen <a class="klein" href="/meldingen">alles</a></h2>
+    {% for m in meldingen %}
+      <div class="item {{ m.niveau }}"><b>{{ m.titel }}</b><br><span class="noot">{{ m.bron }} · {{ geleden(m.tijd) }}{% if m.link %} · <a href="{{ m.link }}">bekijk</a>{% endif %}</span></div>
+    {% else %}<p class="noot">Geen open meldingen.</p>{% endfor %}
+  </section>
+
+  <section class="kaart">
+    <h2>Werkruimtes</h2>
+    {% for w in werkruimtes %}
+      <a class="tegel {{ w.sleutel }}" href="{{ w.url }}"><b>{{ w.naam }}</b><span>{{ w.app }}</span></a>
+    {% endfor %}
+    <p class="noot">In fase 1 en 2 verhuizen Promonitor en de Doellijn naar deze portal, met één login.</p>
+  </section>
+
+  <section class="kaart">
+    <h2>Het team</h2>
+    {% for p in team %}
+      <div class="persoon"><b>{% if p.sleutel == 'iris' %}<a href="/iris">{{ p.naam }}</a>{% else %}{{ p.naam }}{% endif %}</b> <span class="noot">{{ p.rol }}</span>
+        <span class="label {{ 'groen' if p.fase == 0 }}">{{ 'actief' if p.fase == 0 else 'fase ' ~ p.fase }}</span></div>
+    {% endfor %}
+  </section>
+
+  <section class="kaart">
+    <h2>Server <a class="klein" href="/gezondheid">details</a></h2>
+    {% if geheugen %}<p>Geheugen <b>{{ geheugen.procent }}%</b> · schijf <b>{{ schijf.procent }}%</b></p>{% endif %}
+    {% for b in backups %}<p class="noot">Back-up {{ b.naam }}: {% if b.ok %}<span class="label groen">in orde</span>{% else %}<span class="label rood">te oud of ontbreekt</span>{% endif %}</p>{% endfor %}
+    <p class="noot">Claude deze maand: {{ euro(besteed) }} van {{ euro(plafond) }}</p>
+  </section>
+</div>
+{% endblock %}

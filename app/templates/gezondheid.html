@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block titel %}Gezondheid · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>Gezondheid</h1>
+<div class="raster">
+  <section class="kaart">
+    <h2>Server</h2>
+    {% if geheugen %}
+      <p>Geheugen: <b>{{ geheugen.procent }}%</b> ({{ gb(geheugen.gebruikt) }} van {{ gb(geheugen.totaal) }})
+        {% if geheugen.procent >= grenzen.GRENS_GEHEUGEN %}<span class="label rood">verruimen overwegen</span>{% endif %}</p>
+      <div class="meter"><span style="width:{{ geheugen.procent }}%"></span></div>
+    {% endif %}
+    {% if schijf %}
+      <p>Schijf: <b>{{ schijf.procent }}%</b> ({{ gb(schijf.vrij) }} vrij)</p>
+      <div class="meter"><span style="width:{{ schijf.procent }}%"></span></div>
+    {% endif %}
+    {% if belasting %}<p class="noot">Belasting (1, 5, 15 min): {{ ('%.2f' | format(belasting[0])) | replace('.', ',') }}; {{ ('%.2f' | format(belasting[1])) | replace('.', ',') }}; {{ ('%.2f' | format(belasting[2])) | replace('.', ',') }}</p>{% endif %}
+    <p class="noot">Grens voor verruimen: {{ grenzen.GRENS_GEHEUGEN }}% geheugen, structureel.</p>
+  </section>
+
+  <section class="kaart">
+    <h2>Back-ups</h2>
+    {% for b in backups %}
+      <p><b>{{ b.naam }}</b>: {{ b.aantal }} {{ 'stuk' if b.aantal == 1 else 'stuks' }}{% if b.laatst %}, laatste {{ geleden(b.laatst) }} ({{ mb(b.grootte) }}){% endif %}
+        {% if b.ok %}<span class="label groen">in orde</span>{% else %}<span class="label rood">te oud of ontbreekt</span>{% endif %}</p>
+    {% else %}<p class="noot">Geen back-upmappen gekoppeld.</p>{% endfor %}
+    <p class="noot">Een back-up buiten de server volgt nog in fase 0.</p>
+  </section>
+
+  <section class="kaart">
+    <h2>Claude (werkruimte Assistent)</h2>
+    <p>{% if sleutel_ok %}<span class="label groen">sleutel ingesteld</span>{% else %}<span class="label rood">geen sleutel</span>{% endif %}</p>
+    <p>Deze maand: <b>{{ euro(besteed) }}</b> van {{ euro(plafond) }} ({{ aantal }} aanroepen, schatting)</p>
+    {% for r in per_persona %}<p class="noot">{{ r.persona }}: {{ r.aantal }} keer, {{ euro(r.eur) }}</p>{% endfor %}
+    <p>Telegram: {% if telegram_ok %}<span class="label groen">ingesteld</span>{% else %}<span class="label">niet ingesteld</span>{% endif %}</p>
+  </section>
+
+  <section class="kaart">
+    <h2>Automatische taken</h2>
+    {% for naam, regel in geregistreerd.items() %}{% set t = taken.get(naam) %}
+      <div class="item {{ 'urgent' if t and t.fout }}"><b>{{ naam }}</b>
+        <span class="noot">{% if regel.elke %}elke {{ (regel.elke.total_seconds() // 60) | int }} minuten{% else %}dagelijks vanaf {{ regel.om.strftime('%H.%M') }}{% endif %}</span><br>
+        <span class="noot">laatst: {{ geleden(t.laatst) if t else 'nooit' }}{% if t and t.resultaat %} · {{ t.resultaat }}{% endif %}{% if t and t.fout %} · fout: {{ t.fout.splitlines()[0] }}{% endif %}</span>
+        <form method="post" action="/gezondheid/taak/{{ naam }}" class="inline"><button class="knop klein" type="submit">nu uitvoeren</button></form>
+      </div>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block titel %}Meldingen · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>Meldingen</h1>
+<p><button id="meldingen-aan" class="knop" hidden>Meldingen op dit apparaat aanzetten</button></p>
+<form method="post" action="/meldingen/alles-gelezen"><button class="knop" type="submit">Alles gelezen</button></form>
+<section class="kaart">
+{% for m in alle %}
+  <div class="item {{ m.niveau }} {{ 'gelezen' if m.gelezen }}">
+    <b>{{ m.titel }}</b> <span class="label">{{ m.niveau }}</span><br>
+    {% if m.tekst %}{{ m.tekst }}<br>{% endif %}
+    <span class="noot">{{ m.bron }} · {{ geleden(m.tijd) }}{% if m.link %} · <a href="{{ m.link }}">bekijk</a>{% endif %}</span>
+    {% if not m.gelezen %}<form method="post" action="/meldingen/{{ m.id }}/gelezen" class="inline"><button class="knop klein" type="submit">gelezen</button></form>{% endif %}
+  </div>
+{% else %}<p class="noot">Nog geen meldingen.</p>{% endfor %}
+</section>
+{% endblock %}

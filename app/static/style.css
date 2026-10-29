@@ -1,0 +1,58 @@
+:root {
+  --inkt: #1f2a37; --stil: #6b7280; --lijn: #cbd5e1; --vlak: #f8fafc; --wit: #fff; --accent: #1e3a5f;
+  --politiek: #c2410c; --prive: #15803d; --zerohero: #1d4ed8; --fbim: #7c3aed; --upperspire: #0f766e;
+  --rood: #be123c; --oranje: #b45309; --groen: #15803d;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.5 -apple-system, "Segoe UI", Inter, Roboto, sans-serif; color: var(--inkt); background: var(--vlak); }
+a { color: var(--accent); }
+main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.6rem; margin: .4em 0 .2em; }
+h2 { font-size: 1.05rem; margin: 0 0 .6em; display: flex; justify-content: space-between; align-items: baseline; }
+.balk { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; padding: 10px 16px; background: var(--accent); color: #fff; }
+.balk a { color: #fff; text-decoration: none; }
+.merk { font-weight: 700; font-size: 1.1rem; }
+.balk nav { display: flex; flex-wrap: wrap; gap: 4px 16px; flex: 1; }
+.balk nav a { opacity: .8; }
+.balk nav a.actief { opacity: 1; border-bottom: 2px solid #fff; }
+.wie { font-size: .9rem; opacity: .85; }
+.teller { background: var(--rood); border-radius: 10px; padding: 0 6px; font-size: .75rem; }
+.banner { padding: 10px 16px; color: #fff; }
+.banner.urgent { background: var(--rood); }
+.banner.belangrijk { background: var(--oranje); }
+.banner a { color: #fff; }
+.kopregel { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: end; }
+.iris-regel { color: var(--stil); margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { color: #fff; border-radius: 14px; padding: 2px 12px; font-size: .85rem; font-weight: 600; }
+.chip.politiek { background: var(--politiek); } .chip.prive { background: var(--prive); } .chip.zerohero { background: var(--zerohero); }
+.chip.fbim { background: var(--fbim); } .chip.upperspire { background: var(--upperspire); }
+.raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
+.gesprek-raster { display: grid; grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr); gap: 16px; }
+@media (max-width: 760px) { .gesprek-raster { grid-template-columns: 1fr; } }
+.kaart { background: var(--wit); border: 1px solid var(--lijn); border-radius: 10px; padding: 16px; }
+.item { border-left: 4px solid var(--lijn); padding: 6px 10px; margin: 6px 0; background: var(--wit); }
+.item.urgent { border-color: var(--rood); background: #fff1f2; }
+.item.belangrijk { border-color: var(--oranje); }
+.item.gelezen { opacity: .55; }
+.tegel { display: flex; justify-content: space-between; padding: 10px 12px; margin: 6px 0; border-radius: 8px; color: #fff; text-decoration: none; }
+.tegel.politiek { background: var(--politiek); } .tegel.zerohero { background: var(--zerohero); }
+.tegel span { opacity: .85; }
+.persoon { padding: 4px 0; }
+.noot { color: var(--stil); font-size: .88rem; }
+.klein { font-size: .8rem; font-weight: 400; }
+.label { display: inline-block; font-size: .75rem; padding: 0 8px; border-radius: 10px; background: #e5e7eb; color: var(--inkt); }
+.label.groen { background: #dcfce7; color: var(--groen); } .label.rood { background: #ffe4e6; color: var(--rood); }
+.knop { font: inherit; padding: 6px 14px; border: 1px solid var(--accent); background: var(--wit); color: var(--accent); border-radius: 8px; cursor: pointer; }
+.knop.vol { background: var(--accent); color: #fff; }
+.knop.klein { padding: 1px 8px; font-size: .8rem; }
+form.inline { display: inline; margin-left: 6px; }
+textarea { width: 100%; min-height: 90px; font: inherit; padding: 8px; border: 1px solid var(--lijn); border-radius: 8px; margin-top: 10px; }
+.bericht { margin: 10px 0; padding: 10px 12px; border-radius: 8px; }
+.bericht.user { background: #eef2f7; }
+.bericht.assistant { background: #fff7ed; }
+.bericht .tekst { white-space: pre-wrap; }
+.motto { color: var(--stil); font-style: italic; margin-top: 0; }
+.meter { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+.meter span { display: block; height: 100%; background: var(--accent); }
+code { background: #eef2f7; padding: 1px 4px; border-radius: 4px; }
