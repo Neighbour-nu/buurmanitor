@@ -1,0 +1,29 @@
+<div class="knoppen" role="group" aria-label="Keuze">
+  {% for s, label in [('bewaard','Bewaren'),('geselecteerd','Selecteer'),('genegeerd','Negeer')] %}
+  {% if s == 'genegeerd' and status != 'genegeerd' %}
+  <button type="button" class="knop knop-{{ s }}" title="Negeren, met een reden zodat de filter ervan leert"
+    hx-get="/items/negeer-vraag?ids={{ ids }}&weergave={{ weergave }}" hx-target="closest .kaart" hx-select=".negeer-vraag" hx-swap="beforeend"
+    aria-pressed="false">{{ label }}</button>
+  {% else %}
+  <button type="button" class="knop knop-{{ s }}{{ ' aan' if status == s }}"
+    hx-post="/items/status" hx-target="closest .kaart" hx-swap="outerHTML"
+    hx-vals='{"ids": "{{ ids }}", "status": "{{ 'nieuw' if status == s else s }}", "weergave": "{{ weergave }}"}'
+    aria-pressed="{{ 'true' if status == s else 'false' }}">{{ label }}</button>
+  {% endif %}
+  {% endfor %}
+  {% if status in ('genegeerd', 'geleerd_weg') %}
+  <button type="button" class="knop" title="Onterecht genegeerd: terugzetten"
+    hx-post="/items/terugzetten" hx-target="closest .kaart" hx-swap="outerHTML"
+    hx-vals='{"ids": "{{ ids }}", "weergave": "{{ weergave }}"}'>Terugzetten</button>
+  {% endif %}
+</div>
+{% if status == 'geselecteerd' %}
+<form class="concept-vraag" hx-post="/concepten" hx-target="next .concept-plek" hx-swap="innerHTML"
+  hx-disabled-elt="find button" hx-on::after-request="if (event.detail.successful) this.remove()">
+  <input type="hidden" name="ids" value="{{ ids }}">
+  <label>Extra instructie voor het concept (optioneel)
+    <textarea name="instructie" rows="2" maxlength="1000" placeholder="Bijvoorbeeld: focus bij dit bericht op zijn terugkeer na de blessure, en trek de lijn naar andere keepers die laat doorbraken."></textarea></label>
+  <button type="submit" class="knop knop-concept">Maak concept</button>
+</form>
+{% endif %}
+<div class="concept-plek"></div>

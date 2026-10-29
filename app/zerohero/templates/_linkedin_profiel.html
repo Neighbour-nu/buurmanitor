@@ -1,0 +1,115 @@
+{% from "_macros.html" import getal, delta, staven %}
+<div class="koppelstatus">
+  {% if lp.laatste_upload %}<span class="noot">Laatste export geüpload {{ geleden(lp.laatste_upload.moment) }}{% if lp.tot %}, cijfers tot en met {{ lp.tot.strftime('%d-%m-%Y') }}{% endif %}.</span>
+  {% else %}<span class="noot">Nog geen export geüpload.</span>{% endif %}
+  {% if li_nodig %}<span class="melding herinnering">Tijd voor de maandelijkse export</span>{% endif %}
+  <a class="knop" href="/dashboard/linkedin">Exports uploaden</a>
+  <a class="knop" href="https://www.linkedin.com/in/martijnbuurman/" target="_blank" rel="noopener">Naar je profiel</a>
+</div>
+<nav class="tabs" role="tablist" aria-label="Onderdelen van LinkedIn" data-tabs>
+  <a role="tab" href="#overzicht" data-tab="overzicht">Overzicht</a>
+  <a role="tab" href="#maanden" data-tab="maanden">Per maand</a>
+  <a role="tab" href="#posts" data-tab="posts">Topbijdragen{% if lp.posts %} <span class="tabtel">{{ lp.posts|length }}</span>{% endif %}</a>
+  <a role="tab" href="#publiek" data-tab="publiek">Publiek</a>
+  <a role="tab" href="#ssi" data-tab="ssi">SSI{% if lp.ssi is defined and lp.ssi.nodig %} <span class="tabtel">!</span>{% endif %}</a>
+  <a role="tab" href="#bezoekers" data-tab="bezoekers">Profielbezoekers{% if lp.bezoek is defined and lp.bezoek.nodig %} <span class="tabtel">!</span>{% endif %}</a>
+  <a role="tab" href="#volgers" data-tab="volgers">Volgers</a>
+</nav>
+<div class="tabblad" data-paneel="overzicht">
+{% if lp.som %}
+{% set s = lp.som %}{% set t = lp.toen %}{% set vergelijk = t.n and t.n > 0 %}
+<p class="uitleg">De {{ plabel }} tot en met de laatste dag in de export{% if vergelijk %}, vergeleken met de {{ plabel }} daarvoor{% endif %}.</p>
+<section class="tegels tegels-groot compact">
+  <div class="tegel"><span class="tegel-kop">Impressies</span>
+    <span class="getal">{{ getal(s.impressies) }} {% if vergelijk %}{{ delta(s.impressies - t.impressies, plabel) }}{% endif %}</span>
+    <small>{% if vergelijk %}Vorige {{ plabel }}: {{ getal(t.impressies) }}.{% endif %}{% if lp.ontdekking %} Over {{ lp.ontdekking.periode }}: {{ getal(lp.ontdekking.impressies) }} impressies bij {{ getal(lp.ontdekking.bereikt) }} leden.{% endif %}</small></div>
+  <div class="tegel"><span class="tegel-kop">Interacties</span>
+    <span class="getal">{{ getal(s.interacties) }} {% if vergelijk %}{{ delta(s.interacties - t.interacties, plabel) }}{% endif %}</span>
+    <small>{% if s.impressies %}{{ (s.interacties / s.impressies * 100)|round(2)|string|replace('.', ',') }}% van de impressies.{% endif %} Reacties, commentaren en reposts samen.</small></div>
+  <div class="tegel"><span class="tegel-kop">Volgers</span>
+    <span class="getal">{{ getal(lp.volgers.waarde) if lp.volgers else '·' }}</span>
+    <small>+{{ getal(s.nieuwe_volgers) }} nieuwe volgers in deze periode.{% if lp.volgers %} Stand {{ lp.volgers.datum.strftime('%d-%m-%Y') }}.{% endif %}</small></div>
+</section>
+
+{% if lp.inzichten %}
+<h3 class="fotokop">Wat opvalt</h3>
+<ul class="inzichten">{% for i in lp.inzichten %}<li>{{ i }}</li>{% endfor %}</ul>
+{% endif %}
+
+{% set wd = ['ma','di','wo','do','vr','za','zo'] %}
+{% if lp.dagreeks %}
+<h3 class="fotokop">Impressies per dag</h3>
+{% set punten = [] %}
+{% for r in lp.dagreeks %}{% set _ = punten.append({'w': r.impressies or 0, 'tip': wd[r.datum.weekday()] ~ ' ' ~ r.datum.strftime('%d-%m') ~ ': ' ~ (r.impressies or 0) ~ ' impressies, ' ~ (r.interacties or 0) ~ ' interacties' ~ ((', +' ~ r.nieuwe_volgers ~ ' volgers') if r.nieuwe_volgers else ''), 'lab': r.datum.strftime('%d') if lp.dagreeks|length <= 31 else ''}) %}{% endfor %}
+{{ staven(punten, 'Impressies per dag') }}
+{% endif %}
+{% else %}<p class="noot">Nog geen export van je profiel. <a href="/dashboard/linkedin">Upload de export</a>.</p>{% endif %}
+</div>
+<div class="tabblad" data-paneel="maanden" hidden>
+{% if lp.som and lp.maanden %}
+{% set mnd = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'] %}
+<h3 class="fotokop">Per maand</h3>
+{% set hm = (lp.maanden|map(attribute='impressies')|max) or 1 %}
+<div class="tabelvak"><table class="tabel sorteerbaar">
+  <thead><tr><th data-sorteer>Maand</th><th data-sorteer>Impressies</th><th data-sorteer>Interacties</th><th data-sorteer>Interactie</th><th data-sorteer>Nieuwe volgers</th></tr></thead>
+  <tbody>{% for m in lp.maanden|reverse %}{% set ir = (m.interacties / m.impressies * 100) if m.impressies else none %}<tr><td data-waarde="{{ m.maand.isoformat() }}">{{ mnd[m.maand.month - 1] }} {{ m.maand.year }}</td>
+    <td data-waarde="{{ m.impressies }}"><span class="minibalk"><span style="width: {{ (m.impressies / hm * 100)|round(0) }}%"></span></span> {{ getal(m.impressies) }}</td>
+    <td data-waarde="{{ m.interacties }}">{{ getal(m.interacties) }}</td><td data-waarde="{{ ir if ir is not none else '' }}">{{ ((ir|round(2)|string)|replace('.', ',') ~ '%') if ir is not none else '·' }}</td>
+    <td data-waarde="{{ m.volgers }}">{{ getal(m.volgers) }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="noot">Nog geen export van je profiel.</p>{% endif %}
+</div>
+<div class="tabblad" data-paneel="posts" hidden>
+{% if lp.posts %}
+<h3 class="fotokop">Topbijdragen</h3>
+{% set hp = (lp.posts|map(attribute='impressies')|select|max) or 1 %}
+<div class="tabelvak"><table class="tabel sorteerbaar">
+  <thead><tr><th>Bijdrage</th><th data-sorteer>Geplaatst</th><th data-sorteer>Impressies</th><th data-sorteer>Interacties</th><th data-sorteer>Interactie</th></tr></thead>
+  <tbody>{% for p in lp.posts %}<tr><td><a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.titel|truncate(80) }}</a>{% if p.keeper %} <span class="label-keeper">keeper</span>{% endif %}</td>
+    <td data-waarde="{{ p.publicatie.isoformat() if p.publicatie else '' }}">{{ p.publicatie.strftime('%d-%m-%Y') if p.publicatie else '' }}</td>
+    <td data-waarde="{{ p.impressies if p.impressies is not none else '' }}">{% if p.impressies %}<span class="minibalk"><span style="width: {{ (p.impressies / hp * 100)|round(0) }}%"></span></span> {{ getal(p.impressies) }}{% else %}·{% endif %}</td>
+    <td data-waarde="{{ p.interacties if p.interacties is not none else '' }}">{{ getal(p.interacties) if p.interacties is not none else '·' }}</td>
+    <td data-waarde="{{ p.ratio if p.ratio is not none else '' }}">{{ ((p.ratio|string)|replace('.', ',') ~ '%') if p.ratio is not none else '·' }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<p class="noot">LinkedIn geeft de 50 posts met de meeste impressies en de 50 met de meeste interacties; een · betekent dat de post maar in één van die twee lijsten staat. De titel komt uit de link van de post. "keeper" markeert posts over keepers of ZEROHERO.</p>
+{% else %}<p class="noot">Nog geen topbijdragen; upload de export van je profiel.</p>{% endif %}
+</div>
+<div class="tabblad" data-paneel="publiek" hidden>
+
+{% if lp.demografie %}
+{% for groep, label in [('publiek', 'Demografie: doelgroep'), ('netwerk', 'Demografie: contacten')] if lp.demografie.get(groep) %}
+<h3 class="fotokop">{{ label }}</h3>
+<div class="tweekoloms drie">
+  {% for d in lp.demografie[groep] %}<div>
+    <h4 class="kleinkop">{{ d.titel }}</h4>
+    <div class="verdeling">
+      {% for r in d.rijen[:8] %}<div class="verdeel-regel"><span>{{ r[0]|truncate(30) }}</span><span class="verdeel-balk"><span style="width: {{ ((r[1] or 0) * 2.5)|round(0) if r[1] else 0 }}%"></span></span><b>{{ r[2] }}</b></div>{% endfor %}
+    </div>
+  </div>{% endfor %}
+</div>
+{% endfor %}
+<p class="noot">Zo noemt LinkedIn deze twee tabbladen in de export. Percentages zijn van het totaal; de balken zijn vergroot zodat kleine verschillen zichtbaar zijn.</p>
+{% endif %}
+{% if not lp.demografie %}<p class="noot">Nog geen demografie; upload de export van je profiel.</p>{% endif %}
+</div>
+<div class="tabblad" data-paneel="ssi" hidden>
+{% if lp.ssi is defined %}
+<div class="koppelstatus">
+  {% if lp.ssi.laatste %}<span class="noot">Laatste meting {{ lp.ssi.laatste.datum.strftime('%d-%m-%Y') }}, {{ lp.ssi.rijen|length }} {{ 'meting' if lp.ssi.rijen|length == 1 else 'metingen' }} in totaal.</span>{% endif %}
+  {% if lp.ssi.nodig %}<span class="melding herinnering">Tijd voor de maandelijkse screenshot</span>{% endif %}
+  <a class="knop" href="/dashboard/ssi">SSI-screenshot uploaden</a>
+</div>
+{% set o = lp.ssi %}{% set onderdelen = [('merk', 'Professioneel merk'), ('personen', 'Juiste personen vinden'), ('informatie', 'Informatie uitwisselen'), ('relaties', 'Relaties opbouwen')] %}
+{% include "_ssi_blok.html" %}
+{% endif %}
+</div>
+<div class="tabblad" data-paneel="bezoekers" hidden>
+{% if lp.bezoek is defined %}
+<div class="koppelstatus">
+  {% if lp.bezoek.nodig %}<span class="melding herinnering">Tijd voor de maandelijkse screenshot</span>{% endif %}
+  <a class="knop" href="/dashboard/profielbezoek">Screenshot profielbezoekers uploaden</a>
+</div>
+{% set o = lp.bezoek %}{% include "_profielbezoek_blok.html" %}
+{% endif %}
+</div>
+<div class="tabblad" data-paneel="volgers" hidden>

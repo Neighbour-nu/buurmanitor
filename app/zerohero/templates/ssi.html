@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "_macros.html" import getal %}
+{% block inhoud %}
+<p class="terug"><a href="/bereik/linkedin">← LinkedIn: Martijn Buurman</a></p>
+<h1 class="titel">Social Selling Index</h1>
+<p class="uitleg">LinkedIn heeft geen export voor de SSI. Maak daarom één keer per maand een screenshot van <a href="https://www.linkedin.com/sales/ssi" target="_blank" rel="noopener">linkedin.com/sales/ssi</a> en upload die hier. {% if o.actief %}De cockpit leest de cijfers af; jij controleert ze en slaat ze op.{% else %}Vul de cijfers in naast de screenshot.{% endif %} De screenshot wordt bewaard bij de meting.</p>
+{% if request.query_params.get('opgeslagen') %}<p class="melding ok">✓ De SSI-meting is opgeslagen.</p>{% endif %}
+{% if fout is defined and fout %}<p class="melding fout">⚠️ {{ fout }}</p>{% endif %}
+{% if o.nodig and not gelezen %}<p class="melding herinnering">Tijd voor de maandelijkse SSI-screenshot{% if o.laatste %}: de laatste meting is van {{ o.laatste.datum.strftime('%d-%m-%Y') }}{% endif %}.</p>{% endif %}
+
+{% if gelezen is not none %}
+<h2 class="sub">Controleer de cijfers</h2>
+{% if leesfout is defined and leesfout %}<p class="melding fout">⚠️ {{ leesfout }}</p>
+{% elif som is defined and som %}<p class="noot">De vier onderdelen tellen samen op tot {{ (som|round(1)|string)|replace('.', ',') }}{% if gelezen.ssi %}; LinkedIn toont {{ gelezen.ssi }}{% if (som - (gelezen.ssi|float))|abs <= 1 %}, dat klopt{% else %}. <b>Dat wijkt af, kijk de cijfers goed na.</b>{% endif %}{% endif %}</p>{% endif %}
+<div class="ssi-controle">
+  <form method="post" action="/dashboard/ssi/opslaan" class="cijferformulier">
+    <input type="hidden" name="screenshot_id" value="{{ screenshot_id if screenshot_id is defined and screenshot_id else '' }}">
+    <fieldset>
+      <label class="datum">Datum van de screenshot<input type="date" name="datum" value="{{ vandaag.isoformat() }}"></label>
+      {% for k, label, isgetal in velden %}
+      <label>{{ label }}<input name="{{ k }}" {{ 'inputmode=decimal' if isgetal }} value="{{ (gelezen.get(k) if gelezen.get(k) is not none else '')|string|replace('.', ',') if isgetal else (gelezen.get(k) or '') }}"></label>
+      {% endfor %}
+      <button class="knop knop-zoek" type="submit">Opslaan</button>
+    </fieldset>
+  </form>
+  {% if screenshot_id is defined and screenshot_id %}<a href="/dashboard/ssi/screenshot/{{ screenshot_id }}" target="_blank"><img class="ssi-screenshot" src="/dashboard/ssi/screenshot/{{ screenshot_id }}" alt="Geüploade screenshot"></a>{% endif %}
+</div>
+{% else %}
+<form method="post" action="/dashboard/ssi/lees" enctype="multipart/form-data" class="cijferformulier">
+  <fieldset>
+    <legend>Screenshot van de SSI-pagina</legend>
+    <label>Kies de afbeelding (PNG of JPG)<input type="file" name="screenshot" accept="image/png,image/jpeg,image/webp" required></label>
+    <button class="knop knop-zoek" type="submit">{{ 'Uploaden en laten aflezen' if o.actief else 'Uploaden' }}</button>
+  </fieldset>
+</form>
+{% endif %}
+
+<h2 class="sub">Huidige stand</h2>
+{% include "_ssi_blok.html" %}
+
+{% if o.rijen %}
+<h2 class="sub">Alle metingen</h2>
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Datum</th><th>SSI</th>{% for k, label in onderdelen %}<th>{{ label }}</th>{% endfor %}<th>Branche</th><th>Netwerk</th><th>Screenshot</th><th></th></tr>
+  {% for r in o.rijen|reverse %}<tr><td>{{ r.datum.strftime('%d-%m-%Y') }}</td><td><b>{{ ('%g'|format(r.ssi|float))|replace('.', ',') if r.ssi is not none else '·' }}</b></td>
+    {% for k, label in onderdelen %}<td>{{ ('%g'|format(r[k]|float))|replace('.', ',') if r[k] is not none else '·' }}</td>{% endfor %}
+    <td>{{ ('beste ' ~ (r.branche_top|float)|round|int ~ '%') if r.branche_top is not none else '·' }}</td>
+    <td>{{ ('beste ' ~ (r.netwerk_top|float)|round|int ~ '%') if r.netwerk_top is not none else '·' }}</td>
+    <td>{% if r.screenshot_id %}<a href="/dashboard/ssi/screenshot/{{ r.screenshot_id }}" target="_blank">bekijk</a>{% else %}<small class="noot">handmatig</small>{% endif %}</td>
+    <td><form method="post" action="/dashboard/ssi/{{ r.datum.isoformat() }}/weg" onsubmit="return confirm('Deze meting verwijderen?')"><button class="knop-mini" type="submit" title="Verwijderen">×</button></form></td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

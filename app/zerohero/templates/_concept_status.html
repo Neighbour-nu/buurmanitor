@@ -1,0 +1,9 @@
+<div class="concept-status" {% if c.status == 'bezig' %}hx-get="/concepten/{{ c.id }}/status" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+  {% if c.status == 'bezig' %}
+    <span class="draaier" aria-hidden="true"></span> Claude schrijft het concept. Dat duurt één tot drie minuten; je krijgt ook een bericht op Telegram.
+  {% elif c.status == 'klaar' %}
+    ✅ Concept klaar: <a href="/concepten/{{ c.id }}"><b>{{ c.blog_titel }}</b></a>
+  {% else %}
+    ⚠️ Concept mislukt. <a href="/concepten/{{ c.id }}">Details</a>
+  {% endif %}
+</div>

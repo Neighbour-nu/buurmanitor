@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Concepten</h1>
+<p class="uitleg">Klik op een concept om het open te klappen. Elk concept bestaat uit een blog (als concept in WordPress), een LinkedIn-post, een Instagram-tekst en een verificatielijst.</p>
+<div class="lijst">
+{% for c in concepten %}
+<details class="concept-kaart kaart" {{ 'open' if loop.first and c.status == 'klaar' }}>
+  <summary class="concept-kop">
+    {% if c.gepubliceerd_op %}<span class="badge status-gepubliceerd">Gepubliceerd</span>{% else %}<span class="badge status-{{ c.status }}">{{ {'bezig':'Wordt geschreven','klaar':'Klaar','fout':'Mislukt'}.get(c.status, c.status) }}</span>{% endif %}
+    {% if c.artikel_id %}<span class="badge">eigen artikel</span>{% endif %}
+    <span class="concept-titel">{{ c.blog_titel or c.bron_titel or ('Concept ' ~ c.id) }}</span>
+    <span class="tijd">{{ geleden(c.aangemaakt) }}</span>
+  </summary>
+  {% include "_concept_acties.html" %}
+  {% include "_concept_inhoud.html" %}
+</details>
+{% else %}
+<p class="leeg">Nog geen concepten. Zet een verhaal op Selecteer en klik op Maak concept.</p>
+{% endfor %}
+</div>
+{% endblock %}

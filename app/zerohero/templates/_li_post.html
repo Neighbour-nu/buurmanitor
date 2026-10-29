@@ -1,0 +1,40 @@
+<div class="sectie-inhoud tekstblok li-blok" id="li-blok-{{ c.id }}">
+  {% if c.linkedin_titel_status == 'bezig' %}
+  <p class="melding herinnering" hx-get="/concepten/{{ c.id }}/linkedin" hx-trigger="every 3s" hx-target="#li-blok-{{ c.id }}" hx-swap="outerHTML">Claude bedenkt een prikkelende titel voor boven de post…</p>
+  {% elif c.status == 'klaar' and c.linkedin and not c.linkedin_titels and not (c.linkedin_titel_status or '').startswith('fout') and actief %}
+  <div hx-post="/concepten/{{ c.id }}/linkedin/maak" hx-trigger="intersect once" hx-target="#li-blok-{{ c.id }}" hx-swap="outerHTML"></div>
+  {% endif %}
+<pre id="li-{{ c.id }}">{% if c.linkedin_titel %}{{ c.linkedin_titel }}
+
+{% endif %}{{ c.linkedin }}</pre>
+  <button type="button" class="knop kopieer" data-doel="li-{{ c.id }}">Kopieer</button>
+  {% if c.linkedin_titel %}{% set n = (c.linkedin_titel ~ ' ' ~ ((c.linkedin or '').strip().split('\n')[0]))|length %}
+  <span class="noot">Titel en openingszin samen: {{ n }} tekens{% if n <= 140 %}, helemaal zichtbaar op mobiel.{% elif n <= 210 %}, zichtbaar op desktop; op mobiel valt de opening deels achter 'meer weergeven'.{% else %}; de opening valt deels achter 'meer weergeven'.{% endif %}</span>{% endif %}
+  {% if (c.linkedin_titel_status or '').startswith('fout') %}
+  <p class="melding fout">⚠️ Titels maken lukte niet: {{ c.linkedin_titel_status[6:] }}</p>
+  {% endif %}
+  {% if c.linkedin_titels or (c.linkedin_titel_status or '').startswith('fout') %}
+  <div class="li-titels">
+    <p class="noot"><b>Titel boven de post.</b> LinkedIn toont op mobiel ongeveer 140 en op desktop ongeveer 210 tekens voor 'meer weergeven': de titel en de openingszin moeten samen laten doorlezen. Kies er een, of typ je eigen titel.</p>
+    {% for t in c.linkedin_titels or [] %}
+    <form hx-post="/concepten/{{ c.id }}/linkedin/kies" hx-target="#li-blok-{{ c.id }}" hx-swap="outerHTML" class="li-titel{{ ' gekozen' if t.titel == c.linkedin_titel }}">
+      <input type="hidden" name="titel" value="{{ t.titel }}">
+      <button type="submit" class="li-titel-knop" {{ 'disabled' if t.titel == c.linkedin_titel }}>
+        <span class="badge">{{ soorten.get(t.soort, t.soort or 'titel') }}</span>
+        <b>{{ t.titel }}</b> <small class="noot">({{ t.titel|length }} tekens)</small>
+        {% if t.waarom %}<br><small class="noot">{{ t.waarom }}</small>{% endif %}
+        {% if t.titel == c.linkedin_titel %}<span class="groen-tekst"> ✓ staat boven de post</span>{% endif %}
+      </button>
+    </form>
+    {% endfor %}
+    <form hx-post="/concepten/{{ c.id }}/linkedin/kies" hx-target="#li-blok-{{ c.id }}" hx-swap="outerHTML" class="regel-form">
+      <input name="titel" maxlength="150" placeholder="Eigen titel" value="{{ c.linkedin_titel if c.linkedin_titel and c.linkedin_titel not in ((c.linkedin_titels or [])|map(attribute='titel')|list) else '' }}">
+      <button class="knop" type="submit">Gebruik deze titel</button>
+    </form>
+    <div class="knoppen">
+      {% if c.linkedin_titel %}<form hx-post="/concepten/{{ c.id }}/linkedin/kies" hx-target="#li-blok-{{ c.id }}" hx-swap="outerHTML"><input type="hidden" name="titel" value=""><button class="knop knop-klein" type="submit">Zonder titel</button></form>{% endif %}
+      {% if actief %}<form hx-post="/concepten/{{ c.id }}/linkedin/maak" hx-target="#li-blok-{{ c.id }}" hx-swap="outerHTML" hx-disabled-elt="find button"><input type="hidden" name="opnieuw" value="1"><button class="knop knop-klein" type="submit">Nieuwe titels</button></form>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>

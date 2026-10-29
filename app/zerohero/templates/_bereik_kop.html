@@ -1,0 +1,7 @@
+<p class="terug"><a href="/dashboard#bereik">← Dashboard, tabblad Bereik</a></p>
+<div class="dash-kop">
+  <h1 class="titel">{{ titel }}</h1>
+  <nav class="periodes" aria-label="Periode">
+    {% for p, label in periodes.items() %}<a href="?periode={{ p }}{{ ('&sorteer=' ~ sorteer) if sorteer is defined and sorteer else '' }}" class="knop {{ 'aan' if p == periode }}">{{ label }}</a>{% endfor %}
+  </nav>
+</div>

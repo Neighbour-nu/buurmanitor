@@ -1,0 +1,21 @@
+{% set a = advies_van(x) %}
+<article class="kaart status-{{ x.status }}">
+  <div class="kaart-kop">
+    <span class="score {{ 'hoog' if (x.score or 0) >= 80 else ('midden' if (x.score or 0) >= 60 else 'laag') }}">{{ x.score if x.score is not none else '–' }}</span>
+    <span class="label">{{ x.sport or 'onbekend' }}{% if x.competitie %} · {{ x.competitie }}{% endif %}</span>
+    {% if x.gemeld %}<span class="badge">gemeld</span>{% endif %}
+    {% if x.congreshaak %}<span class="badge badge-congres">congreshaak</span>{% endif %}
+    {% if x.gevoelig %}<span class="badge badge-gevoelig">gevoelig</span>{% endif %}
+    <span class="tijd">{{ geleden(x.binnen) }}</span>
+  </div>
+  <h3><a href="{{ x.url }}" target="_blank" rel="noopener">{{ x.titel }}</a></h3>
+  {% if x.samenvatting %}<p class="sam{{ ' kopalleen' if alleen_kop(x) }}">{{ x.samenvatting }}</p>{% endif %}
+  {% if x.invalshoek %}<p class="hoek">💡 {{ x.invalshoek }}</p>{% endif %}
+  <div class="meta">
+    <span>{{ x.bron }}</span>
+    {% if x.keepers %}<span>🧤 {{ x.keepers|join(', ') }}</span>{% endif %}
+    {% if a.kanaal and a.kanaal != 'geen' %}<span>📣 {{ a.kanaal }}{% if a.moment %}, {{ a.moment }}{% endif %}{% if a.vorm %}: {{ a.vorm }}{% endif %}</span>{% endif %}
+  </div>
+  {% if x.negeer_reden and x.status in ('genegeerd', 'geleerd_weg') %}<p class="negeer-reden">{{ 'Automatisch weggefilterd' if x.status == 'geleerd_weg' else 'Genegeerd' }}: {{ negeer_redenen.get(x.negeer_reden, x.negeer_reden) }}{% if x.negeer_toelichting %} ({{ x.negeer_toelichting }}){% endif %}</p>{% endif %}
+  {% with ids=x.id|string, status=x.status, weergave='item' %}{% include "_knoppen.html" %}{% endwith %}
+</article>

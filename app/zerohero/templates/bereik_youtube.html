@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_macros.html" import getal, delta, staven %}
+{% block inhoud %}
+{% set plabel = periodes[periode] %}{% set titel = "YouTube: Keepersjournaal" %}{% set sorteer = yt.sorteer %}
+{% include "_bereik_kop.html" %}
+{% if not yt.actief %}
+<p class="noot">YouTube is nog niet gekoppeld. Zet de API-sleutel op de server met <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh youtube</code>.</p>
+{% else %}
+{% if request.query_params.get('ververst') == 'ok' %}<p class="melding ok">✓ YouTube is bijgewerkt.</p>{% elif request.query_params.get('ververst') == 'fout' %}<p class="melding fout">⚠️ YouTube bijwerken is niet gelukt.</p>{% endif %}
+<div class="koppelstatus">
+  {% if yt.status %}{% if yt.status.ok %}<span class="noot">Bijgewerkt {{ geleden(yt.status.laatst) }}, daarna elke drie uur.</span>{% else %}<span class="melding fout">⚠️ {{ yt.status.fout }}</span>{% endif %}
+  {% else %}<span class="noot">Eerste keer ophalen loopt…</span>{% endif %}
+  <form method="post" action="/dashboard/ververs/youtube"><button class="knop" type="submit">Nu verversen</button></form>
+  <a class="knop" href="https://www.youtube.com/@ZEROHERO-ONE" target="_blank" rel="noopener">Naar het kanaal</a>
+</div>
+{% set ab = regels|selectattr('sleutel', 'equalto', 'abonnees')|first %}
+{% set wt = regels|selectattr('sleutel', 'equalto', 'weergaven_totaal')|first %}
+{% set vi = regels|selectattr('sleutel', 'equalto', 'videos')|first %}
+<section class="tegels tegels-groot compact">
+  <div class="tegel"><span class="tegel-kop">Abonnees</span>
+    <span class="getal">{{ getal(ab.waarde) }} {{ delta(ab.delta, plabel) }}</span>
+    <small>{% if ab.peil %}Stand {{ ab.peil.strftime('%d-%m-%Y') }}.{% endif %}</small></div>
+  <div class="tegel"><span class="tegel-kop">Weergaven erbij</span>
+    <span class="getal">{{ getal(yt.erbij_periode) }}</span>
+    <small>In de afgelopen {{ plabel }}{% if yt.meet_sinds %}, gemeten sinds {{ yt.meet_sinds.strftime('%d-%m-%Y') }}{% endif %}.</small></div>
+  <div class="tegel"><span class="tegel-kop">Weergaven totaal</span>
+    <span class="getal">{{ getal(wt.waarde) }}</span>
+    <small>Verdeeld over {{ getal(vi.waarde) }} video's.</small></div>
+</section>
+
+{% if yt.inzichten %}
+<h2 class="sub">Wat opvalt</h2>
+<ul class="inzichten">{% for i in yt.inzichten %}<li>{{ i }}</li>{% endfor %}</ul>
+{% endif %}
+
+{% set wd = ['ma','di','wo','do','vr','za','zo'] %}
+<div class="tweekoloms">
+  <div>
+    <h3 class="fotokop">Weergaven erbij per dag</h3>
+    {% if yt.dagreeks %}
+    {% set punten = [] %}
+    {% for r in yt.dagreeks %}{% set _ = punten.append({'w': r.erbij, 'tip': wd[r.datum.weekday()] ~ ' ' ~ r.datum.strftime('%d-%m') ~ ': +' ~ r.erbij ~ ' weergaven', 'lab': r.datum.strftime('%d') if yt.dagreeks|length <= 31 else ''}) %}{% endfor %}
+    {{ staven(punten, 'Weergaven per dag') }}
+    {% else %}<p class="noot">De grafiek vult zich vanaf de tweede meetdag. YouTube geeft geen geschiedenis vrij, dus de cockpit bouwt die zelf op sinds {{ yt.meet_sinds.strftime('%d-%m-%Y') if yt.meet_sinds else 'de koppeling' }}.</p>{% endif %}
+  </div>
+  <div>
+    <h3 class="fotokop">Abonnees</h3>
+    {% if yt.abonneereeks|length > 1 %}
+    {% set laagste = yt.abonneereeks|map(attribute='abonnees')|min %}
+    {% set punten = [] %}
+    {% for r in yt.abonneereeks %}{% set _ = punten.append({'w': r.abonnees - laagste + 1, 'tip': r.datum.strftime('%d-%m') ~ ': ' ~ r.abonnees ~ ' abonnees', 'lab': ''}) %}{% endfor %}
+    {{ staven(punten, 'Abonnees per dag') }}
+    <p class="noot">Van {{ yt.abonneereeks[0].abonnees }} naar {{ yt.abonneereeks[-1].abonnees }}. De staven tonen de groei vanaf het laagste punt.</p>
+    {% else %}<p class="noot">Nog maar één meting. Vanaf morgen zie je hier het verloop.</p>{% endif %}
+  </div>
+</div>
+
+<h3 class="fotokop">Alle video's</h3>
+<nav class="periodes sorteer" aria-label="Sorteren">
+  {% for s, label in sorteringen.items() %}<a href="?periode={{ periode }}&sorteer={{ s }}" class="knop {{ 'aan' if s == yt.sorteer }}">{{ label }}</a>{% endfor %}
+</nav>
+{% if yt.alle %}{% set hw = (yt.alle|map(attribute='weergaven')|select|max) or 1 %}
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Video</th><th>Online sinds</th><th>Weergaven</th><th>Erbij</th><th>Per dag online</th><th>Likes</th><th>Reacties</th></tr>
+  {% for v in yt.alle %}<tr><td><a href="https://www.youtube.com/watch?v={{ v.id }}" target="_blank" rel="noopener">{{ v.titel|truncate(80) }}</a></td>
+    <td>{{ v.gepubliceerd.strftime('%d-%m-%Y') if v.gepubliceerd else '' }}</td>
+    <td><span class="minibalk"><span style="width: {{ ((v.weergaven or 0) / hw * 100)|round(0) }}%"></span></span> {{ getal(v.weergaven) }}</td>
+    <td>{% if v.in_periode %}<b class="groen-tekst">+{{ getal(v.in_periode) }}</b>{% else %}0{% endif %}</td>
+    <td>{{ (v.per_dag|string)|replace('.', ',') if v.per_dag is not none else '·' }}</td>
+    <td>{{ getal(v.likes) }}</td><td>{{ getal(v.reacties) }}</td></tr>{% endfor %}
+</table></div>
+<p class="noot">"Erbij" telt vanaf de eerste meting ({{ yt.meet_sinds.strftime('%d-%m-%Y') if yt.meet_sinds else '' }}). Kijktijd, kijkduur en waar kijkers vandaan komen geeft YouTube alleen in YouTube Studio vrij, niet via deze openbare koppeling.</p>
+{% else %}<p class="noot">Nog geen video's opgehaald.</p>{% endif %}
+{% endif %}
+{% endblock %}

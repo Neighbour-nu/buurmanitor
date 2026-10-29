@@ -1,0 +1,30 @@
+<article class="advies-actie status-{{ a.status }} prio-{{ a.prioriteit or 'middel' }}" id="actie-{{ a.id }}">
+  <div class="kaart-kop">
+    <span class="badge cat-{{ a.categorie }}">{{ categorieen.get(a.categorie, a.categorie) }}</span>
+    {% if a.prioriteit %}<span class="badge prio">{{ a.prioriteit }}</span>{% endif %}
+    {% if a.inspanning %}<span class="noot">inspanning {{ a.inspanning }}</span>{% endif %}
+    {% if a.wanneer %}<span class="noot">· {{ a.wanneer }}</span>{% endif %}
+    {% if a.status != 'open' %}<span class="badge status-{{ 'klaar' if a.status == 'gedaan' else ('bezig' if a.status == 'oppakken' else 'niet') }}">{{ statussen.get(a.status) }}</span>{% endif %}
+  </div>
+  <h3>{{ a.titel }}</h3>
+  {% if a.waarom %}<p><b>Waarom.</b> {{ a.waarom }}</p>{% endif %}
+  {% if a.hoe %}<p><b>Hoe.</b> {{ a.hoe }}</p>{% endif %}
+  {% if a.meten %}<p class="noot"><b>Meten:</b> {{ a.meten }}</p>{% endif %}
+  {% if a.artikel %}<p class="noot"><b>Artikelidee:</b> {{ a.artikel.titel }}</p>{% endif %}
+  {% if a.notitie %}<p class="noot"><b>Jouw notitie:</b> {{ a.notitie }}</p>{% endif %}
+  <div class="knoppen">
+    {% for s, label in statussen.items() if s != a.status %}
+      <button class="knop knop-klein" hx-post="/adviseur/actie/{{ a.id }}/status" hx-vals='{"status": "{{ s }}"}' hx-target="#actie-{{ a.id }}" hx-swap="outerHTML">{{ label }}</button>
+    {% endfor %}
+    <form method="post" action="/adviseur/actie/{{ a.id }}/bespreek" class="inline"><button class="knop knop-klein knop-concept" type="submit">Bespreek</button></form>
+    {% if a.categorie == 'content' or a.artikel %}<a class="knop knop-klein" href="{{ artikel_link(a) }}">Schrijf artikel</a>{% endif %}
+    <details class="notitie">
+      <summary class="knop knop-klein">Notitie</summary>
+      <form hx-post="/adviseur/actie/{{ a.id }}/status" hx-target="#actie-{{ a.id }}" hx-swap="outerHTML" class="regel-form">
+        <input type="hidden" name="status" value="{{ a.status }}">
+        <input name="notitie" value="{{ a.notitie or '' }}" maxlength="1000" placeholder="Bijvoorbeeld: geen tijd voor tot januari, of: gedaan, leverde twee aanvragen op">
+        <button class="knop knop-klein" type="submit">Bewaar</button>
+      </form>
+    </details>
+  </div>
+</article>

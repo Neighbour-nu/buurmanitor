@@ -1,7 +1,7 @@
 """Buurmanitor: de persoonlijke portal van Martijn Buurman.
 
-Fase 0: de kern. Inloggen via Caddy en Authelia, meldingen, de planner, de gezondheid van de server en gesprekken met
-Iris. Promonitor (politiek) en de Doellijn (ZEROHERO) volgen in fase 1 en 2 als werkruimtes onder /politiek en /zerohero.
+De kern: inloggen via Caddy en Authelia, meldingen, de planner, de gezondheid van de server en gesprekken met Iris.
+Werkruimtes: Promonitor (fase 1) onder /politiek en de Doellijn (fase 2) onder /zerohero, elk één op één.
 """
 import asyncio
 import datetime as dt
@@ -22,6 +22,10 @@ from .schema import MIGRATIES
 politiek = None
 if config.POLITIEK_ACTIEF:
     from .politiek import main as politiek  # noqa: E402  pylint: disable=wrong-import-position
+# Werkruimte ZEROHERO (de Doellijn, één op één) onder /zerohero, zodra de database is ingesteld.
+zerohero = None
+if config.ZEROHERO_ACTIEF:
+    from .zerohero import main as zerohero  # noqa: E402  pylint: disable=wrong-import-position
 
 
 @planner.taak("gezondheid", elke=dt.timedelta(minutes=15))
@@ -40,6 +44,8 @@ async def lifespan(_app):
         # Gekoppelde apps krijgen hun eigen opstart (database, migraties, planner) niet vanzelf; die starten we hier.
         if politiek:
             await werkruimtes.enter_async_context(politiek.lifespan(politiek.app))
+        if zerohero:
+            await werkruimtes.enter_async_context(zerohero.lifespan(zerohero.app))
         yield
     if lus:
         lus.cancel()
@@ -51,6 +57,10 @@ app.mount("/static", StaticFiles(directory=os.path.join(web.BASIS, "static")), n
 app.middleware("http")(web.alleen_via_caddy)
 if politiek:
     app.mount("/politiek", prefix.Voorvoegsel(politiek.app, "/politiek"))
+if zerohero:
+    app.mount("/zerohero", prefix.Voorvoegsel(zerohero.app, "/zerohero"))
+    # n8n roept /intern/... aan (zonder voorvoegsel); die gaan langs de portal heen naar de werkruimte.
+    app.add_middleware(prefix.Doorgeven, begin="/intern/", doel=zerohero.app)
 
 
 # ---------- Vandaag ----------

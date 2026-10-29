@@ -1,0 +1,88 @@
+{# Toont één afgeronde analyse: an (met an.r), acties (lijst) #}
+{% set r = an.r %}
+<p class="noot">Analyse van {{ an.aangemaakt.astimezone().strftime('%d-%m-%Y %H:%M') }}{% if an.automatisch %} (automatisch, maandag){% endif %} · periode: {{ horizonnen.get(an.horizon or 'kwartaal') }}{% if an.focus %} · focus: {{ an.focus }}{% endif %} · ongeveer {{ '%.2f'|format(an.kosten)|replace('.', ',') }} dollar{% if an.zoekopdrachten %}, {{ an.zoekopdrachten }} zoekopdrachten{% endif %} · <a href="/adviseur/analyse/{{ an.id }}/dossier" target="_blank" rel="noopener">dossier bekijken</a></p>
+
+<div class="advies-samenvatting">{{ r.samenvatting }}</div>
+
+<form method="post" action="/adviseur/gesprek" class="regel-form bespreek-form">
+  <input type="hidden" name="analyse_id" value="{{ an.id }}">
+  <input name="vraag" required placeholder="Bespreek deze analyse: stel een vraag of leg een twijfel voor">
+  <button class="knop knop-concept" type="submit">Bespreek met de adviseur</button>
+</form>
+
+{% if r.weekplan %}
+<h2 class="sub">Weekplan</h2>
+<div class="weekplan">
+  {% for d in r.weekplan %}
+  <div class="weekdag">
+    <div class="weekdag-kop"><b>{{ d.dag }}</b>{% if d.minuten %}<span class="noot">ongeveer {{ d.minuten|int }} min</span>{% endif %}</div>
+    {% if d.focus %}<p class="noot">{{ d.focus }}</p>{% endif %}
+    {% if d.taken %}<ul>{% for t in d.taken %}<li>{{ t }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if r.stand %}
+<h2 class="sub">Waar ZEROHERO staat</h2>
+<div class="advies-stand">
+  {% for s in r.stand %}
+  <div class="stand-regel oordeel-{{ s.oordeel or 'aandacht' }}">
+    <b>{{ s.onderwerp }}</b>
+    <span>{{ s.beeld }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if acties %}
+<h2 class="sub">Acties</h2>
+{% for cat, label in categorieen.items() %}
+  {% set rij = acties|selectattr('categorie', 'equalto', cat)|list %}
+  {% if rij %}
+  <h3 class="cat-kop">{{ label }} <span class="tabtel">{{ rij|length }}</span></h3>
+  <div class="advies-acties">{% for a in rij %}{% include "_advies_actie.html" %}{% endfor %}</div>
+  {% endif %}
+{% endfor %}
+{% endif %}
+
+{% if r.keuzes %}
+<h2 class="sub">Keuzes om te maken</h2>
+{% for k in r.keuzes %}
+<div class="advies-keuze">
+  <h3>{{ k.vraag }}</h3>
+  {% if k.opties %}<ul>{% for o in k.opties %}<li>{{ o }}</li>{% endfor %}</ul>{% endif %}
+  {% if k.advies %}<p><b>Advies.</b> {{ k.advies }}</p>{% endif %}
+  <form method="post" action="/adviseur/gesprek" class="inline">
+    <input type="hidden" name="analyse_id" value="{{ an.id }}">
+    <input type="hidden" name="vraag" value="Ik wil deze keuze met je doordenken: {{ k.vraag }} Wat zijn de gevolgen van elke optie voor ZEROHERO, en wat moet ik weten om te kiezen?">
+    <button class="knop knop-klein" type="submit">Denk hierover door</button>
+  </form>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if r.signalen %}
+<h2 class="sub">Signalen uit de markt</h2>
+<div class="advies-signalen">
+  {% for s in r.signalen %}
+  <div class="signaal">
+    <div class="kaart-kop">{% if s.wanneer %}<span class="badge">{{ s.wanneer }}</span>{% endif %}{% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener" class="noot">bron</a>{% endif %}</div>
+    <h3>{{ s.titel }}</h3>
+    {% if s.wat %}<p>{{ s.wat }}</p>{% endif %}
+    {% if s.haak %}<p><b>Haak voor ZEROHERO.</b> {{ s.haak }}</p>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if r.ontbreekt %}
+<h2 class="sub">Wat het advies beter zou maken</h2>
+<ul class="noot">{% for o in r.ontbreekt %}<li>{{ o }}</li>{% endfor %}</ul>
+{% endif %}
+
+{% if an.bronnen %}
+<details class="bronnenlijst"><summary class="noot">Bronnen ({{ an.bronnen|length }})</summary>
+<ul class="noot">{% for b in an.bronnen %}<li><a href="{{ b.url }}" target="_blank" rel="noopener">{{ b.titel or b.url }}</a></li>{% endfor %}</ul>
+</details>
+{% endif %}

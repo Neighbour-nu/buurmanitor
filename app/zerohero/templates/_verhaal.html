@@ -1,0 +1,28 @@
+{% set a = advies_van(v) %}
+<article class="kaart verhaal status-{{ v.status }}">
+  <div class="kaart-kop">
+    {% if nr %}<span class="nr">{{ nr }}</span>{% endif %}
+    <span class="score {{ 'hoog' if v.score >= 80 else ('midden' if v.score >= 60 else 'laag') }}">{{ v.score }}</span>
+    <span class="label">{{ v.sport or 'onbekend' }}{% if v.competitie %} · {{ v.competitie }}{% endif %}</span>
+    {% if v.gemeld %}<span class="badge">gemeld</span>{% endif %}
+    {% if v.congreshaak %}<span class="badge badge-congres">congreshaak</span>{% endif %}
+    {% if v.gevoelig %}<span class="badge badge-gevoelig">gevoelig</span>{% endif %}
+    <span class="tijd">{{ geleden(v.binnen) }}</span>
+  </div>
+  <h3><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.titel }}</a></h3>
+  {% if v.samenvatting %}<p class="sam{{ ' kopalleen' if alleen_kop(v) }}">{{ v.samenvatting }}</p>{% endif %}
+  {% if v.invalshoek %}<p class="hoek">💡 {{ v.invalshoek }}</p>{% endif %}
+  <div class="meta">
+    <span>{{ v.bronnen|join(', ') }}{% if v.leden|length > 1 %} ({{ v.leden|length }} berichten){% endif %}</span>
+    {% if v.keepers %}<span>🧤 {{ v.keepers|join(', ') }}</span>{% endif %}
+    {% if a.kanaal and a.kanaal != 'geen' %}<span>📣 {{ a.kanaal }}{% if a.moment %}, {{ a.moment }}{% endif %}{% if a.vorm %}: {{ a.vorm }}{% endif %}</span>{% endif %}
+  </div>
+  {% if v.leden|length > 1 %}
+  <details class="leden"><summary>Alle {{ v.leden|length }} berichten</summary>
+    <ul>{% for y in v.leden %}<li><b>{{ y.score }}</b> <a href="{{ y.url }}" target="_blank" rel="noopener">{{ y.titel }}</a> <span class="tijd">{{ y.bron }}</span></li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+  {% set nr_ = (v.leden|selectattr('negeer_reden')|first) if v.status == 'genegeerd' else none %}
+  {% if nr_ %}<p class="negeer-reden">Genegeerd: {{ negeer_redenen.get(nr_.negeer_reden, nr_.negeer_reden) }}{% if nr_.negeer_toelichting %} ({{ nr_.negeer_toelichting }}){% endif %}</p>{% endif %}
+  {% with ids=v.ids|join(','), status=v.status, weergave='verhaal' %}{% include "_knoppen.html" %}{% endwith %}
+</article>

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Inbox</h1>
+<form class="filters" method="get" action="/inbox">
+  <label>Sport
+    <select name="sport"><option value="">Alle</option>
+      {% for s in sporten %}<option value="{{ s }}" {{ 'selected' if f.sport == s }}>{{ s }}</option>{% endfor %}
+    </select></label>
+  <label>Score
+    <select name="score">{% for s,l in [(0,'Alle'),(40,'40+'),(60,'60+'),(80,'80+')] %}<option value="{{ s }}" {{ 'selected' if f.score == s }}>{{ l }}</option>{% endfor %}</select></label>
+  <label>Status
+    <select name="status">{% for s,l in [('open','Open'),('nieuw','Nieuw'),('bewaard','Bewaard'),('geselecteerd','Geselecteerd'),('genegeerd','Genegeerd'),('weggefilterd','Weggefilterd'),('alle','Alle')] %}<option value="{{ s }}" {{ 'selected' if f.status == s }}>{{ l }}</option>{% endfor %}</select></label>
+  <label>Periode
+    <select name="dagen">{% for d,l in [(1,'24 uur'),(3,'3 dagen'),(7,'week'),(30,'maand'),(90,'3 maanden')] %}<option value="{{ d }}" {{ 'selected' if f.dagen == d }}>{{ l }}</option>{% endfor %}</select></label>
+  <label class="zoek">Zoek
+    <input type="search" name="zoek" value="{{ f.zoek }}" placeholder="keeper, titel of bron"></label>
+  <button class="knop knop-zoek" type="submit">Toon</button>
+</form>
+<p class="uitleg">{{ totaal }} berichten{% if totaal > 40 %}, pagina {{ huidige }}{% endif %}.</p>
+<div class="lijst">
+  {% for x in items %}{% include "_item.html" %}{% else %}<p class="leeg">Geen berichten met deze filters.</p>{% endfor %}
+</div>
+<nav class="bladeren">
+  {% if vorige %}<a href="{{ vorige }}">← Vorige</a>{% endif %}
+  {% if volgende %}<a href="{{ volgende }}">Volgende →</a>{% endif %}
+</nav>
+{% endblock %}

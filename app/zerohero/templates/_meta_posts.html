@@ -1,0 +1,20 @@
+{% from "_macros.html" import getal %}
+{% if mp.posts %}
+<div class="tabelvak"><table class="tabel sorteerbaar">
+  <thead><tr><th>{{ 'Bericht' if kanaal.id == 'facebook' else 'Post' }}</th><th data-sorteer>Geplaatst</th><th data-sorteer>Weergaven</th><th data-sorteer>Erbij</th>{% if kanaal.id == 'instagram' %}<th data-sorteer>Bereik</th>{% endif %}<th data-sorteer>Likes</th><th data-sorteer>Reacties</th><th data-sorteer>{{ 'Reposts en citaten' if kanaal.id == 'threads' else 'Gedeeld' }}</th>{% if kanaal.id == 'instagram' %}<th data-sorteer>Bewaard</th>{% endif %}<th data-sorteer>Interactie</th></tr></thead>
+  <tbody>{% for p in mp.posts %}<tr>
+    <td><a href="{{ p.link }}" target="_blank" rel="noopener">{{ (p.tekst or '(zonder tekst)')|truncate(70) }}</a>{% if p.soort and kanaal.id == 'instagram' %} <small class="noot">{{ p.soort }}</small>{% endif %}</td>
+    <td data-waarde="{{ p.gepubliceerd.isoformat() if p.gepubliceerd else '' }}">{{ p.gepubliceerd.astimezone().strftime('%d-%m-%Y') if p.gepubliceerd else '' }}</td>
+    <td data-waarde="{{ p.weergaven if p.weergaven is not none else '' }}">{{ getal(p.weergaven) }}</td>
+    <td data-waarde="{{ p.erbij if p.erbij is not none else '' }}">{% if p.erbij %}<b class="groen-tekst">+{{ getal(p.erbij) }}</b>{% else %}·{% endif %}</td>
+    {% if kanaal.id == 'instagram' %}<td data-waarde="{{ p.bereik if p.bereik is not none else '' }}">{{ getal(p.bereik) }}</td>{% endif %}
+    <td data-waarde="{{ p.likes if p.likes is not none else '' }}">{{ getal(p.likes) }}</td>
+    <td data-waarde="{{ p.reacties if p.reacties is not none else '' }}">{{ getal(p.reacties) }}</td>
+    <td data-waarde="{{ p.gedeeld if p.gedeeld is not none else '' }}">{{ getal(p.gedeeld) }}</td>
+    {% if kanaal.id == 'instagram' %}<td data-waarde="{{ p.bewaard if p.bewaard is not none else '' }}">{{ getal(p.bewaard) }}</td>{% endif %}
+    <td data-waarde="{{ p.ratio if p.ratio is not none else '' }}">{{ ((p.ratio|string)|replace('.', ',') ~ '%') if p.ratio is not none else '·' }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<p class="noot">"Erbij" telt vanaf de eerste meting van de cockpit. Interactie: likes, reacties, delen en bewaren samen, gedeeld door de weergaven.</p>
+{% else %}
+<p class="leeg">Nog geen {{ 'berichten' if kanaal.id == 'facebook' else 'posts' }} opgehaald.{% if mp.status and mp.status.fout %} Zie de melding bovenaan.{% endif %}</p>
+{% endif %}

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<div class="concept-kaart">
+<p class="uitleg"><a href="/concepten">← Alle concepten</a></p>
+<h1 class="titel">{{ c.blog_titel or 'Concept ' ~ c.id }}</h1>
+{% include "_concept_acties.html" %}
+{% include "_concept_inhoud.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,42 @@
+{# Inhoud van één concept, in inklapbare secties. Verwacht: c (met c.verificatie_lijst en c.berichten) #}
+{% if c.status == 'bezig' %}{% include "_concept_status.html" %}{% endif %}
+{% if c.fout %}<p class="melding fout">⚠️ {{ c.fout }}</p>{% endif %}
+{% if c.berichten %}
+<p class="meta">Gebaseerd op:
+  {% for b in c.berichten %}<a href="{{ b.url }}" target="_blank" rel="noopener">{{ b.titel }}</a> ({{ b.bron }}){{ ', ' if not loop.last }}{% endfor %}
+</p>
+{% endif %}
+{% if c.artikel_id %}<p class="meta">Eigen artikel. <a href="/artikelen/{{ c.artikel_id }}">Tekst bekijken of aanpassen</a> (na een aanpassing maak je een nieuw concept).</p>{% endif %}
+{% if c.instructie %}<p class="instructie"><b>Jouw instructie:</b> {{ c.instructie }}</p>{% endif %}
+{% if c.status == 'klaar' %}
+<details class="sectie">
+  <summary>Uitgelicht beeld</summary>
+  <div class="sectie-inhoud">
+    {% include "_uitgelicht.html" %}
+    <details class="fotokeuze"><summary class="knop">Ander beeld kiezen</summary>
+      <div hx-get="/concepten/{{ c.id }}/fotos" hx-trigger="toggle once from:closest details" hx-swap="innerHTML"><p class="noot">Suggesties laden…</p></div>
+    </details>
+  </div>
+</details>
+<details class="sectie">
+  <summary>LinkedIn-post{% if c.linkedin_titel %} <span class="teller">met titel</span>{% endif %}</summary>
+  {% with soorten = {'getal': 'Getal', 'paradox': 'Paradox', 'verhaal': 'Verhaal', 'vraag': 'Vraag', 'tegendraads': 'Tegendraads', 'nieuws': 'Nieuws'}, actief = true %}{% include "_li_post.html" %}{% endwith %}
+</details>
+<details class="sectie">
+  <summary>Instagram</summary>
+  <div class="sectie-inhoud tekstblok"><pre id="ig-{{ c.id }}">{{ c.instagram }}</pre><button type="button" class="knop kopieer" data-doel="ig-{{ c.id }}">Kopieer</button></div>
+</details>
+<details class="sectie">
+  <summary>Feitencontrole
+    {% if c.controle_lijst %}<span class="teller">✅ {{ c.controle_tel.bevestigd }}</span>{% if c.controle_tel.afwijkend %}<span class="teller af">⚠️ {{ c.controle_tel.afwijkend }}</span>{% endif %}{% if c.controle_tel.niet_gevonden %}<span class="teller">❓ {{ c.controle_tel.niet_gevonden }}</span>{% endif %}
+    {% elif c.controle_status == 'bezig' %}<span class="teller">bezig</span>
+    {% else %}<span class="teller">niet gecontroleerd</span>{% endif %}
+  </summary>
+  <div class="sectie-inhoud">{% include "_controle.html" %}</div>
+</details>
+<details class="sectie">
+  <summary>Blog (voorbeeld)</summary>
+  <div class="sectie-inhoud"><article class="blog">{{ c.blog_html|safe }}</article>
+  <p class="noot">Model {{ c.model }}, {{ c.tokens_in }} + {{ c.tokens_out }} tokens.</p></div>
+</details>
+{% endif %}

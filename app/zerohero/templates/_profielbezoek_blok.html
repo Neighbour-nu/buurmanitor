@@ -1,0 +1,21 @@
+{% from "_macros.html" import getal, staven %}
+{% if o.laatste %}{% set l = o.laatste %}
+<section class="tegels tegels-groot compact">
+  <div class="tegel"><span class="tegel-kop">Profielbezoekers</span>
+    <span class="getal">{{ getal(l.bezoekers) }}</span>
+    <small>{{ l.periode or (l.periode_dagen ~ ' dagen') }}, stand {{ l.datum.strftime('%d-%m-%Y') }}.{% if l.verandering is not none %} LinkedIn: {{ '+' if l.verandering > 0 }}{{ ('%g'|format(l.verandering|float))|replace('.', ',') }}% {{ l.vergelijking or '' }}.{% endif %}</small></div>
+  <div class="tegel"><span class="tegel-kop">Per dag</span>
+    <span class="getal">{{ (l.per_dag|string)|replace('.', ',') }}</span>
+    <small>gemiddeld aantal profielbezoekers per dag in die periode.</small></div>
+</section>
+{% if o.inzichten %}<ul class="inzichten">{% for i in o.inzichten %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}
+{% set kort = o.rijen|selectattr('periode_dagen', 'le', 31)|list %}
+{% if kort|length > 1 %}
+<h3 class="fotokop">Profielbezoekers per meting ({{ kort[-1].periode_dagen }} dagen)</h3>
+{% set punten = [] %}
+{% for r in kort %}{% set _ = punten.append({'w': r.bezoekers, 'tip': r.datum.strftime('%d-%m-%Y') ~ ': ' ~ r.bezoekers ~ ' bezoekers in ' ~ r.periode_dagen ~ ' dagen', 'lab': r.datum.strftime('%m-%y')}) %}{% endfor %}
+{{ staven(punten, 'Profielbezoekers per meting') }}
+{% endif %}
+{% else %}
+<p class="noot">Nog geen meting van profielbezoekers.</p>
+{% endif %}

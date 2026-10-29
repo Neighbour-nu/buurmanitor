@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Adviseur</h1>
+<p class="uitleg">Een sparringpartner voor de koers van ZEROHERO. De adviseur leest alle cijfers uit het dashboard en de nieuwssignalen uit de inbox, zoekt zelf naar kansen in de markt en geeft advies over de website, content, social, contacten, evenementen en strategie. Daarna praat je met hem door over de keuzes.</p>
+{% if not actief %}<p class="melding fout">⚠️ De cockpit heeft nog geen Claude-sleutel. Draai op de server <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh claude</code>.</p>{% endif %}
+
+<nav class="tabs" role="tablist" aria-label="Adviseur" data-tabs>
+  <a role="tab" href="#advies" data-tab="advies">Advies</a>
+  <a role="tab" href="#acties" data-tab="acties">Actielijst{% if tellers.actief %} <span class="tabtel">{{ tellers.actief }}</span>{% endif %}</a>
+  <a role="tab" href="#gesprek" data-tab="gesprek">Gesprekken{% if gesprekken %} <span class="tabtel">{{ gesprekken|length }}</span>{% endif %}</a>
+  <a role="tab" href="#doelen" data-tab="doelen">Doelen en context</a>
+  <a role="tab" href="#archief" data-tab="archief">Eerdere analyses</a>
+</nav>
+
+<div class="tabblad" data-paneel="advies">
+  {% if an and an.status == 'bezig' %}
+  <div class="melding herinnering" hx-get="/adviseur/analyse/{{ an.id }}/status" hx-trigger="load, every 5s" hx-swap="innerHTML">
+    De adviseur is bezig. Dit duurt meestal drie tot zes minuten; deze pagina ververst vanzelf.
+  </div>
+  {% elif an and an.status == 'fout' %}
+  <p class="melding fout">⚠️ De laatste analyse lukte niet: {{ an.fout }}</p>
+  {% endif %}
+
+  <details class="nieuwe-analyse" {{ 'open' if not an_klaar }}>
+    <summary class="knop knop-zoek">{{ 'Nieuwe analyse' if an_klaar else 'Start de eerste analyse' }}</summary>
+    <form method="post" action="/adviseur/analyse" class="artikelformulier">
+      <fieldset class="keuzes"><legend>Voor welke periode?</legend>
+        {% for k, label in horizonnen.items() %}<label class="reden"><input type="radio" name="horizon" value="{{ k }}" {{ 'checked' if k == 'kwartaal' }}> {{ label|capitalize }}{% if k == 'week' %}: een weekplan met taken per dag{% endif %}</label>{% endfor %}
+      </fieldset>
+      <label>Waar wil je vooral naar kijken? (optioneel)
+        <textarea name="focus" rows="3" maxlength="1000" placeholder="Bijvoorbeeld: de kaartverkoop voor het congres, of: meer lezingen in het bedrijfsleven, of: welke sport ik meer moet laten zien."></textarea></label>
+      <p class="noot">De adviseur gebruikt alle cijfers die nu in de cockpit staan, je <a href="#doelen">doelen en context</a> en wat je met eerdere acties deed. Hij zoekt tot tien keer op het web. Kosten: ongeveer 30 tot 80 dollarcent per analyse.</p>
+      <button class="knop knop-concept" type="submit" {{ 'disabled' if not actief or (an and an.status == 'bezig') }}>Start analyse</button>
+    </form>
+  </details>
+
+  {% if an_klaar %}
+    {% with an = an_klaar, acties = an_acties %}{% include "_advies_resultaat.html" %}{% endwith %}
+  {% elif not an %}
+  <p class="leeg">Nog geen analyse. Vul eerst je <a href="#doelen">doelen en context</a> aan (vooral tijd, budget en wat je niet wilt) en start dan de eerste analyse.</p>
+  {% endif %}
+</div>
+
+<div class="tabblad" data-paneel="acties" hidden>
+  <p class="uitleg">Alle acties uit de analyses en gesprekken. Zet een actie op <b>Oppakken</b> als je ermee aan de slag gaat, op <b>Gedaan</b> als hij klaar is en op <b>Niet nu</b> als je hem niet doet. Met een notitie erbij (waarom niet, wat het opleverde) leert de adviseur bij de volgende analyse.</p>
+  <nav class="periodes">
+    {% for k, label in [('actief', 'Open en oppakken'), ('gedaan', 'Gedaan'), ('niet', 'Niet nu'), ('alle', 'Alle')] %}
+    <a href="/adviseur?acties={{ k }}#acties" class="knop knop-klein {{ 'aan' if acties_filter == k }}">{{ label }}{% if k in tellers and tellers[k] %} ({{ tellers[k] }}){% endif %}</a>
+    {% endfor %}
+  </nav>
+  {% if acties %}
+  <div class="advies-acties">{% for a in acties %}{% include "_advies_actie.html" %}{% endfor %}</div>
+  {% else %}<p class="leeg">Geen acties in deze lijst.</p>{% endif %}
+  <details class="nieuwe-analyse">
+    <summary class="knop">Zelf een actie toevoegen</summary>
+    <form method="post" action="/adviseur/actie" class="artikelformulier">
+      <label>Wat ga je doen?<input name="titel" required maxlength="200"></label>
+      <label>Terrein<select name="categorie">{% for k, label in categorieen.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></label>
+      <label>Hoe (optioneel)<textarea name="hoe" rows="3"></textarea></label>
+      <label>Wanneer (optioneel)<input name="wanneer" maxlength="80" placeholder="Bijvoorbeeld: voor 1 november"></label>
+      <button class="knop" type="submit">Toevoegen</button>
+    </form>
+  </details>
+</div>
+
+<div class="tabblad" data-paneel="gesprek" hidden>
+  <form method="post" action="/adviseur/gesprek" class="artikelformulier">
+    <label>Waar wil je over sparren?
+      <textarea name="vraag" rows="5" required placeholder="Bijvoorbeeld: Ik twijfel of ik naast LinkedIn ook TikTok moet oppakken. Of: Welke sprekers uit andere sporten dan voetbal zouden het congres sterker maken? Of: Hoe krijg ik meer lezingen in de zorg en de financiële sector?"></textarea></label>
+    <p class="noot">De adviseur kent alle cijfers uit de cockpit, de laatste analyse en de actielijst, en zoekt op het web als dat nodig is. Een antwoord duurt meestal een halve tot twee minuten.</p>
+    <button class="knop knop-concept" type="submit" {{ 'disabled' if not actief }}>Start gesprek</button>
+  </form>
+  {% if gesprekken %}
+  <h2 class="sub">Eerdere gesprekken</h2>
+  <div class="tabelvak"><table class="tabel">
+    <tr><th>Gesprek</th><th>Berichten</th><th>Laatst</th></tr>
+    {% for g in gesprekken %}<tr><td><a href="/adviseur/gesprek/{{ g.id }}">{{ g.titel or 'Gesprek ' ~ g.id }}</a>{% if g.status == 'bezig' %} <span class="badge status-bezig">bezig</span>{% elif g.status == 'fout' %} <span class="badge status-fout">fout</span>{% endif %}</td>
+      <td>{{ g.berichten }}</td><td>{{ geleden(g.bijgewerkt) }}</td></tr>{% endfor %}
+  </table></div>
+  {% endif %}
+</div>
+
+<div class="tabblad" data-paneel="doelen" hidden>
+  {% if request.query_params.get('doelen') %}<p class="melding ok">✓ Opgeslagen. De volgende analyse en nieuwe gesprekken gebruiken dit.</p>{% endif %}
+  <p class="uitleg">Dit leest de adviseur als eerste: waar ZEROHERO naartoe wil, wat telt en wat niet, en met welke tijd en middelen. Hoe concreter (uren per week, budget, wat je niet wilt, wat je dit jaar wilt bereiken), hoe beter het advies past. Feiten over het congres en ZEROHERO haalt hij uit de <a href="/artikelen#info">vaste informatie bij Artikelen</a>.</p>
+  {% if doelen_standaard %}<p class="melding herinnering">Dit is nog de standaardtekst. Vul vooral de regels met (vul in) aan.</p>{% endif %}
+  <form method="post" action="/adviseur/doelen" class="artikelformulier">
+    <label>Doelen en context<textarea name="waarde" rows="26">{{ doelen }}</textarea></label>
+    <label class="reden"><input type="checkbox" name="wekelijks" value="1" {{ 'checked' if wekelijks }}> Elke maandagochtend vanzelf een weekplan voor de komende week (ongeveer 2 tot 4 dollar per maand)</label>
+    <div class="knoppen">
+      <button class="knop knop-zoek" type="submit">Opslaan</button>
+      {% if not doelen_standaard %}<button class="knop" type="submit" name="standaard" value="1" onclick="return confirm('Terug naar de standaardtekst? Je eigen tekst gaat verloren.')">Standaardtekst terugzetten</button>{% endif %}
+    </div>
+  </form>
+</div>
+
+<div class="tabblad" data-paneel="archief" hidden>
+  {% if archief %}
+  <div class="tabelvak"><table class="tabel">
+    <tr><th>Datum</th><th>Periode</th><th>Focus</th><th>Status</th><th>Kosten</th><th></th></tr>
+    {% for r in archief %}<tr>
+      <td><a href="/adviseur/analyse/{{ r.id }}">{{ r.aangemaakt.astimezone().strftime('%d-%m-%Y %H:%M') }}</a>{% if r.automatisch %} <span class="noot">(automatisch)</span>{% endif %}</td>
+      <td>{{ horizonnen.get(r.horizon or 'kwartaal') }}</td><td>{{ (r.focus or '')|truncate(60) }}</td>
+      <td><span class="badge status-{{ r.status }}">{{ r.status }}</span></td><td>{{ '%.2f'|format(r.kosten)|replace('.', ',') }} dollar</td>
+      <td><form method="post" action="/adviseur/analyse/{{ r.id }}/weg" class="inline"><button class="knop knop-klein knop-weg" type="submit" onclick="return confirm('Deze analyse verwijderen? Open acties eruit verdwijnen ook; acties die je oppakte of afrondde blijven staan.')">Weg</button></form></td>
+    </tr>{% endfor %}
+  </table></div>
+  {% else %}<p class="leeg">Nog geen analyses.</p>{% endif %}
+</div>
+{% endblock %}

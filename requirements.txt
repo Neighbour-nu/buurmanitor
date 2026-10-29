@@ -11,3 +11,7 @@ pypdf==5.1.0
 openpyxl==3.1.5
 python-pptx==1.0.2
 feedparser==6.0.11
+# Werkruimte ZEROHERO (Doellijn)
+pillow==12.0.0
+google-auth==2.35.0
+xlrd==2.0.1

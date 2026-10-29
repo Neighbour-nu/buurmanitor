@@ -1,0 +1,53 @@
+<div class="fotos">
+  {% if not wp_actief %}<p class="melding fout">WordPress-gegevens ontbreken op de server (WP_USER en WP_APP_PASSWORD), dus kiezen kan nog niet.</p>{% endif %}
+  {% for f in fouten %}<p class="noot">⚠️ {{ f }}</p>{% endfor %}
+  <p class="noot">Gezocht op: {{ termen|join(', ') or 'geen zoektermen' }}</p>
+
+  <h3 class="fotokop">Eigen bestand uploaden</h3>
+  <form class="upload" hx-post="/concepten/{{ c.id }}/upload" hx-encoding="multipart/form-data" hx-target="#uitgelicht" hx-swap="outerHTML">
+    <label>Afbeelding (JPG, PNG of WebP, max. 25 MB)<input type="file" name="bestand" accept="image/jpeg,image/png,image/webp" required></label>
+    <label>Beschrijving voor slechtzienden en Google (alt-tekst)<input type="text" name="alt" maxlength="250" placeholder="Bijvoorbeeld: Marc-André ter Stegen duikt naar een bal"></label>
+    <label>Bijschrift of fotograaf (optioneel)<input type="text" name="bijschrift" maxlength="200" placeholder="Bijvoorbeeld: Foto: ANP"></label>
+    <button type="submit" class="knop knop-zoek">Uploaden en gebruiken</button>
+    <span class="htmx-indicator noot">Bezig met uploaden…</span>
+  </form>
+
+  <h3 class="fotokop">Huisstijl</h3>
+  <div class="raster">
+    <figure class="foto">
+      <img src="/concepten/{{ c.id }}/huisstijl.png" alt="Huisstijlbeeld" loading="lazy">
+      <figcaption>{{ 'Grafiek' if c.grafiek else 'Sterkste zin' }} in huisstijl</figcaption>
+      <button type="button" class="knop" hx-post="/concepten/{{ c.id }}/uitgelicht" hx-vals='{"bron": "huisstijl"}' hx-target="#uitgelicht" hx-swap="outerHTML">Gebruik deze</button>
+    </figure>
+  </div>
+
+  <h3 class="fotokop">Uit je mediabibliotheek</h3>
+  <div class="raster">
+    {% for f in eigen %}
+    <figure class="foto">
+      <img src="{{ f.thumb }}" alt="{{ f.alt or f.titel }}" loading="lazy">
+      <figcaption>{{ f.titel }}</figcaption>
+      <button type="button" class="knop" hx-post="/concepten/{{ c.id }}/uitgelicht" hx-vals='{"bron": "media", "sleutel": "{{ f.id }}"}' hx-target="#uitgelicht" hx-swap="outerHTML">Gebruik deze</button>
+    </figure>
+    {% else %}<p class="noot">Niets gevonden.</p>{% endfor %}
+  </div>
+
+  <h3 class="fotokop">Wikimedia Commons (vrij te gebruiken met naamsvermelding)</h3>
+  <div class="raster">
+    {% for f in commons %}
+    <figure class="foto">
+      <img src="{{ f.thumb }}" alt="{{ f.titel }}" loading="lazy">
+      <figcaption>{{ f.credit }}{% if f.pagina %} · <a href="{{ f.pagina }}" target="_blank" rel="noopener">bron</a>{% endif %}</figcaption>
+      <button type="button" class="knop" hx-post="/concepten/{{ c.id }}/uitgelicht" hx-vals='{"bron": "commons", "sleutel": {{ f.id|tojson }}}' hx-target="#uitgelicht" hx-swap="outerHTML">Gebruik deze</button>
+    </figure>
+    {% else %}<p class="noot">Niets gevonden.</p>{% endfor %}
+  </div>
+
+  <h3 class="fotokop">Zelf zoeken bij fotobureaus</h3>
+  <p>
+    {% for t in termen %}<span class="zoekterm">{{ t }}</span>{% endfor %}
+    <a href="https://www.anpfoto.nl" target="_blank" rel="noopener">ANP Foto</a> ·
+    <a href="https://www.orangepictures.nl" target="_blank" rel="noopener">Orange Pictures</a>
+  </p>
+  <p class="noot">Koop je daar een foto, upload hem dan in WordPress; daarna verschijnt hij hier onder je mediabibliotheek.</p>
+</div>

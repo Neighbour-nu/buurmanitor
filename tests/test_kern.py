@@ -167,3 +167,35 @@ if __name__ == "__main__":
         if naam.startswith("test_"):
             functie()
             print("ok", naam)
+
+
+def test_voorvoegsel_herschrijft_html():
+    from app.kern.prefix import herschrijf_html, herschrijf_pad
+    h = lambda t: herschrijf_html(t, "/zerohero")  # noqa: E731
+    assert h('<a href="/inbox">') == '<a href="/zerohero/inbox">'
+    assert h('<form action="/items/status">') == '<form action="/zerohero/items/status">'
+    assert h('<button hx-post="/concepten/3/weg" hx-get="/x">') == '<button hx-post="/zerohero/concepten/3/weg" hx-get="/zerohero/x">'
+    assert h("""onchange="location='/dashboard/cijfers?d='+v" """) == """onchange="location='/zerohero/dashboard/cijfers?d='+v" """
+    assert h("location.href = '/a'; fetch('/links', {})") == "location.href = '/zerohero/a'; fetch('/zerohero/links', {})"
+    # Ongemoeid: al met voorvoegsel, protocol-relatief, volledige adressen, ankers.
+    for t in ['<a href="/zerohero/x">', '<a href="/zerohero">', '<a href="//cdn.x/y">', '<a href="https://x.nl/">', '<a href="#top">']:
+        assert h(t) == t
+    assert herschrijf_pad("/filter#regels", "/zerohero") == "/zerohero/filter#regels"
+    assert herschrijf_pad("/zerohero?x=1", "/zerohero") == "/zerohero?x=1"
+    assert herschrijf_pad("https://x.nl/a", "/zerohero") == "https://x.nl/a"
+
+
+def test_doorgeven_stuurt_alleen_intern_door():
+    import asyncio
+    from app.kern.prefix import Doorgeven
+    gezien = []
+
+    def maak(naam):
+        async def asgi(scope, receive, send):
+            gezien.append((naam, scope["path"]))
+        return asgi
+    d = Doorgeven(maak("portal"), "/intern/", maak("zerohero"))
+    for pad in ["/intern/weging/leerpunten", "/internet", "/", "/zerohero/intern/x"]:
+        asyncio.run(d({"type": "http", "path": pad}, None, None))
+    assert gezien == [("zerohero", "/intern/weging/leerpunten"), ("portal", "/internet"), ("portal", "/"),
+                      ("portal", "/zerohero/intern/x")]

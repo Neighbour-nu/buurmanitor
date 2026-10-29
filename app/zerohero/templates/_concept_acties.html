@@ -1,0 +1,19 @@
+<div class="acties" id="acties-{{ c.id }}">
+  {% if fout %}<p class="melding fout">⚠️ {{ fout }}</p>{% endif %}
+  {% if c.gepubliceerd_op %}
+    <span class="badge status-klaar">Gepubliceerd {{ geleden(c.gepubliceerd_op) }}</span>
+    {% if c.wp_link %}<a class="knop knop-zoek" href="{{ c.wp_link }}" target="_blank" rel="noopener">Bekijk op de site</a>{% endif %}
+  {% elif c.wp_post_id %}
+    <button type="button" class="knop" onclick="toonVoorbeeld({{ c.wp_post_id }})">Voorbeeld op de site</button>
+    <button type="button" class="knop knop-publiceer"
+      hx-post="/concepten/{{ c.id }}/publiceer" hx-target="#acties-{{ c.id }}" hx-swap="outerHTML"
+      hx-confirm="Dit bericht nu publiceren op zerohero.one?{% if not c.beeld_media_id %} Let op: er is nog geen uitgelicht beeld gezet.{% endif %}">Publiceren</button>
+  {% endif %}
+  {% if c.wp_post_id %}<a class="knop" href="https://zerohero.one/wp-admin/post.php?post={{ c.wp_post_id }}&action=edit" target="_blank" rel="noopener">Bewerken in WordPress</a>{% endif %}
+  {% if not c.gepubliceerd_op %}
+  <button type="button" class="knop knop-weg"
+    hx-post="/concepten/{{ c.id }}/weg" hx-target="closest .concept-kaart" hx-swap="outerHTML"
+    hx-confirm="Concept weggooien?{% if c.wp_post_id %} Het concept in WordPress gaat naar de prullenbak (alleen als het nog niet gepubliceerd is).{% endif %}">Weggooien</button>
+  {% endif %}
+</div>
+<div id="weg-melding-{{ c.id }}" aria-live="polite"></div>

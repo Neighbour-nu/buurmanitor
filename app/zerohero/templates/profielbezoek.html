@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_macros.html" import getal, staven %}
+{% block inhoud %}
+<p class="terug"><a href="/bereik/linkedin">← LinkedIn: Martijn Buurman</a></p>
+<h1 class="titel">Profielbezoekers</h1>
+<p class="uitleg">LinkedIn heeft geen export voor profielbezoekers. Maak daarom één keer per maand een screenshot van <a href="https://www.linkedin.com/me/profile-views/" target="_blank" rel="noopener">Wie heeft uw profiel bekeken</a> en upload die hier. Kies bij voorkeur <b>Afgelopen 28 dagen</b> (of 30): dan sluiten de maandelijkse metingen op elkaar aan. {% if o.actief %}De cockpit leest de cijfers af; jij controleert ze.{% else %}Vul de cijfers in naast de screenshot.{% endif %}</p>
+{% if request.query_params.get('opgeslagen') %}<p class="melding ok">✓ De meting is opgeslagen.</p>{% endif %}
+{% if fout is defined and fout %}<p class="melding fout">⚠️ {{ fout }}</p>{% endif %}
+{% if o.nodig and gelezen is none %}<p class="melding herinnering">Tijd voor de maandelijkse screenshot{% if o.laatste %}: de laatste is van {{ o.laatste.datum.strftime('%d-%m-%Y') }}{% endif %}.</p>{% endif %}
+
+{% if gelezen is not none %}
+<h2 class="sub">Controleer de cijfers</h2>
+{% if leesfout is defined and leesfout %}<p class="melding fout">⚠️ {{ leesfout }}</p>{% endif %}
+{% if dagen is defined and dagen %}<p class="noot">Periode herkend als {{ dagen }} dagen{% if dagen > 31 %}: deze meting wordt als stand bewaard en niet bij de maandcijfers opgeteld{% endif %}.</p>{% endif %}
+<div class="ssi-controle">
+  <form method="post" action="/dashboard/profielbezoek/opslaan" class="cijferformulier">
+    <input type="hidden" name="screenshot_id" value="{{ screenshot_id if screenshot_id is defined and screenshot_id else '' }}">
+    <fieldset>
+      <label class="datum">Datum van de screenshot<input type="date" name="datum" value="{{ vandaag.isoformat() }}"></label>
+      {% for k, label, isgetal in velden %}
+      <label>{{ label }}<input name="{{ k }}" {{ 'inputmode=decimal' if isgetal }} value="{{ (gelezen.get(k) if gelezen.get(k) is not none else '')|string|replace('.', ',') if isgetal else (gelezen.get(k) or '') }}"></label>
+      {% endfor %}
+      <button class="knop knop-zoek" type="submit">Opslaan</button>
+    </fieldset>
+  </form>
+  {% if screenshot_id is defined and screenshot_id %}<a href="/dashboard/ssi/screenshot/{{ screenshot_id }}" target="_blank"><img class="ssi-screenshot" src="/dashboard/ssi/screenshot/{{ screenshot_id }}" alt="Geüploade screenshot"></a>{% endif %}
+</div>
+{% else %}
+<form method="post" action="/dashboard/profielbezoek/lees" enctype="multipart/form-data" class="cijferformulier">
+  <fieldset>
+    <legend>Screenshot van Profielbezoekers</legend>
+    <label>Kies de afbeelding (PNG of JPG)<input type="file" name="screenshot" accept="image/png,image/jpeg,image/webp" required></label>
+    <button class="knop knop-zoek" type="submit">{{ 'Uploaden en laten aflezen' if o.actief else 'Uploaden' }}</button>
+  </fieldset>
+</form>
+{% endif %}
+
+<h2 class="sub">Huidige stand</h2>
+{% include "_profielbezoek_blok.html" %}
+
+{% if o.rijen %}
+<h2 class="sub">Alle metingen</h2>
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Datum</th><th>Periode</th><th>Bezoekers</th><th>Per dag</th><th>Verandering volgens LinkedIn</th><th>Screenshot</th><th></th></tr>
+  {% for r in o.rijen|reverse %}<tr><td>{{ r.datum.strftime('%d-%m-%Y') }}</td><td>{{ r.periode or (r.periode_dagen ~ ' dagen') }}</td><td><b>{{ getal(r.bezoekers) }}</b></td>
+    <td>{{ (r.per_dag|string)|replace('.', ',') }}</td>
+    <td>{% if r.verandering is not none %}{{ '+' if r.verandering > 0 }}{{ ('%g'|format(r.verandering|float))|replace('.', ',') }}%{% if r.vergelijking %} <small class="noot">{{ r.vergelijking }}</small>{% endif %}{% else %}·{% endif %}</td>
+    <td>{% if r.screenshot_id %}<a href="/dashboard/ssi/screenshot/{{ r.screenshot_id }}" target="_blank">bekijk</a>{% else %}<small class="noot">handmatig</small>{% endif %}</td>
+    <td><form method="post" action="/dashboard/profielbezoek/{{ r.datum.isoformat() }}/{{ r.periode_dagen }}/weg" onsubmit="return confirm('Deze meting verwijderen?')"><button class="knop-mini" type="submit" title="Verwijderen">×</button></form></td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

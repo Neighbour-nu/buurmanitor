@@ -1,0 +1,15 @@
+<tr id="kans-{{ k.id }}" class="kans status-{{ k.status }}">
+  <td>{{ k.datum.strftime('%d-%m-%Y') }}</td>
+  <td><b>{{ k.organisatie }}</b>{% if k.omschrijving %}<br><small>{{ k.omschrijving }}</small>{% endif %}{% if k.notitie %}<br><small class="noot">{{ k.notitie }}</small>{% endif %}</td>
+  <td>{{ soorten.get(k.soort, k.soort) }}{% if k.bron %}<br><small>via {{ k.bron }}</small>{% endif %}</td>
+  <td>{% if k.waarde_cent %}{{ euro(k.waarde_cent) }}{% endif %}</td>
+  <td>
+    <select name="status" aria-label="Status van {{ k.organisatie }}"
+      hx-post="/dashboard/kansen/{{ k.id }}/status" hx-target="#kans-{{ k.id }}" hx-swap="outerHTML">
+      {% for s, label in statussen.items() %}<option value="{{ s }}" {{ 'selected' if s == k.status }}>{{ label }}</option>{% endfor %}
+    </select>
+    <button type="button" class="knop-mini" title="Verwijderen" aria-label="Kans van {{ k.organisatie }} verwijderen"
+      hx-post="/dashboard/kansen/{{ k.id }}/weg" hx-target="#kans-{{ k.id }}" hx-swap="outerHTML"
+      hx-confirm="Kans van {{ k.organisatie }} verwijderen? Dit kan niet ongedaan worden gemaakt.">×</button>
+  </td>
+</tr>

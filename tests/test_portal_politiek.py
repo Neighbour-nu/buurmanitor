@@ -11,6 +11,7 @@ BM, POL = os.environ.get("TEST_DATABASE_URL"), os.environ.get("TEST_POLITIEK_DAT
 if BM and POL:
     os.environ["DATABASE_URL"] = BM
     os.environ["POLITIEK_DATABASE_URL"] = POL
+os.environ.pop("ZEROHERO_DATABASE_URL", None)
 os.environ["PROXY_GEHEIM"] = "test-geheim"
 os.environ["BUURMANITOR_PLANNER"] = "0"
 os.environ["POLITIEK_PLANNER"] = "0"

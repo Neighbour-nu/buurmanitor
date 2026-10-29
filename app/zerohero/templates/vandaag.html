@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<section class="tegels">
+  <div class="tegel"><span class="getal">{{ stats.gewogen }}</span><span>gewogen, 24 uur</span></div>
+  <div class="tegel"><span class="getal">{{ stats.boven60 }}</span><span>boven de 60</span></div>
+  <div class="tegel"><span class="getal groen">{{ stats.top }}</span><span>topnieuws (80+)</span></div>
+  <div class="tegel"><span class="getal">{{ geselecteerd }}</span><span>geselecteerd</span></div>
+  <a class="tegel tegel-link" href="/congres"><span class="getal groen">{{ kaarten.kaarten }}</span><span>kaarten verkocht{% if kaarten_dag.kaarten %}, +{{ kaarten_dag.kaarten }} vandaag{% endif %}</span></a>
+</section>
+
+<h1 class="titel">Vandaag op de doellijn</h1>
+<p class="uitleg">De tien belangrijkste keeperverhalen van het afgelopen etmaal. Berichten over dezelfde keeper of hetzelfde voorval zijn samengevoegd. Negeer je iets, geef dan een reden: <a href="/filter">zo leert de filter</a>.</p>
+<form class="filters" method="get" action="/">
+  <label>Sport
+    <select name="sport" onchange="this.form.submit()"><option value="">Alle sporten</option>
+      {% for s in sporten %}<option value="{{ s.sport }}" {{ 'selected' if f.sport == s.sport }}>{{ s.sport|capitalize }} ({{ s.n }})</option>{% endfor %}
+    </select></label>
+  <label>Sorteer op
+    <select name="sorteer" onchange="this.form.submit()">
+      {% for k, l in sorteringen.items() %}<option value="{{ k }}" {{ 'selected' if f.sorteer == k }}>{{ l }}</option>{% endfor %}
+    </select></label>
+  <noscript><button class="knop knop-zoek" type="submit">Toon</button></noscript>
+  {% if f.sport or f.sorteer != 'score' %}<a class="knop" href="/">Wis</a>{% endif %}
+</form>
+
+{% if verhalen %}
+<div class="lijst">
+  {% for v in verhalen %}{% with nr=loop.index %}{% include "_verhaal.html" %}{% endwith %}{% endfor %}
+</div>
+{% if meer %}<p class="meer"><a href="/inbox?score=50&dagen=1{% if f.sport %}&sport={{ f.sport }}{% endif %}">+{{ meer }} andere verhalen in de inbox</a></p>{% endif %}
+{% else %}
+<p class="leeg">{% if f.sport %}Geen {{ f.sport }}verhalen boven de 50 in het afgelopen etmaal.{% else %}Nog geen keeperverhalen boven de 50 in het afgelopen etmaal. Rustig op de doellijn.{% endif %}</p>
+{% endif %}
+{% endblock %}

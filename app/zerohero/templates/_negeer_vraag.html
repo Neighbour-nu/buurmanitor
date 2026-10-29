@@ -1,0 +1,25 @@
+<form class="negeer-vraag" hx-post="/items/negeer" hx-target="closest .kaart" hx-swap="outerHTML">
+  <input type="hidden" name="ids" value="{{ ids }}">
+  <input type="hidden" name="weergave" value="{{ weergave }}">
+  <fieldset>
+    <legend>Waarom negeer je dit bericht? De filter leert ervan.</legend>
+    <div class="redenen">
+      {% for k, label in redenen.items() %}
+      <label class="reden"><input type="radio" name="reden" value="{{ k }}" {{ 'checked' if loop.first }}
+        onchange="this.closest('form').querySelector('.geen-keeper-namen').hidden = this.value !== 'geen_keeper'"> {{ label }}</label>
+      {% endfor %}
+    </div>
+    <div class="geen-keeper-namen">
+      {% if namen %}
+      <p class="noot">Wie is geen keeper? Die namen worden voortaan uit de weging gehouden.</p>
+      {% for n in namen %}<label class="reden"><input type="checkbox" name="geen_keeper" value="{{ n }}" checked> {{ n }}</label>{% endfor %}
+      {% else %}<p class="noot">Er staat geen naam bij dit bericht; je reden gaat wel als voorbeeld naar de weging.</p>{% endif %}
+    </div>
+    <label class="toelichting">Toelichting (optioneel)
+      <input name="toelichting" maxlength="500" placeholder="Bijvoorbeeld: Balk is verdediger, geen keeper."></label>
+    <div class="knoppen">
+      <button type="submit" class="knop knop-genegeerd aan">Negeer</button>
+      <button type="button" class="knop" onclick="this.closest('form').remove()">Annuleer</button>
+    </div>
+  </fieldset>
+</form>

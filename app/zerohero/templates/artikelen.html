@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Eigen artikelen</h1>
+<p class="uitleg">Voor artikelen van je eigen hand, los van het nieuws. Laat je eigen tekst structureren en verbeteren, of geef een idee en laat er een eerste versie van schrijven. Je redigeert het daarna zelf, eventueel met extra rondes, en met <b>Maak concept</b> volgt dezelfde route als bij nieuwsberichten: LinkedIn, Instagram, SEO, een concept in WordPress met het huisstijlbeeld, en Publiceren vanuit de cockpit.</p>
+{% if request.query_params.get('leeg') %}<p class="melding fout">⚠️ Er was geen tekst of idee ingevuld (en geen leesbaar Word-bestand).</p>{% endif %}
+{% if request.query_params.get('idee') %}<p class="melding ok">Het idee van de adviseur staat klaar in het tabblad <a href="#idee">Artikel vanuit een idee</a>. Pas het gerust aan voor je op Schrijf klikt.</p>{% endif %}
+{% if not actief %}<p class="melding fout">⚠️ De cockpit heeft nog geen Claude-sleutel. Draai op de server <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh claude</code>. Tot die tijd kun je alleen je eigen tekst ongewijzigd doorzetten.</p>{% endif %}
+
+<nav class="tabs" role="tablist" aria-label="Nieuw artikel" data-tabs>
+  <a role="tab" href="#eigen" data-tab="eigen">Eigen tekst verbeteren</a>
+  <a role="tab" href="#idee" data-tab="idee">Artikel vanuit een idee</a>
+  <a role="tab" href="#bestaand" data-tab="bestaand">Bestaand bericht bijwerken</a>
+  <a role="tab" href="#info" data-tab="info">Vaste informatie</a>
+  <a role="tab" href="#lijst" data-tab="lijst">Mijn artikelen{% if rijen %} <span class="tabtel">{{ rijen|length }}</span>{% endif %}</a>
+</nav>
+
+<div class="tabblad" data-paneel="eigen">
+<form method="post" action="/artikelen" class="artikelformulier" enctype="multipart/form-data">
+  <input type="hidden" name="soort" value="eigen">
+  <label>Soort tekst
+    <select name="onderwerp">{% for groep, sleutels in groepen %}<optgroup label="{{ groep }}">{% for k in sleutels %}<option value="{{ k }}" {{ 'selected' if request.query_params.get('onderwerp') == k }}>{{ onderwerpen[k] }}</option>{% endfor %}</optgroup>{% endfor %}</select>
+    <small class="noot">Bij het Keeperscongres, ZEROHERO-nieuws en de marketingsoorten gebruikt Claude je <a href="#info">vaste informatie</a> (datum, plaats, kaartverkoop, sprekers, persinformatie). Noem bij marketing in de aanwijzingen de doelgroep, het kanaal en wat de lezer moet doen. Een persbericht krijgt een nieuwskop, datumregel, lead, citaat, Over ZEROHERO en een noot voor de redactie.</small></label>
+  <label>Titel (mag een werktitel zijn)<input name="invoer_titel" maxlength="200" placeholder="Bijvoorbeeld: Hoe vaak is de beste speler een keeper?"></label>
+  <label>Jouw tekst
+    <textarea name="invoer" rows="18" placeholder="Plak hier je artikel, of laat dit leeg en upload hieronder je Word-bestand. Een lege regel tussen alinea's. Tussenkoppen mag je zelf al aangeven met ## ervoor, maar dat hoeft niet."></textarea></label>
+  <fieldset class="keuzes"><legend>Hoeveel mag er veranderen?</legend>
+    {% for k, label in niveaus.items() %}<label class="reden"><input type="radio" name="niveau" value="{{ k }}" {{ 'checked' if k == 'licht' }}> {{ label }}</label>{% endfor %}
+  </fieldset>
+  <label>Aanwijzing (optioneel)<input name="aanwijzing" maxlength="1000" placeholder="Bijvoorbeeld: maak de opening sterker en zet de tabel achteraan."></label>
+  <label>Bestanden (optioneel)
+    <input type="file" name="bestanden" multiple accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.html,.jpg,.jpeg,.png,.webp">
+    <small class="noot">Je artikel als Word-bestand (als het tekstvak leeg is, wordt het eerste Word- of tekstbestand je artikel) en/of bronnen: {{ bestandsoorten }}. Claude gebruikt de bronnen om feiten na te lopen. Maximaal 10 MB per bestand.</small></label>
+  <button class="knop knop-concept" type="submit">Verbeteren</button>
+</form>
+</div>
+
+<div class="tabblad" data-paneel="idee" hidden>
+<form method="post" action="/artikelen" class="artikelformulier" enctype="multipart/form-data">
+  <input type="hidden" name="soort" value="idee">
+  <label>Soort tekst
+    <select name="onderwerp">{% for groep, sleutels in groepen %}<optgroup label="{{ groep }}">{% for k in sleutels %}<option value="{{ k }}" {{ 'selected' if request.query_params.get('onderwerp') == k }}>{{ onderwerpen[k] }}</option>{% endfor %}</optgroup>{% endfor %}</select>
+    <small class="noot">Bij het Keeperscongres, ZEROHERO-nieuws en de marketingsoorten gebruikt Claude je <a href="#info">vaste informatie</a> (datum, plaats, kaartverkoop, sprekers, persinformatie). Noem bij marketing in de aanwijzingen de doelgroep, het kanaal en wat de lezer moet doen. Een persbericht krijgt een nieuwskop, datumregel, lead, citaat, Over ZEROHERO en een noot voor de redactie.</small></label>
+  <label>Werktitel (optioneel)<input name="invoer_titel" maxlength="200" placeholder="Bijvoorbeeld: Waarom keepers later pieken" value="{{ request.query_params.get('idee_titel', '') }}"></label>
+  <label>Het idee
+    <textarea name="invoer" rows="8" required placeholder="Waar gaat het over, welke vraag beantwoord je, welke keepers of sporten komen erin, welke cijfers wil je laten zien? Hoe concreter, hoe beter.">{{ request.query_params.get('idee', '') }}</textarea></label>
+  <label>Aanwijzingen, bronnen of links (optioneel)
+    <textarea name="aanwijzing" rows="4" placeholder="Bijvoorbeeld: vergelijk voetbal en ijshockey, gebruik de NHL-cijfers van de Vezina Trophy, eindig met wat het zegt over voorbereiding.">{{ request.query_params.get('idee_aanwijzing', '') }}</textarea></label>
+  <label>Bronbestanden (optioneel)
+    <input type="file" name="bestanden" multiple accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.html,.jpg,.jpeg,.png,.webp">
+    <small class="noot">{{ bestandsoorten }}. Bijvoorbeeld een onderzoek, je eigen aantekeningen, een tabel met cijfers of een hoofdstuk. Claude gebruikt ze als eerste bron. Maximaal 10 MB per bestand; PDF's en afbeeldingen samen maximaal 18 MB.</small></label>
+  <fieldset class="keuzes"><legend>Lengte</legend>
+    {% for k, label in lengtes.items() %}<label class="reden"><input type="radio" name="niveau" value="{{ k }}" {{ 'checked' if k == 'middel' }}> {{ label }}</label>{% endfor %}
+  </fieldset>
+  <p class="noot">Claude zoekt de feiten op, gebruikt twee van je eigen artikelen op zerohero.one als voorbeeld voor stijl en opbouw, en geeft bronnen en te controleren punten mee. Dat duurt een paar minuten.</p>
+  <button class="knop knop-concept" type="submit" {{ 'disabled' if not actief }}>Schrijf een eerste versie</button>
+</form>
+</div>
+
+<div class="tabblad" data-paneel="bestaand" hidden>
+<p class="uitleg">Haal een bericht van zerohero.one naar de cockpit om het bij te werken: nieuwe feiten, betere opbouw, een sterkere titel. Je werkt in dezelfde editor, met rondes en bronbestanden. Daarna sla je het op in WordPress (de vorige versie blijft bewaard als revisie) en maak je desgewenst nieuwe social-teksten om het opnieuw te delen. Pagina's pas je in WordPress zelf aan.</p>
+<form class="regel-form" hx-get="/artikelen/wp-lijst" hx-target="#wp-lijst" hx-trigger="submit">
+  <input name="zoek" placeholder="Zoek op titel of woord, bijv. Yashin">
+  <button class="knop" type="submit">Zoeken</button>
+</form>
+<div id="wp-lijst" hx-get="/artikelen/wp-lijst" hx-trigger="intersect once"><p class="noot">Berichten worden geladen…</p></div>
+</div>
+
+<div class="tabblad" data-paneel="info" hidden>
+{% if request.query_params.get('info') %}<p class="melding ok">✓ Vaste informatie opgeslagen.</p>{% endif %}
+<p class="uitleg">Feiten die Claude bij congres- en ZEROHERO-teksten letterlijk gebruikt. Houd ze actueel: alles wat hier staat, neemt Claude over; staat er "(vul in)", dan verzint hij niets maar zet hij het bij de punten om na te lopen.</p>
+<div class="tweekoloms">
+{% for k, (naam, waarde) in info.items() %}
+<form method="post" action="/artikelen/vaste-info" class="artikelformulier">
+  <input type="hidden" name="sleutel" value="{{ k }}">
+  <label>{{ naam }}<textarea name="waarde" rows="16">{{ waarde }}</textarea></label>
+  <button class="knop" type="submit">Opslaan</button>
+</form>
+{% endfor %}
+</div>
+</div>
+
+<div class="tabblad" data-paneel="lijst" hidden>
+{% if rijen %}
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Artikel</th><th>Soort</th><th>Stand</th><th>Bijgewerkt</th><th></th></tr>
+  {% for a in rijen %}<tr><td><a href="/artikelen/{{ a.id }}"><b>{{ a.titel or a.invoer_titel or (a.invoer|truncate(60)) }}</b></a></td>
+    <td>{{ {'eigen':'eigen tekst','idee':'vanuit idee','bestaand':'bestaand bericht'}.get(a.soort, a.soort) }}{% if a.onderwerp and a.onderwerp != 'artikel' %}<br><small class="noot">{{ (onderwerpen.get(a.onderwerp) or a.onderwerp).split(' (')[0] }}</small>{% endif %}</td>
+    <td>{% if a.gepubliceerd_op %}<span class="badge status-gepubliceerd">gepubliceerd</span>
+        {% elif a.concept_id %}<a href="/concepten/{{ a.concept_id }}">concept {{ {'bezig':'wordt gemaakt','klaar':'klaar','fout':'mislukt'}.get(a.concept_status, a.concept_status) }}</a>
+        {% else %}{{ {'bezig':'wordt bewerkt…','klaar':'klaar om te redigeren','fout':'mislukt'}.get(a.status, a.status) }}{% endif %}</td>
+    <td>{{ geleden(a.bijgewerkt) }}</td>
+    <td><form method="post" action="/artikelen/{{ a.id }}/weg" onsubmit="return confirm('Dit artikel uit de cockpit verwijderen? Een concept in WordPress blijft staan.')"><button class="knop-mini" type="submit" title="Verwijderen">×</button></form></td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="noot">Nog geen eigen artikelen.</p>{% endif %}
+</div>
+{% endblock %}

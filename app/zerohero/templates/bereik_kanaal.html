@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_macros.html" import getal, delta, staven %}
+{% block inhoud %}
+{% set plabel = periodes[periode] %}{% set titel = kanaal.naam %}
+{% include "_bereik_kop.html" %}
+{% if li is defined and li is not none %}{% include "_linkedin_pagina.html" %}{% endif %}
+{% if lp is defined and lp is not none %}{% include "_linkedin_profiel.html" %}{% endif %}
+{% set is_meta = mp is defined and mp is not none %}
+{% if is_meta %}{% include "_meta.html" %}
+<nav class="tabs" role="tablist" aria-label="{{ kanaal.naam }}" data-tabs>
+  <a role="tab" href="#cijfers" data-tab="cijfers">Grafieken en tabellen</a>
+  <a role="tab" href="#posts" data-tab="posts">Laatste {{ 'berichten' if kanaal.id == 'facebook' else 'posts' }}{% if mp.posts %} <span class="tabtel">{{ mp.posts|length }}</span>{% endif %}</a>
+</nav>
+<div class="tabblad" data-paneel="posts" hidden>{% include "_meta_posts.html" %}</div>
+<div class="tabblad" data-paneel="cijfers">
+{% endif %}
+<div class="koppelstatus">
+  <span class="noot">{{ kanaal.koppeling }}</span>
+  <a class="knop" href="/dashboard/cijfers">Cijfers invoeren</a>
+</div>
+<section class="tegels tegels-groot compact">
+  {% for r in regels %}<div class="tegel"><span class="tegel-kop">{{ r.label }}</span>
+    <span class="getal">{{ getal(r.waarde) }} {{ delta(r.delta, plabel) }}</span>
+    <small>{% if r.soort == 'stand' %}{% if r.peil %}Stand {{ r.peil.strftime('%d-%m-%Y') }}.{% else %}Nog niet ingevuld.{% endif %}{% else %}Opgeteld over de {{ plabel }}.{% endif %}</small></div>{% endfor %}
+</section>
+{% for rk in reeksen %}
+<h3 class="fotokop">{{ rk.label }}</h3>
+{% if rk.punten|length > 1 %}
+  {% set punten = [] %}
+  {% if rk.soort == 'stand' %}{% set laagste = rk.punten|map(attribute='waarde')|min %}{% else %}{% set laagste = 0 %}{% endif %}
+  {% for p in rk.punten %}{% set _ = punten.append({'w': p.waarde - laagste + (1 if rk.soort == 'stand' else 0), 'tip': p.datum.strftime('%d-%m-%Y') ~ ': ' ~ getal(p.waarde), 'lab': p.datum.strftime('%d-%m') if rk.punten|length <= 16 else ''}) %}{% endfor %}
+  {{ staven(punten, rk.label) }}
+  {% if rk.soort == 'stand' %}<p class="noot">Van {{ getal(rk.punten[0].waarde) }} naar {{ getal(rk.punten[-1].waarde) }} in deze periode. De staven tonen de groei vanaf het laagste punt.</p>{% endif %}
+{% endif %}
+{% if rk.punten %}
+<details class="metingen"><summary>{{ rk.punten|length }} {{ 'meting' if rk.punten|length == 1 else 'metingen' }} in deze periode{% if rk.n > rk.punten|length %} ({{ rk.n }} sinds {{ rk.vanaf.strftime('%d-%m-%Y') }}){% endif %}</summary>
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Datum</th><th>Waarde</th>{% if rk.soort == 'stand' %}<th>Verschil</th>{% endif %}<th>Bron</th></tr>
+  {% for p in rk.punten|reverse %}<tr><td>{{ p.datum.strftime('%d-%m-%Y') }}</td><td>{{ getal(p.waarde) }}</td>{% if rk.soort == 'stand' %}<td>{{ delta(p.verschil, 'meting') }}</td>{% endif %}<td><small class="noot">{{ p.bron }}</small></td></tr>{% endfor %}
+</table></div></details>
+{% else %}<p class="noot">Geen metingen in deze periode.{% if rk.vanaf %} Eerste meting: {{ rk.vanaf.strftime('%d-%m-%Y') }}.{% endif %}</p>{% endif %}
+{% endfor %}
+{% if kanaal.id == 'linkedin_pagina' %}<p class="noot">Het aantal volgers van de pagina staat niet in de exports. Neem het af en toe over van de beheerpagina via Cijfers invoeren.</p>{% endif %}
+{% if kanaal.id == 'linkedin' %}<p class="noot">Volgers komen uit de profielexport; je kunt ze ook tussendoor invullen via Cijfers invoeren.</p>{% endif %}
+{% if (li is defined and li is not none) or (lp is defined and lp is not none) %}</div>{% endif %}
+{% if is_meta %}</div>{% endif %}
+{% endblock %}

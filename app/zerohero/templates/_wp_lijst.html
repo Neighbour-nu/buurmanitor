@@ -1,0 +1,14 @@
+{% if fout %}<p class="melding fout">⚠️ {{ fout }}</p>
+{% elif not berichten %}<p class="noot">Geen berichten gevonden{% if zoek %} voor "{{ zoek }}"{% endif %}.</p>
+{% else %}
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Bericht</th><th>Status</th><th>Datum</th><th></th></tr>
+  {% for p in berichten %}<tr><td><a href="{{ p.link }}" target="_blank" rel="noopener">{{ (p.title.rendered or '(zonder titel)')|striptags }}</a></td>
+    <td>{{ {'publish':'gepubliceerd','draft':'concept','future':'gepland','pending':'ter beoordeling'}.get(p.status, p.status) }}</td>
+    <td>{{ p.date[:10].split('-')|reverse|join('-') }}</td>
+    <td><form method="post" action="/artikelen/wp/{{ p.id }}" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Openen…'">
+      <button class="knop" type="submit">Bijwerken</button></form>
+      {% if bezig.get(p.id) %}<small class="noot"><a href="/artikelen/{{ bezig.get(p.id) }}">eerder geopend</a></small>{% endif %}</td></tr>{% endfor %}
+</table></div>
+<p class="noot">De laatste 20{% if zoek %} resultaten voor "{{ zoek }}"{% endif %}. Zoek op een woord uit de titel om oudere berichten te vinden.</p>
+{% endif %}

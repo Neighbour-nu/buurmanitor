@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<p class="terug"><a href="/">← Vandaag</a></p>
+<h1 class="titel">Wat de filter leert</h1>
+<p class="uitleg">Als je een bericht negeert met een reden, onthoudt de cockpit dat. Namen die geen keeper zijn, worden voortaan direct weggefilterd. Je eigen regels en je recente redenen gaan bij elke weging mee naar Claude, zodat vergelijkbare berichten lager scoren.</p>
+{% if geleerd %}<p class="noot">De afgelopen 30 dagen zijn {{ geleerd }} {{ 'bericht' if geleerd == 1 else 'berichten' }} automatisch weggefilterd. Je vindt ze in de <a href="/inbox?status=weggefilterd">Inbox onder Weggefilterd</a>.</p>{% endif %}
+
+<div class="tweekoloms">
+<section id="namen">
+  <h2 class="sub">Geen keeper</h2>
+  {% if geen %}
+  <div class="tabelvak"><table class="tabel">
+    <tr><th>Naam</th><th>Toelichting</th><th>Sinds</th><th></th></tr>
+    {% for g in geen %}<tr><td><b>{{ g.weergave or g.naam }}</b></td><td><small class="noot">{{ g.toelichting or '' }}</small></td><td>{{ g.sinds.strftime('%d-%m-%Y') }}</td>
+      <td><form method="post" action="/filter/geen-keeper/weg"><input type="hidden" name="naam" value="{{ g.naam }}"><button class="knop-mini" type="submit" title="Toch wel een keeper: verwijderen">×</button></form></td></tr>{% endfor %}
+  </table></div>
+  {% else %}<p class="noot">Nog geen namen. Kies bij Negeer de reden "Gaat niet over een keeper" om ze toe te voegen.</p>{% endif %}
+  <form method="post" action="/filter/geen-keeper" class="regel-form">
+    <input name="naam" placeholder="Naam toevoegen, bijv. Lars Balk" required>
+    <input name="toelichting" placeholder="Toelichting (optioneel)">
+    <button class="knop" type="submit">Toevoegen</button>
+  </form>
+</section>
+
+<section id="regels">
+  <h2 class="sub">Eigen filterregels</h2>
+  <p class="noot">Schrijf in gewone taal wat je wel of niet wilt zien. Deze regels gaan letterlijk mee in de opdracht aan Claude.</p>
+  {% if regels %}
+  <ul class="regels">
+    {% for r in regels %}<li class="{{ '' if r.actief else 'uit' }}"><span>{{ r.tekst }}</span>
+      <form method="post" action="/filter/regels/{{ r.id }}/aan"><button class="knop-mini" type="submit" title="{{ 'Uitzetten' if r.actief else 'Aanzetten' }}">{{ '⏸' if r.actief else '▶' }}</button></form>
+      <form method="post" action="/filter/regels/{{ r.id }}/weg" onsubmit="return confirm('Deze regel verwijderen?')"><button class="knop-mini" type="submit" title="Verwijderen">×</button></form></li>{% endfor %}
+  </ul>
+  {% endif %}
+  <form method="post" action="/filter/regels" class="regel-form">
+    <input name="tekst" maxlength="300" required placeholder="Bijv. Alleen berichten waarin de tekst zegt dat iemand keeper is; spelers in het veld tellen niet.">
+    <button class="knop" type="submit">Regel toevoegen</button>
+  </form>
+</section>
+</div>
+
+<h2 class="sub" id="genegeerd">Recent genegeerd</h2>
+{% if request.query_params.get('teruggezet') %}<p class="melding ok">✓ Teruggezet naar Vandaag en de Inbox.{% if request.query_params.get('teruggezet') != '-' %} Van de lijst Geen keeper gehaald: {{ request.query_params.get('teruggezet') }}.{% endif %}</p>{% endif %}
+{% if per_reden %}<p class="noot">Afgelopen 90 dagen: {% for r in per_reden %}{{ redenen.get(r.negeer_reden, r.negeer_reden or 'zonder reden') }} {{ r.n }}× (gemiddelde score {{ r.gem|int if r.gem is not none else '·' }}){{ ', ' if not loop.last else '.' }}{% endfor %}</p>{% endif %}
+{% if genegeerd %}
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Bericht</th><th>Score</th><th>Reden</th><th>Wanneer</th><th></th></tr>
+  {% for x in genegeerd %}<tr><td><a href="{{ x.url }}" target="_blank" rel="noopener">{{ x.titel|truncate(90) }}</a><br><small class="noot">{{ x.sport or '' }}{% if x.keepers %} · {{ x.keepers|join(', ') }}{% endif %}</small></td>
+    <td>{{ x.score if x.score is not none else '·' }}</td>
+    <td>{{ redenen.get(x.negeer_reden, x.negeer_reden) if x.negeer_reden else 'zonder reden' }}{% if x.negeer_toelichting %}<br><small class="noot">{{ x.negeer_toelichting }}</small>{% endif %}</td>
+    <td>{{ geleden(x.status_op) }}</td>
+    <td><form method="post" action="/items/terugzetten"><input type="hidden" name="ids" value="{{ x.id }}"><input type="hidden" name="terug" value="filter">
+      <button class="knop" type="submit" title="Onterecht genegeerd: terug naar Vandaag en de Inbox">Terugzetten</button></form></td></tr>{% endfor %}
+</table></div>
+<p class="noot">Terugzetten haalt de reden weg. Kwam er bij dit bericht een naam op de lijst Geen keeper, dan gaat die er ook af en komen de berichten die daardoor automatisch waren weggefilterd, ook terug.</p>
+{% else %}<p class="noot">Nog niets genegeerd.</p>{% endif %}
+
+{% if weg %}
+<h2 class="sub" id="automatisch">Automatisch weggefilterd</h2>
+<p class="noot">Deze berichten gingen alleen over namen op de lijst Geen keeper. Staat er toch een keeper in, zet het bericht dan terug (de naam blijft op de lijst; haal die zo nodig bovenaan weg).</p>
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Bericht</th><th>Score</th><th>Wanneer</th><th></th></tr>
+  {% for x in weg %}<tr><td><a href="{{ x.url }}" target="_blank" rel="noopener">{{ x.titel|truncate(90) }}</a><br><small class="noot">{{ x.sport or '' }}{% if x.keepers %} · {{ x.keepers|join(', ') }}{% endif %}</small></td>
+    <td>{{ x.score if x.score is not none else '·' }}</td><td>{{ geleden(x.status_op) }}</td>
+    <td><form method="post" action="/items/terugzetten"><input type="hidden" name="ids" value="{{ x.id }}"><input type="hidden" name="terug" value="filter">
+      <button class="knop" type="submit">Terugzetten</button></form></td></tr>{% endfor %}
+</table></div>
+{% endif %}
+
+<h2 class="sub">Wat er naar de weging gaat</h2>
+<p class="noot">Dit stuk tekst haalt de weging (n8n) elk kwartier op en zet het in de opdracht aan Claude.</p>
+<pre class="leerpunten">{{ lp.tekst or 'Nog niets: er zijn nog geen namen, regels of genegeerde berichten met een reden.' }}</pre>
+{% endblock %}

@@ -1,0 +1,97 @@
+{% from "_macros.html" import getal, delta, staven %}
+<div class="koppelstatus">
+  {% if li.laatste_upload %}<span class="noot">Laatste export geüpload {{ geleden(li.laatste_upload.moment) }}{% if li.tot %}, cijfers tot en met {{ li.tot.strftime('%d-%m-%Y') }}{% endif %}.</span>
+  {% else %}<span class="noot">Nog geen export geüpload.</span>{% endif %}
+  {% if li_nodig %}<span class="melding herinnering">Tijd voor de maandelijkse export</span>{% endif %}
+  <a class="knop" href="/dashboard/linkedin">Exports uploaden</a>
+  <a class="knop" href="https://www.linkedin.com/company/zerohero1one/" target="_blank" rel="noopener">Naar de pagina</a>
+</div>
+<nav class="tabs" role="tablist" aria-label="Onderdelen van de bedrijfspagina" data-tabs>
+  <a role="tab" href="#overzicht" data-tab="overzicht">Overzicht</a>
+  <a role="tab" href="#maanden" data-tab="maanden">Per maand</a>
+  <a role="tab" href="#posts" data-tab="posts">Bijdragen{% if li.posts %} <span class="tabtel">{{ li.posts|length }}</span>{% endif %}</a>
+  <a role="tab" href="#publiek" data-tab="publiek">Volgers en bezoekers</a>
+  <a role="tab" href="#volgers" data-tab="volgers">Aantal volgers</a>
+</nav>
+<div class="tabblad" data-paneel="overzicht">
+{% if li.som %}
+{% set s = li.som %}{% set t = li.toen %}
+<p class="uitleg">De {{ plabel }} tot en met de laatste dag in de export, vergeleken met de {{ plabel }} daarvoor.</p>
+<section class="tegels tegels-groot compact">
+  <div class="tegel"><span class="tegel-kop">Weergaven</span>
+    <span class="getal">{{ getal(s.weergaven|int if s.weergaven is not none else none) }} {% if t.weergaven is not none %}{{ delta(((s.weergaven or 0) - (t.weergaven or 0))|int, plabel) }}{% endif %}</span>
+    <small>{{ getal((s.weergaven_spontaan or 0)|int) }} spontaan, {{ getal((s.weergaven_gesponsord or 0)|int) }} gesponsord.{% if t.weergaven is not none %} Vorige {{ plabel }}: {{ getal(t.weergaven|int) }}.{% else %} Over de {{ plabel }} daarvoor is nog geen export.{% endif %}</small></div>
+  <div class="tegel"><span class="tegel-kop">Klikken en reacties</span>
+    <span class="getal">{{ getal(s.interacties) }} {% if t.weergaven is not none %}{{ delta(s.interacties - t.interacties, plabel) }}{% endif %}</span>
+    <small>{{ getal((s.klikken or 0)|int) }} klikken, {{ getal((s.reacties or 0)|int) }} reacties, {{ getal((s.commentaren or 0)|int) }} commentaren, {{ getal((s.reposts or 0)|int) }} reposts.{% if s.weergaven %} Doorklik {{ ((s.klikken or 0) / s.weergaven * 100)|round(1)|string|replace('.', ',') }}%.{% endif %}</small></div>
+  {% if li.heeft_volgers %}
+  <div class="tegel"><span class="tegel-kop">Nieuwe volgers</span>
+    <span class="getal">{{ getal((s.nieuwe_volgers or 0)|int) }} {% if t.nieuwe_volgers is not none %}{{ delta(((s.nieuwe_volgers or 0) - (t.nieuwe_volgers or 0))|int, plabel) }}{% endif %}</span>
+    <small>{% if li.heeft_bezoekers %}{{ getal((s.paginaweergaven or 0)|int) }} paginaweergaven door {{ getal((s.bezoekers or 0)|int) }} unieke bezoekers.{% endif %}</small></div>
+  {% else %}
+  <div class="tegel"><span class="tegel-kop">Sinds het begin van de export</span>
+    <span class="getal">{{ getal(li.ooit.weergaven|int) }}</span>
+    <small>weergaven sinds {{ li.vanaf.strftime('%d-%m-%Y') }}. Upload ook de exports Volgers en Bezoekers voor volgers en paginabezoek.</small></div>
+  {% endif %}
+</section>
+
+{% if li.inzichten %}
+<h3 class="fotokop">Wat opvalt</h3>
+<ul class="inzichten">{% for i in li.inzichten %}<li>{{ i }}</li>{% endfor %}</ul>
+{% endif %}
+
+{% set wd = ['ma','di','wo','do','vr','za','zo'] %}
+{% if li.dagreeks %}
+<h3 class="fotokop">Weergaven per dag</h3>
+{% set punten = [] %}
+{% for r in li.dagreeks %}{% set _ = punten.append({'w': r.weergaven or 0, 'tip': wd[r.datum.weekday()] ~ ' ' ~ r.datum.strftime('%d-%m') ~ ': ' ~ (r.weergaven or 0) ~ ' weergaven' ~ ((' (' ~ r.weergaven_gesponsord ~ ' gesponsord)') if r.weergaven_gesponsord else '') ~ ', ' ~ (r.klikken or 0) ~ ' klikken', 'lab': r.datum.strftime('%d') if li.dagreeks|length <= 31 else ''}) %}{% endfor %}
+{{ staven(punten, 'Weergaven per dag') }}
+{% endif %}
+{% else %}<p class="noot">Nog geen export van de bedrijfspagina. <a href="/dashboard/linkedin">Upload de exports</a>.</p>{% endif %}
+</div>
+<div class="tabblad" data-paneel="maanden" hidden>
+{% if li.som and li.maanden %}
+{% set mnd = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'] %}
+<h3 class="fotokop">Per maand</h3>
+<div class="tabelvak"><table class="tabel sorteerbaar">
+  <thead><tr><th data-sorteer>Maand</th><th data-sorteer>Weergaven</th><th data-sorteer>Spontaan</th><th data-sorteer>Gesponsord</th><th data-sorteer>Klikken</th>{% if li.heeft_volgers %}<th data-sorteer>Nieuwe volgers</th>{% endif %}{% if li.heeft_bezoekers %}<th data-sorteer>Paginabezoek</th>{% endif %}</tr></thead>
+  {% set hm = (li.maanden|map(attribute='weergaven')|max) or 1 %}
+  <tbody>{% for m in li.maanden|reverse %}<tr><td data-waarde="{{ m.maand.isoformat() }}">{{ mnd[m.maand.month - 1] }} {{ m.maand.year }}</td>
+    <td data-waarde="{{ m.weergaven }}"><span class="minibalk"><span style="width: {{ (m.weergaven / hm * 100)|round(0) }}%"></span></span> {{ getal(m.weergaven) }}</td>
+    <td data-waarde="{{ m.spontaan }}">{{ getal(m.spontaan) }}</td><td data-waarde="{{ m.gesponsord }}">{{ getal(m.gesponsord) }}</td><td data-waarde="{{ m.klikken }}">{{ getal(m.klikken) }}</td>
+    {% if li.heeft_volgers %}<td data-waarde="{{ m.volgers }}">{{ getal(m.volgers) }}</td>{% endif %}{% if li.heeft_bezoekers %}<td data-waarde="{{ m.bezoeken }}">{{ getal(m.bezoeken) }}</td>{% endif %}</tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="noot">Nog geen export van de bedrijfspagina.</p>{% endif %}
+</div>
+<div class="tabblad" data-paneel="posts" hidden>
+{% if li.posts %}
+<h3 class="fotokop">Bijdragen op de bedrijfspagina</h3>
+<div class="tabelvak"><table class="tabel sorteerbaar">
+  <thead><tr><th>Bijdrage</th><th data-sorteer>Geplaatst</th><th data-sorteer>Weergaven</th><th data-sorteer>Klikken</th><th data-sorteer>Doorklik</th><th data-sorteer>Reacties</th><th data-sorteer>Interactie</th></tr></thead>
+  <tbody>{% for p in li.posts %}<tr><td><a href="{{ p.link }}" target="_blank" rel="noopener">{{ p.titel|truncate(80) }}</a><br><small class="noot">{{ p.soort or '' }}{% if p.door %}, door {{ p.door }}{% endif %}</small></td>
+    <td data-waarde="{{ p.aangemaakt.isoformat() if p.aangemaakt else '' }}">{{ p.aangemaakt.strftime('%d-%m-%Y') if p.aangemaakt else '' }}</td>
+    <td data-waarde="{{ p.weergaven if p.weergaven is not none else '' }}">{{ getal(p.weergaven) }}</td>
+    <td data-waarde="{{ p.klikken if p.klikken is not none else '' }}">{{ getal(p.klikken) }}</td>
+    <td data-waarde="{{ p.ctr if p.ctr is not none else '' }}">{{ ((p.ctr|float * 100)|round(1)|string|replace('.', ',') ~ '%') if p.ctr is not none else '·' }}</td>
+    <td data-waarde="{{ ((p.reacties or 0) + (p.commentaren or 0)) if (p.reacties is not none or p.commentaren is not none) else '' }}">{{ getal(p.reacties) }}{% if p.commentaren %} + {{ p.commentaren }} comm.{% endif %}</td>
+    <td data-waarde="{{ p.interactie if p.interactie is not none else '' }}">{{ ((p.interactie|float * 100)|round(1)|string|replace('.', ',') ~ '%') if p.interactie is not none else '·' }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<p class="noot">Gesponsorde campagnes zonder eigen bijdrage op de pagina staan niet in deze lijst, wel in de weergaven per dag.</p>
+{% else %}<p class="noot">Nog geen bijdragen; upload de export Content.</p>{% endif %}
+</div>
+<div class="tabblad" data-paneel="publiek" hidden>
+
+{% if li.verdelingen %}
+<h3 class="fotokop">Wie volgt en bezoekt de pagina</h3>
+<div class="tweekoloms">
+  {% for v in li.verdelingen %}<div>
+    <h4 class="kleinkop">{{ v.titel }}{{ ' (volgers)' if v.soort.startswith('pagina-volgers:') else (' (bezoekers)' if v.soort.startswith('pagina-bezoekers:') else '') }}</h4>
+    <div class="verdeling">
+      {% for r in v.data.rijen[:8] %}<div class="verdeel-regel"><span>{{ r[0]|truncate(28) }}</span><span class="verdeel-balk"><span style="width: {{ (r[1] / v.data.totaal * 100)|round(0) if v.data.totaal else 0 }}%"></span></span><b>{{ getal(r[1]) }}</b></div>{% endfor %}
+    </div>
+  </div>{% endfor %}
+</div>
+{% endif %}
+{% if not li.verdelingen %}<p class="noot">Nog geen verdeling; upload de exports Volgers en Bezoekers.</p>{% endif %}
+</div>
+<div class="tabblad" data-paneel="volgers" hidden>

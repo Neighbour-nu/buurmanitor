@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import getal %}
+{% block inhoud %}
+<h1 class="titel">Cijfers invoeren</h1>
+<p class="uitleg">Vul in wat je weet, de rest laat je leeg. Eén keer per week is genoeg, bijvoorbeeld op maandag. Bij een stand (zoals volgers) vul je het getal van vandaag in, bij een weekcijfer (zoals impressies) het totaal van de afgelopen week. Kanalen die later automatisch gekoppeld worden, vullen zichzelf.</p>
+<form method="post" action="/dashboard/cijfers" class="cijferformulier">
+  <label class="datum">Datum<input type="date" name="datum" value="{{ datum.isoformat() }}" onchange="location='/dashboard/cijfers?datum='+this.value"></label>
+  {% for k in kanalen %}
+  <fieldset>
+    <legend>{{ k.naam }} <small class="noot">{{ k.koppeling }}</small></legend>
+    {% for sleutel, label, soort in k.cijfers if (k.id, sleutel) not in alleen_export %}
+      {% set l = laatste.get((k.id, sleutel)) %}
+      <label>{{ label }}
+        <input name="{{ k.id }}__{{ sleutel }}" inputmode="decimal" value="{{ getal(bestaand.get((k.id, sleutel))) if bestaand.get((k.id, sleutel)) is not none else '' }}"
+          placeholder="{{ getal(l[0]) ~ ' op ' ~ l[1].strftime('%d-%m') if l else '' }}">
+      </label>
+    {% endfor %}
+    {% if k.id in ('linkedin', 'linkedin_pagina') %}<p class="noot">Impressies, interacties en nieuwe volgers komen uit de export: <a href="/dashboard/linkedin">LinkedIn-exports uploaden</a>.{% if k.id == 'linkedin_pagina' %} Het aantal volgers van de pagina staat niet in de export: neem het over van de beheerpagina.{% endif %}</p>{% endif %}
+    {% if k.id == 'linkedin' %}<p class="noot">De SSI gaat via een screenshot: <a href="/dashboard/ssi">SSI-screenshot uploaden</a>. Profielbezoekers ook via een screenshot: <a href="/dashboard/profielbezoek">Profielbezoekers</a>.</p>{% endif %}
+  </fieldset>
+  {% endfor %}
+  <button class="knop knop-zoek" type="submit">Opslaan</button>
+</form>
+{% endblock %}

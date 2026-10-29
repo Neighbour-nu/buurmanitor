@@ -1,0 +1,31 @@
+{% from "_macros.html" import getal, delta, staven %}
+{% set nu = o.laatste %}{% set vor = o.vorige %}
+{% if nu %}
+<div class="ssi-blok">
+  <div class="ssi-score">
+    <span class="ssi-getal">{{ (nu.ssi|float)|round|int if nu.ssi is not none else '·' }}</span>
+    <span class="noot">van 100{% if vor and vor.ssi is not none and nu.ssi is not none %} {{ delta(((nu.ssi - vor.ssi)|float)|round(1)|int if ((nu.ssi - vor.ssi)|float) == ((nu.ssi - vor.ssi)|float)|round(0) else ((nu.ssi - vor.ssi)|float)|round(1), 'vorige meting') }}{% endif %}</span>
+    <small class="noot">Stand {{ nu.datum.strftime('%d-%m-%Y') }}</small>
+  </div>
+  <div class="ssi-delen">
+    {% for k, label in onderdelen %}{% set w = nu[k] %}
+    <div class="ssi-deel"><div class="ssi-deelkop"><span>{{ label }}</span><b>{{ ('%g'|format(w|float))|replace('.', ',') if w is not none else '·' }} <small class="noot">/ 25</small>{% if vor and vor[k] is not none and w is not none %} {{ delta(((w - vor[k])|float)|round(2), 'vorige meting') }}{% endif %}</b></div>
+      <span class="verdeel-balk"><span style="width: {{ ((w|float) / 25 * 100)|round(0) if w is not none else 0 }}%"></span></span></div>
+    {% endfor %}
+  </div>
+  <div class="ssi-posities">
+    {% if nu.branche_top is not none %}<div><b>Beste {{ (nu.branche_top|float)|round|int }}%</b><span class="noot">in {{ nu.branche_naam or 'je branche' }}{% if nu.branche_gem is not none %} (gemiddeld {{ (nu.branche_gem|float)|round|int }}){% endif %}</span></div>{% endif %}
+    {% if nu.netwerk_top is not none %}<div><b>Beste {{ (nu.netwerk_top|float)|round|int }}%</b><span class="noot">in je netwerk{% if nu.netwerk_gem is not none %} (gemiddeld {{ (nu.netwerk_gem|float)|round|int }}){% endif %}</span></div>{% endif %}
+    {% if nu.team_rang %}<div><b>{{ nu.team_rang }}</b><span class="noot">in je team{% if nu.team_gem is not none %} (gemiddeld {{ (nu.team_gem|float)|round|int }}){% endif %}</span></div>{% endif %}
+  </div>
+</div>
+{% if o.inzichten %}<ul class="inzichten">{% for i in o.inzichten %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}
+{% if o.rijen|length > 1 %}
+<h3 class="fotokop">SSI per meting</h3>
+{% set punten = [] %}
+{% for r in o.rijen if r.ssi is not none %}{% set _ = punten.append({'w': r.ssi|float, 'tip': r.datum.strftime('%d-%m-%Y') ~ ': SSI ' ~ ((r.ssi|float)|round(1)|string)|replace('.', ','), 'lab': r.datum.strftime('%m-%y')}) %}{% endfor %}
+{{ staven(punten, 'SSI per meting') }}
+{% endif %}
+{% else %}
+<p class="noot">Nog geen SSI-meting. Upload een screenshot van linkedin.com/sales/ssi.</p>
+{% endif %}

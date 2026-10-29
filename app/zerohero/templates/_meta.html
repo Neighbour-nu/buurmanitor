@@ -1,0 +1,13 @@
+{% from "_macros.html" import getal %}
+{% set bron = mp.bron or 'Meta' %}
+{% if request.query_params.get('ververst') == 'ok' %}<p class="melding ok">✓ Bijgewerkt vanuit {{ bron }}.</p>{% elif request.query_params.get('ververst') == 'fout' %}<p class="melding fout">⚠️ Bijwerken vanuit {{ bron }} is niet gelukt.</p>{% endif %}
+{% if not mp.actief %}
+<p class="melding herinnering">{{ kanaal.naam }} is nog niet gekoppeld. Volg de stappen voor de {{ bron }}-koppeling en draai daarna op de server <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh {{ (mp.script or 'meta.sh')|replace('.sh', '') }}</code>. Tot die tijd kun je het aantal volgers invullen via Cijfers invoeren.</p>
+{% else %}
+<div class="koppelstatus">
+  {% if mp.status %}{% if mp.status.ok %}<span class="noot">Bijgewerkt {{ geleden(mp.status.laatst) }}, daarna elke drie uur.</span>{% else %}<span class="melding fout">⚠️ {{ mp.status.fout }}</span>{% endif %}
+  {% else %}<span class="noot">Eerste keer ophalen loopt…</span>{% endif %}
+  <form method="post" action="{{ mp.ververs_url or '/dashboard/ververs/meta' }}"><input type="hidden" name="terug" value="/bereik/{{ kanaal.id }}"><button class="knop" type="submit">Nu verversen</button></form>
+</div>
+{% if mp.status and mp.status.ok and mp.status.fout %}<details class="metingen"><summary>Niet alle statistieken beschikbaar</summary><p class="noot">{{ mp.status.fout }}</p><p class="noot">{{ bron }} wijzigt regelmatig welke statistieken er zijn; wat ontbreekt, slaat de cockpit over.</p></details>{% endif %}
+{% endif %}

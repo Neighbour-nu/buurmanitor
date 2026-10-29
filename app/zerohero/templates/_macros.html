@@ -1,0 +1,19 @@
+{% macro getal(v) -%}
+{%- if v is none -%}·
+{%- elif v is integer -%}{{ "{:,}".format(v)|replace(",", ".") }}
+{%- else -%}{{ ("%.1f"|format(v))|replace(".", ",") }}
+{%- endif -%}
+{%- endmacro %}
+{% macro delta(d, periode) -%}
+{%- if d is not none and d != 0 -%}
+<span class="delta {{ 'plus' if d > 0 else 'min' }}" title="Ten opzichte van de {{ periode }} daarvoor">{{ '+' if d > 0 else '−' }}{{ getal(d|abs) }}</span>
+{%- elif d == 0 -%}<span class="delta">gelijk</span>
+{%- endif -%}
+{%- endmacro %}
+{% macro staven(punten, label, smal=false) -%}
+{#- punten: lijst van dicts met w (waarde), tip (tekst bij aanwijzen) en lab (korte tekst onder de staaf, mag leeg) -#}
+{%- set hoogste = (punten|map(attribute='w')|max) or 1 -%}
+<div class="staven{{ ' staven-smal' if smal or punten|length > 40 }}{{ ' staven-vol' if punten|length > 120 }}" role="img" aria-label="{{ label }}">
+  {%- for p in punten %}<div class="staaf tip" tabindex="0" data-tip="{{ p.tip }}"><span class="balk" style="height: {{ ((p.w or 0) / hoogste * 100)|round(0) }}%"></span>{% if p.lab %}<span class="dag">{{ p.lab|safe }}</span>{% endif %}</div>{% endfor -%}
+</div>
+{%- endmacro %}

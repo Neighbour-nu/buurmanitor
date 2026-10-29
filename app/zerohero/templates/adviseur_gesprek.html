@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<p class="terug"><a href="/adviseur#gesprek">← Adviseur, gesprekken</a></p>
+<h1 class="titel">{{ g.titel or 'Gesprek met de adviseur' }}</h1>
+<p class="noot">Begonnen {{ geleden(g.aangemaakt) }}{% if actie %} · over de actie <a href="/adviseur#actie-{{ actie.id }}">{{ actie.titel }}</a>{% endif %}{% if g.analyse_id %} · bij de <a href="/adviseur/analyse/{{ g.analyse_id }}">analyse</a>{% endif %} · ongeveer {{ '%.2f'|format(g.kosten)|replace('.', ',') }} dollar</p>
+{% if request.query_params.get('ververst') %}<p class="melding ok">✓ De adviseur werkt in dit gesprek nu met de cijfers van vandaag.</p>{% endif %}
+
+<div class="chat">
+  {% for b in berichten %}
+  <div class="bericht bericht-{{ b.rol }}" {{ 'id=laatste' if loop.last }}>
+    <div class="bericht-wie">{{ 'Jij' if b.rol == 'martijn' else 'Adviseur' }} <span class="noot">· {{ b.aangemaakt.astimezone().strftime('%d-%m %H:%M') }}</span></div>
+    {% if b.rol == 'martijn' %}<div class="bericht-tekst eigen">{{ b.tekst }}</div>
+    {% else %}
+    <div class="bericht-tekst artikel-voorbeeld" id="tekst-{{ b.id }}">{{ b.html|safe }}</div>
+    {% if b.bronnen %}<details class="bronnenlijst"><summary class="noot">Bronnen ({{ b.bronnen|length }})</summary>
+      <ul class="noot">{% for s in b.bronnen %}<li><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.titel }}</a></li>{% endfor %}</ul></details>{% endif %}
+    <div class="knoppen">
+      <span id="acties-{{ b.id }}">{% if b.acties_gemaakt is not none %}<span class="noot">✓ {{ b.acties_gemaakt }} op de <a href="/adviseur#acties">actielijst</a> gezet.</span>{% else %}
+      <button class="knop knop-klein" hx-post="/adviseur/bericht/{{ b.id }}/acties" hx-target="#acties-{{ b.id }}" hx-disabled-elt="this">Zet acties op de actielijst</button>{% endif %}</span>
+      <button class="knop knop-klein kopieer" type="button" data-doel="tekst-{{ b.id }}">Kopieer</button>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {% if g.status == 'bezig' %}
+  <div class="bericht bericht-adviseur" id="laatste">
+    <div class="bericht-wie">Adviseur</div>
+    <div class="melding herinnering" hx-get="/adviseur/gesprek/{{ g.id }}/status" hx-trigger="every 3s" hx-swap="innerHTML">De adviseur denkt na…</div>
+  </div>
+  {% elif g.status == 'fout' %}
+  <p class="melding fout">⚠️ {{ g.fout }}</p>
+  <form method="post" action="/adviseur/gesprek/{{ g.id }}/opnieuw"><button class="knop" type="submit">Opnieuw proberen</button></form>
+  {% endif %}
+</div>
+
+{% if g.status != 'bezig' %}
+<form method="post" action="/adviseur/gesprek/{{ g.id }}" class="artikelformulier chat-invoer">
+  <label>Jouw reactie<textarea name="vraag" rows="4" required placeholder="Reageer, vraag door of leg een nieuwe keuze voor. Ctrl+Enter verstuurt." onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){this.form.requestSubmit();}"></textarea></label>
+  <div class="knoppen"><button class="knop knop-concept" type="submit" {{ 'disabled' if not actief }}>Verstuur</button></div>
+</form>
+{% endif %}
+
+<div class="knoppen gesprek-beheer">
+  <form method="post" action="/adviseur/gesprek/{{ g.id }}/ververs" class="inline"><button class="knop knop-klein" type="submit" title="Gebruik in dit gesprek de cijfers van vandaag">Cijfers verversen</button></form>
+  <form method="post" action="/adviseur/gesprek/{{ g.id }}/weg" class="inline"><button class="knop knop-klein knop-weg" type="submit" onclick="return confirm('Dit gesprek verwijderen?')">Gesprek verwijderen</button></form>
+</div>
+
+{% if andere %}
+<h2 class="sub">Andere gesprekken</h2>
+<ul class="gesprekslijst">{% for o in andere %}<li><a href="/adviseur/gesprek/{{ o.id }}">{{ o.titel or 'Gesprek ' ~ o.id }}</a> <span class="noot">{{ geleden(o.bijgewerkt) }}</span></li>{% endfor %}</ul>
+{% endif %}
+{% endblock %}

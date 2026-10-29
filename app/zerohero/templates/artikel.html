@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<p class="terug"><a href="/artikelen#lijst">← Mijn artikelen</a></p>
+<h1 class="titel">{{ a.titel or a.invoer_titel or 'Nieuw artikel' }}</h1>
+<p class="noot">{{ onderwerpen.get(a.onderwerp, '') }} · {% if a.soort == 'bestaand' %}Bestaand bericht op zerohero.one ({{ {'publish':'gepubliceerd','draft':'concept','future':'gepland','pending':'ter beoordeling'}.get(a.wp_status, a.wp_status) }}){% if a.wp_link %} · <a href="{{ a.wp_link }}" target="_blank" rel="noopener">bekijk op de site</a>{% endif %} · <a href="https://zerohero.one/wp-admin/post.php?post={{ a.wp_post_id }}&action=edit" target="_blank" rel="noopener">open in WordPress</a>{% if a.wp_opgeslagen %} · laatst opgeslagen in WordPress {{ geleden(a.wp_opgeslagen) }}{% endif %}{% else %}{{ 'Eigen tekst, ' ~ niveaus.get(a.niveau, '')|lower if a.soort == 'eigen' else 'Vanuit een idee, ' ~ lengtes.get(a.niveau, '') }}{% endif %}{% if a.ronde %} · ronde {{ a.ronde }}{% endif %}{% if a.tokens_in %} · ongeveer {{ '%.2f'|format((a.tokens_in * 2 + a.tokens_out * 10) / 1000000 + (a.zoekopdrachten or 0) * 0.01)|replace('.', ',') }} dollar aan Claude{% endif %}</p>
+{% if request.query_params.get('bestandmelding') %}<p class="melding fout">⚠️ {{ request.query_params.get('bestandmelding') }}</p>{% endif %}
+{% if request.query_params.get('bestanden') %}<p class="melding ok">✓ Bestanden toegevoegd. Ze gaan mee bij de volgende ronde.</p>{% endif %}
+{% if request.query_params.get('wpok') %}<p class="melding ok">✓ {{ request.query_params.get('wpok') }}</p>{% endif %}
+{% if request.query_params.get('wpfout') %}<p class="melding fout">⚠️ {{ request.query_params.get('wpfout') }}</p>{% endif %}
+{% if request.query_params.get('conflict') %}
+<div class="melding fout">⚠️ Dit bericht is in WordPress gewijzigd nadat je het in de cockpit opende. Opslaan overschrijft die wijziging (WordPress bewaart hem wel als revisie).
+  <form method="post" action="/artikelen/{{ a.id }}/naar-wp" class="regel-form">
+    <input type="hidden" name="forceer" value="1">
+    {% if request.query_params.get('sociaal') %}<input type="hidden" name="sociaal" value="1">{% endif %}
+    {% if request.query_params.get('seo') %}<input type="hidden" name="seo" value="1">{% endif %}
+    <button class="knop" type="submit">Toch opslaan in WordPress</button>
+    <a class="knop" href="https://zerohero.one/wp-admin/revision.php?post={{ a.wp_post_id }}" target="_blank" rel="noopener">Wijzigingen bekijken</a>
+  </form>
+  <form method="post" action="/artikelen/wp/{{ a.wp_post_id }}" class="regel-form"><input type="hidden" name="opnieuw" value="1">
+    <button class="knop" type="submit" onclick="return confirm('De versie uit WordPress opnieuw ophalen? Deze bewerking blijft in de lijst staan.')">Versie uit WordPress opnieuw ophalen</button></form>
+</div>
+{% endif %}
+{% if request.query_params.get('opgeslagen') %}<p class="melding ok">✓ Opgeslagen.</p>{% endif %}
+{% if a.concept %}<p class="melding ok">{{ 'Social-teksten gemaakt' if a.soort == 'bestaand' else 'Concept gemaakt' }}: <a href="/concepten/{{ a.concept.id }}">open het concept</a>{% if a.concept.gepubliceerd_op and a.soort != 'bestaand' %} (gepubliceerd){% endif %}.{% if a.soort != 'bestaand' %} Pas je de tekst hier nog aan, maak dan een nieuw concept.{% endif %}</p>{% endif %}
+
+{% if a.status == 'bezig' %}
+<div class="melding herinnering" hx-get="/artikelen/{{ a.id }}/status" hx-trigger="every 4s" hx-swap="innerHTML">
+  {{ 'Claude schrijft een eerste versie en zoekt de feiten op. Dat duurt een paar minuten.' if a.soort == 'idee' and not a.tekst else 'Claude is met je tekst bezig. Dit duurt meestal een minuut.' }} Deze pagina ververst vanzelf.
+</div>
+{% elif a.status == 'fout' %}
+<p class="melding fout">⚠️ {{ a.fout }}</p>
+<form method="post" action="/artikelen/{{ a.id }}/opnieuw"><button class="knop" type="submit">Opnieuw proberen</button></form>
+{% endif %}
+
+{% if a.tekst and a.status != 'bezig' %}
+<div class="artikel-werk">
+  <form method="post" action="/artikelen/{{ a.id }}/opslaan" class="artikelformulier" id="artikelform">
+    <label>Titel<input name="titel" value="{{ a.titel or '' }}" maxlength="200"></label>
+    <label>Tekst <small class="noot">({{ a.woorden }} woorden bij het laden)</small>
+      <textarea name="tekst" rows="32" id="artikeltekst"
+        hx-post="/artikelen/voorbeeld" hx-trigger="keyup changed delay:700ms" hx-target="#voorbeeld" hx-swap="innerHTML">{{ a.tekst }}</textarea></label>
+    <details class="opmaakhulp"><summary>Opmaak</summary>
+      <p class="noot"><code>## Tussenkop</code> · lege regel = nieuwe alinea · <code>- punt</code> of <code>1. punt</code> · <code>| kolom | kolom |</code> voor een tabel (eerste regel is de kop) · <code>**vet**</code> · <code>*cursief*</code> · <code>[tekst](https://link)</code></p></details>
+    {% if a.soort == 'bestaand' %}
+    <p class="noot">Regels als <code>[[blok 2: afbeelding, ...]]</code> zijn foto's, video's of knoppen uit het bericht. Laat ze staan (verplaatsen mag); haal je er een weg, dan verdwijnt dat onderdeel ook uit het bericht. Het uitgelichte beeld bovenaan zet de cockpit er zelf weer in.</p>
+    <div class="knoppen">
+      <button class="knop" type="submit" name="actie" value="opslaan" title="Alleen in de cockpit bewaren">Opslaan in de cockpit</button>
+      <button class="knop knop-publiceer" type="submit" name="actie" value="wp"
+        onclick="return confirm('Titel en tekst opslaan in het bericht op zerohero.one{{ ' (het is gepubliceerd, dus de wijziging staat meteen online)' if a.wp_status == 'publish' }}? De vorige versie blijft bewaard als revisie in WordPress.')">Opslaan in WordPress</button>
+      <button class="knop knop-concept" type="submit" name="actie" value="wp_sociaal" {{ 'disabled' if not actief }}
+        onclick="return confirm('Opslaan in WordPress en daarna een LinkedIn-post en Instagram-tekst maken om het bijgewerkte stuk opnieuw te delen?')">Opslaan in WordPress en social-teksten maken</button>
+    </div>
+    <label class="reden"><input type="checkbox" name="seo" value="1"> Ook de SEO-titel, meta-beschrijving en het focus keyword vernieuwen (alleen samen met social-teksten)</label>
+    {% else %}
+    <div class="knoppen">
+      <button class="knop" type="submit" name="actie" value="opslaan">Opslaan</button>
+      <button class="knop knop-concept" type="submit" name="actie" value="concept"
+        onclick="return confirm('Maak het concept: LinkedIn, Instagram, SEO en een concept in WordPress met deze tekst.')" {{ 'disabled' if not actief }}>Maak concept</button>
+    </div>
+    {% endif %}
+    <p class="noot"><a href="/artikelen/{{ a.id }}/word">Download als Word</a> (de laatst opgeslagen versie{{ '; handig om het persbericht te mailen' if a.onderwerp == 'persbericht' }}).</p>
+    {% if actief %}
+    <fieldset class="ronde"><legend>Nog een ronde</legend>
+      <textarea name="aanwijzing" rows="3" placeholder="Bijvoorbeeld: kort de tweede helft in, maak de slotzin rustiger, voeg een vergelijking met het handbal toe."></textarea>
+      <button class="knop" type="submit" name="actie" value="ronde">Laat Claude dit aanpassen</button>
+      <p class="noot">Je eigen aanpassingen in het tekstvak worden eerst bewaard en gaan mee.</p>
+    </fieldset>
+    {% endif %}
+  </form>
+
+  <aside class="artikel-zij">
+    <h3 class="fotokop">Voorbeeld</h3>
+    <div class="artikel-voorbeeld" id="voorbeeld">{{ html|safe }}</div>
+    {% if a.wijzigingen %}<h3 class="fotokop">{{ 'Opbouw en keuzes' if a.soort == 'idee' else 'Wat er veranderde' }}</h3><ul class="inzichten">{% for x in a.wijzigingen %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+    {% if a.suggesties %}<h3 class="fotokop">Suggesties</h3><ul class="inzichten">{% for x in a.suggesties %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+    {% if a.te_controleren %}<h3 class="fotokop">Even nalopen</h3><ul class="inzichten">{% for x in a.te_controleren %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+    {% if a.bronnen %}<h3 class="fotokop">Bronnen</h3><ul class="inzichten">{% for b in a.bronnen %}<li>{% if b.url %}<a href="{{ b.url }}" target="_blank" rel="noopener">{{ b.titel or b.url }}</a>{% else %}📎 {{ b.titel }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+    <h3 class="fotokop">Bronbestanden</h3>
+    {% if a.bestanden %}<ul class="bestandlijst">{% for b in a.bestanden %}<li><span>📎 {{ b.naam }} <small class="noot">({{ (b.grootte / 1024)|round|int }} kB{{ ', als tekst gelezen' if not b.binair }})</small></span>
+      <form method="post" action="/artikelen/{{ a.id }}/bestanden/{{ b.id }}/weg" onsubmit="return confirm('Dit bestand weghalen?')"><button class="knop-mini" type="submit" title="Weghalen">×</button></form></li>{% endfor %}</ul>
+    {% else %}<p class="noot">Nog geen bestanden.</p>{% endif %}
+    <form method="post" action="/artikelen/{{ a.id }}/bestanden" enctype="multipart/form-data" class="regel-form">
+      <input type="file" name="bestanden" multiple accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.html,.jpg,.jpeg,.png,.webp">
+      <button class="knop" type="submit">Toevoegen</button>
+    </form>
+    <p class="noot">Toegevoegde bestanden gebruikt Claude bij de volgende ronde. Bewaar eerst je tekst als je die net hebt aangepast.</p>
+    <details class="sectie"><summary>{{ {'eigen':'Jouw oorspronkelijke tekst','bestaand':'De tekst zoals hij op de site stond'}.get(a.soort, 'Jouw idee') }}</summary>
+      <div class="oorspronkelijk">{{ a.invoer }}</div>{% if a.aanwijzing %}<p class="noot"><b>Aanwijzing:</b> {{ a.aanwijzing }}</p>{% endif %}</details>
+  </aside>
+</div>
+{% elif a.status != 'bezig' %}
+<details class="sectie" open><summary>{{ 'Jouw tekst' if a.soort == 'eigen' else 'Jouw idee' }}</summary><div class="oorspronkelijk">{{ a.invoer }}</div></details>
+{% endif %}
+{% endblock %}

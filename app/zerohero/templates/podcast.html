@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_macros.html" import getal %}
+{% block inhoud %}
+<h1 class="titel">Podcastcijfers uploaden</h1>
+<p class="uitleg">Spotify heeft geen koppeling voor statistieken, dus de cijfers komen uit de exports van Spotify for Creators. Eén keer per maand is genoeg. Upload alle CSV-bestanden in één keer; de cockpit herkent zelf welk bestand wat is. Dubbele dagen worden overschreven, dus te veel uploaden kan geen kwaad.</p>
+
+{% if resultaat is not none %}
+  {% if herkend %}<p class="melding ok">✓ {{ herkend }} {{ 'bestand' if herkend == 1 else 'bestanden' }} verwerkt. <a href="/bereik/podcast">Bekijk de podcastcijfers en analyse</a></p>
+  {% else %}<p class="melding fout">⚠️ Geen enkel bestand herkend. Controleer of het exports uit Spotify for Creators zijn.</p>{% endif %}
+  <div class="tabelvak"><table class="tabel">
+    <tr><th>Bestand</th><th>Herkend als</th><th>Regels</th><th>Tot en met</th></tr>
+    {% for r in resultaat %}<tr><td><small>{{ r.naam|truncate(70) }}</small></td>
+      <td>{% if r.soort %}{{ r.soort }}{% else %}<span class="rood-tekst">{{ r.fout }}</span>{% endif %}</td>
+      <td>{{ r.regels if r.soort else '' }}</td><td>{{ r.laatste.strftime('%d-%m-%Y') if r.laatste else '' }}</td></tr>{% endfor %}
+  </table></div>
+{% elif nodig %}
+  <p class="melding fout">Tijd voor de maandelijkse export: {% if uploads %}de laatste upload was {{ geleden(uploads[0].moment) }}{% else %}er is nog nooit een export geüpload{% endif %}.</p>
+{% endif %}
+
+<form method="post" action="/dashboard/podcast" enctype="multipart/form-data" class="cijferformulier">
+  <fieldset>
+    <legend>CSV-bestanden</legend>
+    <label>Kies de bestanden (meerdere tegelijk mag)
+      <input type="file" name="bestanden" accept=".csv,text/csv" multiple required>
+    </label>
+    <button class="knop knop-zoek" type="submit">Uploaden en verwerken</button>
+  </fieldset>
+</form>
+
+<h2 class="sub">Zo maak je de export</h2>
+<ol class="stappen">
+  <li>Ga naar <a href="https://creators.spotify.com" target="_blank" rel="noopener">creators.spotify.com</a> en open ZEROHERO de podcast.</li>
+  <li>Kies <b>Analytics</b>. Zet de periode op <b>de afgelopen 30 dagen</b> (of langer als je een maand hebt overgeslagen).</li>
+  <li>Klik bij elke grafiek op de drie puntjes en kies <b>Exporteren als CSV</b>: Prestaties, Streams en downloads, Betrokkenheid, Weergaven, Publiekssegmenten, Apps, Leeftijd, Geslacht, Retentie en de lijsten met topafleveringen.</li>
+  <li>Bij <b>Afleveringen</b> exporteer je ook de eerste 7 dagen en de voltooiingspercentages.</li>
+  <li>Upload alles hierboven. Mist er een bestand, dan blijft het vorige cijfer gewoon staan.</li>
+</ol>
+<p class="noot">De cockpit herkent: {% for k, v in soorten.items() %}{{ v[0] }}{{ ', ' if not loop.last else '.' }}{% endfor %}</p>
+
+{% if uploads %}
+<h2 class="sub">Eerdere uploads</h2>
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Moment</th><th>Bestanden</th><th>Regels</th><th>Cijfers tot en met</th></tr>
+  {% for u in uploads %}<tr><td>{{ u.moment.astimezone().strftime('%d-%m-%Y %H:%M') }}</td><td>{{ u.bestanden }}</td><td>{{ u.regels }}</td><td>{{ u.tot.strftime('%d-%m-%Y') if u.tot else '' }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

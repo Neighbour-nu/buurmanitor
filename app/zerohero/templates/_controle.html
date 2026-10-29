@@ -1,0 +1,33 @@
+<div class="controle" id="controle-{{ c.id }}" {% if c.controle_status == 'bezig' %}hx-get="/concepten/{{ c.id }}/controle" hx-trigger="every 8s" hx-swap="outerHTML"{% endif %}>
+{% if c.controle_status == 'bezig' %}
+  <p class="concept-status"><span class="draaier" aria-hidden="true"></span> De feitencontrole loopt. Claude zoekt de belangrijkste beweringen op; dat duurt 1 tot 3 minuten.</p>
+{% elif c.controle_lijst %}
+  <p class="controle-tel">
+    <span class="ok">✅ {{ c.controle_tel.bevestigd }} bevestigd</span>
+    <span class="af">⚠️ {{ c.controle_tel.afwijkend }} afwijkend</span>
+    <span class="nv">❓ {{ c.controle_tel.niet_gevonden }} niet gevonden</span>
+  </p>
+  <ul class="controle-lijst">
+  {% for p in c.controle_lijst %}
+    <li class="punt punt-{{ p.oordeel }}">
+      <span class="icoon">{{ {'bevestigd':'✅','afwijkend':'⚠️'}.get(p.oordeel, '❓') }}</span>
+      <div>
+        <b>{{ p.bewering }}</b>
+        {% if p.toelichting %}<br><span class="noot">{{ p.toelichting }}</span>{% endif %}
+        {% if p.correctie %}<br><span class="correctie">Juist: {{ p.correctie }}</span>{% endif %}
+        {% if p.bronnen %}<br><span class="bronnen">Bron: {% for b in p.bronnen %}<a href="{{ b.url }}" target="_blank" rel="noopener">{{ b.titel }}</a>{{ ', ' if not loop.last }}{% endfor %}</span>{% endif %}
+      </div>
+    </li>
+  {% endfor %}
+  </ul>
+  <p class="noot">Gecontroleerd door een aparte, onafhankelijke controle met zoekopdrachten. Loop vooral de punten met ⚠️ en ❓ na.</p>
+  {% if c.status == 'klaar' %}{% set tekst = 'Opnieuw controleren' %}<p class="controle-start"><button class="knop knop-zoek" hx-post="/concepten/{{ c.id }}/controleer" hx-target="#controle-{{ c.id }}" hx-swap="outerHTML">{{ tekst }}</button>
+  <span class="noot">Claude zoekt tot 8 beweringen op. Kost ongeveer 10 cent en duurt 1 tot 3 minuten.</span></p>{% endif %}
+{% else %}
+  {% if c.controle_status == 'fout' %}<p class="melding fout">⚠️ De automatische controle is niet gelukt. Hieronder de notities van de schrijver.{% if c.controle_fout %}<br><small>Reden: {{ c.controle_fout }}</small>{% endif %}</p>{% endif %}
+  {% if c.status == 'klaar' %}{% set tekst = 'Opnieuw proberen' if c.controle_status == 'fout' else 'Controleer de feiten' %}<p class="controle-start"><button class="knop knop-zoek" hx-post="/concepten/{{ c.id }}/controleer" hx-target="#controle-{{ c.id }}" hx-swap="outerHTML">{{ tekst }}</button>
+  <span class="noot">Claude zoekt tot 8 beweringen op. Kost ongeveer 10 cent en duurt 1 tot 3 minuten.</span></p>{% endif %}
+  <p class="noot">Notities van de schrijver:</p>
+  <ul class="verificatie">{% for v in c.verificatie_lijst %}<li>{{ v }}</li>{% endfor %}</ul>
+{% endif %}
+</div>

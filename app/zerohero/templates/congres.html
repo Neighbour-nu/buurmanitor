@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">ZEROHERO Keeperscongres 2027</h1>
+<p class="uitleg">3 februari 2027, Apenheul Apeldoorn{% if congres_dagen > 0 %}. Nog {{ congres_dagen }} dagen.{% endif %}</p>
+<section class="tegels">
+  <div class="tegel"><span class="getal groen">{{ kaarten.kaarten }}</span><span>kaarten verkocht</span></div>
+  <div class="tegel"><span class="getal">{{ euro(kaarten.omzet) }}</span><span>omzet</span></div>
+  <div class="tegel"><span class="getal">{{ kaarten_dag.kaarten }}</span><span>afgelopen 24 uur</span></div>
+</section>
+{% if request.query_params.get('ok') %}<p class="melding ok">✓ {{ request.query_params.get('ok') }}</p>{% endif %}
+{% if request.query_params.get('fout') %}<p class="melding fout">⚠️ {{ request.query_params.get('fout') }}</p>{% endif %}
+<div class="koppelstatus">
+  {% if tt_actief %}
+    {% if tt_status %}{% if tt_status.ok %}<span class="noot">Bestellingen opgehaald uit Ticket Tailor {{ geleden(tt_status.laatst) }}, daarna elke drie uur. Nieuwe verkopen komen ook direct binnen via de webhook.</span>{% else %}<span class="melding fout">⚠️ {{ tt_status.fout }}</span>{% endif %}
+    {% else %}<span class="noot">Eerste keer ophalen loopt…</span>{% endif %}
+    <form method="post" action="/congres/ververs"><button class="knop" type="submit">Nu ophalen</button></form>
+  {% else %}
+    <span class="noot">Verkopen komen binnen via de webhook. Mist er een, koppel dan ook de Ticket Tailor-API: <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh tickettailor</code>. Dan haalt de cockpit alle bestellingen zelf op.</span>
+  {% endif %}
+</div>
+{% if not filter_actief %}<p class="melding herinnering">Deze cijfers tellen alle evenementen in Ticket Tailor mee, ook eerdere edities. Kies onderaan bij <a href="#evenementen">Evenementen in Ticket Tailor</a> welk evenement het congres van nu is.</p>{% endif %}
+
+<h2 class="sub">Verkoop per dag, laatste twee weken</h2>
+<div class="staven" role="img" aria-label="Kaartverkoop per dag">
+  {% for r in per_dag %}
+  <div class="staaf" title="{{ r.dag.strftime('%d-%m') }}: {{ r.kaarten }} kaarten">
+    <span class="waarde">{{ r.kaarten if r.kaarten else '' }}</span>
+    <span class="balk" style="height: {{ (r.kaarten / hoogste * 100)|round(0) }}%"></span>
+    <span class="dag">{{ r.dag.strftime('%d') }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+{% if types %}
+<h2 class="sub">Per tickettype</h2>
+<table class="tabel"><tr><th>Type</th><th>Kaarten</th></tr>
+{% for t in types %}<tr><td>{{ t.type }}</td><td>{{ t.aantal }}</td></tr>{% endfor %}</table>
+{% endif %}
+
+<h2 class="sub" id="evenementen">Evenementen in Ticket Tailor</h2>
+<div class="tabelvak"><table class="tabel"><tr><th>Evenement</th><th>Kaarten</th><th>Omzet</th><th>Geannuleerd</th><th>Laatste bestelling</th><th></th></tr>
+{% for e in evenementen %}<tr{% if e.event_id == gekozen %} class="gekozen-rij"{% endif %}><td>{{ e.naam or e.event_id }}<br><small>{{ e.event_id }}</small></td><td>{{ e.kaarten }}</td><td>{{ euro(e.omzet) }}</td><td>{{ e.geannuleerd }}</td><td>{{ geleden(e.laatste) }}</td>
+  <td>{% if e.event_id == gekozen %}<b class="groen-tekst">Telt mee</b>
+      <form method="post" action="/congres/kies"><input type="hidden" name="event_id" value=""><button class="knop knop-klein" type="submit">Alles tellen</button></form>
+    {% else %}<form method="post" action="/congres/kies"><input type="hidden" name="event_id" value="{{ e.event_id }}"><button class="knop knop-klein" type="submit">Dit is het congres</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="6">Nog geen bestellingen ontvangen.</td></tr>{% endfor %}
+</table></div>
+<p class="noot">Het gekozen evenement telt mee op deze pagina, op het dashboard en voor de adviseur. Eerdere edities blijven hier zichtbaar en de adviseur gebruikt ze ter vergelijking. Kies bij een volgende editie gewoon het nieuwe evenement.</p>
+{% endblock %}

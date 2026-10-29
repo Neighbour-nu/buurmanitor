@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Linkmaker</h1>
+<p class="uitleg">Maak voor elk platform een link naar zerohero.one met een vaste markering (UTM). Google Analytics ziet dan precies welk platform en welke post bezoekers oplevert. Gebruik per platform een eigen link, ook als het om dezelfde pagina gaat.</p>
+
+<form class="formulier linkmaker" id="linkmaker" onsubmit="return false">
+  <label class="breed">Pagina op zerohero.one
+    <input id="lm-url" list="lm-paginas" placeholder="https://zerohero.one/zerohero-keeperscongres-2027/" autocomplete="off">
+    <datalist id="lm-paginas">
+      {% for g in gepubliceerd %}<option value="{{ g.url }}">{{ g.titel }}</option>{% endfor %}
+      {% for p in paginas %}<option value="https://zerohero.one{{ p.pad }}">{{ (p.titel or p.pad)|replace(' - ZEROHERO', '') }}</option>{% endfor %}
+    </datalist>
+  </label>
+  <label>Waar plaats je de link?
+    <select id="lm-kanaal">
+      {% for k, label, bron, medium, inhoud in kanalen %}<option value="{{ k }}" data-bron="{{ bron }}" data-medium="{{ medium }}" data-inhoud="{{ inhoud }}">{{ label }}</option>{% endfor %}
+    </select></label>
+  <label>Campagne <small class="noot">(onderwerp, wordt automatisch ingevuld)</small>
+    <input id="lm-campagne" placeholder="keeperscongres-2027"></label>
+  <label>Extra kenmerk <small class="noot">(optioneel, bijvoorbeeld de datum of variant)</small>
+    <input id="lm-extra" placeholder="okt-2026"></label>
+  <div class="breed lm-uitkomst">
+    <code id="lm-link">Vul een pagina in.</code>
+    <button type="button" class="knop knop-zoek" id="lm-kopieer" disabled>Kopieer link</button>
+  </div>
+  <p class="breed noot" id="lm-tip"></p>
+</form>
+
+<h2 class="sub">Wat je links opleveren</h2>
+{% if links %}
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Gemaakt</th><th>Pagina en campagne</th><th>Waar</th><th>Bezoeken</th><th></th></tr>
+  {% for l in links %}<tr>
+    <td>{{ l.aangemaakt.strftime('%d-%m') }}</td>
+    <td>{{ l.url|replace('https://zerohero.one', '')|truncate(50) }}<br><small>{{ l.campagne }}{% if l.inhoud %} · {{ l.inhoud }}{% endif %}</small></td>
+    <td>{{ l.bron }}<br><small>{{ l.medium }}</small></td>
+    <td><b>{{ l.bezoeken }}</b></td>
+    <td class="link-knoppen"><button type="button" class="knop kopieer-link" data-link="{{ l.link }}">Kopieer</button>
+      <button type="button" class="knop knop-weg knop-klein" hx-post="/links/{{ l.id }}/weg" hx-target="closest tr" hx-swap="outerHTML"
+        hx-confirm="Deze link uit de lijst verwijderen? Waar je hem al gedeeld hebt, blijft hij gewoon werken.">Weg</button></td>
+  </tr>{% endfor %}
+</table></div>
+<p class="noot">Bezoeken komen uit Google Analytics (alleen met cookietoestemming) en lopen een paar uur achter. Met <b>Weg</b> haal je een verkeerde link uit deze lijst; een link die je al ergens plaatste, blijft werken en zijn bezoeken blijven zichtbaar onder Alle gemarkeerde bezoeken.</p>
+{% else %}<p class="noot">Nog geen links gemaakt. Een link wordt bewaard zodra je hem kopieert.</p>{% endif %}
+
+{% if campagnes %}
+<h3 class="fotokop">Alle gemarkeerde bezoeken, laatste 90 dagen</h3>
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Campagne</th><th>Bron</th><th>Bezoeken</th><th>Periode</th></tr>
+  {% for c in campagnes %}<tr><td>{{ c.campagne }}</td><td>{{ c.bron }} <small>({{ c.medium }})</small></td><td>{{ c.sessies }}</td><td><small>{{ c.eerste.strftime('%d-%m') }} t/m {{ c.laatste.strftime('%d-%m') }}</small></td></tr>{% endfor %}
+</table></div>
+{% endif %}
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const tips = {
+    'linkedin-reactie': 'Zoals afgesproken: links in de eerste reactie, niet in de post zelf.',
+    'linkedin-post': 'LinkedIn laat posts met een link in de tekst minder zien. Liever in de eerste reactie.',
+    'instagram-bio': 'Instagram heeft maar één klikbare link (in je bio). Zet deze link daar of op je linkpagina.',
+    'instagram-story': 'Gebruik in de story de linksticker met deze link.',
+    'nieuwsbrief': 'Zet in MailerLite bij de campagne de automatische Google Analytics-tracking uit, anders overschrijft MailerLite deze markering.',
+    'lezing': 'Maak er een QR-code van voor je slide. Zo zie je hoeveel bezoekers een lezing oplevert.'
+  };
+  const slug = t => (t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  let campagneZelf = false, huidige = null;
+  function bouw() {
+    let ruw = $('lm-url').value.trim();
+    if (ruw && !/^https?:\/\//.test(ruw)) ruw = 'https://zerohero.one/' + ruw.replace(/^\/+/, '');
+    const k = $('lm-kanaal').selectedOptions[0];
+    $('lm-tip').textContent = tips[k.value] || '';
+    let u;
+    try { u = new URL(ruw); } catch (e) { $('lm-link').textContent = 'Vul een pagina in.'; $('lm-kopieer').disabled = true; huidige = null; return; }
+    if (!campagneZelf) {
+      const delen = u.pathname.split('/').filter(Boolean);
+      $('lm-campagne').value = slug(delen[delen.length - 1] || 'home');
+    }
+    const extra = slug($('lm-extra').value);
+    const inhoud = [k.dataset.inhoud, extra].filter(Boolean).join('-');
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(x => u.searchParams.delete(x));
+    u.searchParams.set('utm_source', k.dataset.bron);
+    u.searchParams.set('utm_medium', k.dataset.medium);
+    u.searchParams.set('utm_campaign', slug($('lm-campagne').value) || 'algemeen');
+    if (inhoud) u.searchParams.set('utm_content', inhoud);
+    huidige = { url: ruw.split('?')[0], bron: k.dataset.bron, medium: k.dataset.medium, campagne: slug($('lm-campagne').value) || 'algemeen', inhoud, link: u.toString() };
+    $('lm-link').textContent = huidige.link; $('lm-kopieer').disabled = false; $('lm-kopieer').textContent = 'Kopieer link';
+  }
+  async function kopieer(tekst, knop) {
+    try { await navigator.clipboard.writeText(tekst); knop.textContent = 'Gekopieerd ✓'; }
+    catch (e) { knop.textContent = 'Selecteer en kopieer zelf'; }
+    setTimeout(() => knop.textContent = knop.id === 'lm-kopieer' ? 'Kopieer link' : 'Kopieer', 2500);
+  }
+  ['lm-url', 'lm-kanaal', 'lm-extra'].forEach(id => $(id).addEventListener('input', bouw));
+  $('lm-kanaal').addEventListener('change', bouw);
+  $('lm-campagne').addEventListener('input', () => { campagneZelf = $('lm-campagne').value.trim() !== ''; bouw(); });
+  $('lm-kopieer').addEventListener('click', async () => {
+    if (!huidige) return;
+    await kopieer(huidige.link, $('lm-kopieer'));
+    fetch('/links', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(huidige) });
+  });
+  document.querySelectorAll('.kopieer-link').forEach(b => b.addEventListener('click', () => kopieer(b.dataset.link, b)));
+  bouw();
+})();
+</script>
+{% endblock %}

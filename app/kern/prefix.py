@@ -3,7 +3,7 @@
 De oorspronkelijke app gebruikt absolute paden (/agenda, /inbox, RedirectResponse("/concepten/3")). Deze laag zet
 die om naar /politiek/agenda enzovoort, zonder dat de code van de werkruimte hoeft te veranderen:
 - Location- en HX-Redirect-koppen van doorverwijzingen;
-- href, action, src en formaction in HTML, en fetch('/...') in scripts.
+- href, action, src, formaction en hx-get/hx-post (htmx) in HTML, en fetch('/...') en location='/...' in scripts.
 Volledige adressen (https://...) en adressen die al met het voorvoegsel beginnen, blijven ongemoeid.
 Bestanden die geen HTML zijn (Word, pdf, css, afbeeldingen) gaan ongewijzigd door.
 """
@@ -12,9 +12,10 @@ import re
 
 def herschrijf_html(tekst, voorvoegsel):
     v = re.escape(voorvoegsel.strip("/"))
-    attr = re.compile(r'(\b(?:href|action|src|formaction)=")/(?!/|' + v + r'(?:/|"|\?|#))')
+    attr = re.compile(r'(\b(?:href|action|src|formaction|hx-(?:get|post|put|patch|delete))=")/(?!/|' + v + r'(?:/|"|\?|#))')
     tekst = attr.sub(lambda m: m.group(1) + voorvoegsel + "/", tekst)
-    js = re.compile(r"(\bfetch\(\s*['\"])/(?!/|" + v + r"/)")
+    # fetch('/...') en location='/...' of location.href = "/..." in scripts en onchange-attributen
+    js = re.compile(r"(\bfetch\(\s*['\"]|\blocation(?:\.href)?\s*=\s*['\"])/(?!/|" + v + r"(?:/|['\"?#]))")
     return js.sub(lambda m: m.group(1) + voorvoegsel + "/", tekst)
 
 
@@ -66,3 +67,20 @@ class Voorvoegsel:
             return await send(bericht)
 
         return await self.app(scope, receive, verstuur)
+
+
+class Doorgeven:
+    """Stuurt verzoeken waarvan het pad met `begin` begint ongewijzigd naar een andere app.
+
+    Voor de n8n-werkstromen: die roepen http://cockpit-app:8000/intern/... aan. Na de overstap heet de portal ook
+    cockpit-app, en deze laag geeft /intern/... rechtstreeks aan de werkruimte ZEROHERO. De werkruimte controleert
+    die verzoeken zelf (met het conceptgeheim), net als de oude Doellijn.
+    """
+
+    def __init__(self, app, begin, doel):
+        self.app, self.begin, self.doel = app, begin, doel
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith(self.begin):
+            return await self.doel(scope, receive, send)
+        return await self.app(scope, receive, send)

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "_macros.html" import getal %}
+{% block inhoud %}
+<p class="terug"><a href="/dashboard#bereik">← Dashboard, tabblad Bereik</a></p>
+<h1 class="titel">LinkedIn-exports uploaden</h1>
+<p class="uitleg">LinkedIn geeft statistieken alleen via een API aan goedgekeurde partners. De cijfers komen daarom uit de exports die je zelf downloadt: één voor je persoonlijke profiel en drie voor de bedrijfspagina van ZEROHERO. Eén keer per maand is genoeg; exporteer steeds de afgelopen 365 dagen. Overlappende dagen worden overschreven, oudere dagen blijven bewaard, zo bouwt de cockpit de geschiedenis op.</p>
+
+{% if resultaat is not none %}
+  {% if herkend %}<p class="melding ok">✓ {{ herkend }} {{ 'bestand' if herkend == 1 else 'bestanden' }} verwerkt. <a href="/bereik/linkedin">Profiel bekijken</a> of <a href="/bereik/linkedin_pagina">bedrijfspagina bekijken</a>.</p>
+  {% elif resultaat %}<p class="melding fout">⚠️ Geen enkel bestand herkend.</p>
+  {% else %}<p class="melding fout">⚠️ Je hebt geen bestand gekozen.</p>{% endif %}
+  {% if resultaat %}<div class="tabelvak"><table class="tabel">
+    <tr><th>Bestand</th><th>Tabblad</th><th>Verwerkt als</th><th>Regels</th><th>Tot en met</th></tr>
+    {% for r in resultaat %}
+      {% if r.bladen %}{% for b in r.bladen %}<tr><td><small>{{ r.naam|truncate(50) if loop.first else '' }}</small>{% if loop.first and r.melding %}<br><small class="noot">{{ r.melding }}</small>{% endif %}</td><td>{{ b.blad }}</td><td>{{ b.soort }}</td><td>{{ b.regels }}</td><td>{{ b.laatste.strftime('%d-%m-%Y') if b.laatste else '' }}</td></tr>{% endfor %}
+      {% else %}<tr><td><small>{{ r.naam|truncate(50) }}</small></td><td></td><td><span class="rood-tekst">{{ r.fout }}</span></td><td></td><td></td></tr>{% endif %}
+    {% endfor %}
+  </table></div>{% endif %}
+{% endif %}
+
+<form method="post" action="/dashboard/linkedin" enctype="multipart/form-data" class="uploadvakken">
+  {% for groep, kop in [('profiel', 'Persoonlijk profiel: Martijn Buurman'), ('pagina', 'Bedrijfspagina: ZEROHERO')] %}
+  <h2 class="sub">{{ kop }}</h2>
+  <div class="vakken">
+  {% for e in exports if e.groep == groep %}
+    <fieldset class="uploadvak {{ 'aan-de-beurt' if e.nodig }}">
+      <legend>{{ e.naam }}</legend>
+      <p class="noot">{{ e.waar }}</p>
+      <p class="noot">Bestand: <code>{{ e.bestand }}</code></p>
+      <p class="status">{% if e.moment %}Laatst geüpload {{ geleden(e.moment) }}{% if e.tot %}, cijfers tot en met {{ e.tot.strftime('%d-%m-%Y') }}{% endif %}.{% else %}Nog nooit geüpload.{% endif %}
+        {% if e.nodig %}<b class="herinnering-tekst">Aan de beurt.</b>{% endif %}</p>
+      <input type="file" name="{{ e.sleutel }}" accept="{{ '.xlsx' if groep == 'profiel' else '.xls,.csv' }}">
+    </fieldset>
+  {% endfor %}
+  </div>
+  {% endfor %}
+  <p><button class="knop knop-zoek" type="submit">Uploaden en verwerken</button> <span class="noot">Je hoeft niet alle vier tegelijk te doen.</span></p>
+</form>
+
+{% if uploads %}
+<h2 class="sub">Eerdere uploads</h2>
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Moment</th><th>Export</th><th>Regels</th><th>Cijfers tot en met</th></tr>
+  {% set namen = {} %}{% for e in exports %}{% set _ = namen.update({e.sleutel: e.naam}) %}{% endfor %}
+  {% for u in uploads %}<tr><td>{{ u.moment.astimezone().strftime('%d-%m-%Y %H:%M') }}</td><td>{{ namen.get(u.export, 'Bedrijfspagina (eerste versie)') }}</td><td>{{ u.regels }}</td><td>{{ u.tot.strftime('%d-%m-%Y') if u.tot else '' }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+<p class="noot">De SSI staat niet in de export: daarvoor upload je maandelijks een screenshot via <a href="/dashboard/ssi">SSI-screenshot uploaden</a>. Voor profielbezoekers upload je een screenshot via <a href="/dashboard/profielbezoek">Profielbezoekers</a>. Het aantal volgers van de bedrijfspagina vul je in via <a href="/dashboard/cijfers">Cijfers invoeren</a>.</p>
+{% endblock %}

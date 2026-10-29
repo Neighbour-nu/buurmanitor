@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+{% from "_macros.html" import getal, delta, staven %}
+{% block inhoud %}
+{% set plabel = periodes[periode] %}
+<div class="dash-kop">
+  <h1 class="titel">Dashboard</h1>
+  <nav class="periodes" aria-label="Periode">
+    {% for p, label in periodes.items() %}<a href="/dashboard?periode={{ p }}" class="knop {{ 'aan' if p == periode }}">{{ label }}</a>{% endfor %}
+  </nav>
+</div>
+{% if request.query_params.get('ververst') == 'mailerlite' %}<p class="melding ok">✓ MailerLite is bijgewerkt.</p>{% elif request.query_params.get('ververst') == 'webshop' %}<p class="melding ok">✓ De webshop is bijgewerkt.</p>{% elif request.query_params.get('ververst') == 'webshopfout' %}<p class="melding fout">⚠️ De webshop bijwerken is niet gelukt. Zie de melding bij Webshop.</p>{% elif request.query_params.get('ververst') == 'google' %}<p class="melding ok">✓ Google Analytics en Search Console zijn bijgewerkt.</p>{% elif request.query_params.get('ververst') == 'googlefout' %}<p class="melding fout">⚠️ Google bijwerken is (deels) niet gelukt. Zie de melding bij Website.</p>{% elif request.query_params.get('ververst') == 'youtube' %}<p class="melding ok">✓ YouTube is bijgewerkt.</p>{% elif request.query_params.get('ververst') == 'youtubefout' %}<p class="melding fout">⚠️ YouTube bijwerken is niet gelukt. Zie de melding bij Bereik.</p>{% elif request.query_params.get('ververst') == 'fout' %}<p class="melding fout">⚠️ MailerLite bijwerken is niet gelukt. Zie de melding bij Nieuwsbrief en formulieren.</p>{% endif %}
+{% if request.query_params.get('opgeslagen') %}<p class="melding ok">✓ {{ request.query_params.get('opgeslagen') }} cijfers opgeslagen.</p>{% endif %}
+
+<nav class="tabs" role="tablist" aria-label="Onderdelen van het dashboard">
+  <a role="tab" href="#overzicht" data-tab="overzicht">Overzicht</a>
+  <a role="tab" href="#kansen" data-tab="kansen">Kansen{% if kern.kansen.open %} <span class="tabtel">{{ kern.kansen.open }}</span>{% endif %}</a>
+  <a role="tab" href="#website" data-tab="website">Website</a>
+  <a role="tab" href="#bereik" data-tab="bereik">Bereik</a>
+  <a role="tab" href="#nieuwsbrief" data-tab="nieuwsbrief">Nieuwsbrief</a>
+  <a role="tab" href="#webshop" data-tab="webshop">Webshop</a>
+  <a role="tab" href="#nieuws" data-tab="nieuws">In het nieuws{% if kern.media %} <span class="tabtel">{{ kern.media|length }}</span>{% endif %}</a>
+  <a role="tab" href="#doellijn" data-tab="doellijn">Doellijn</a>
+</nav>
+<div class="tabblad" id="overzicht" role="tabpanel" data-paneel="overzicht">
+<h2 class="sub">Waar het om draait</h2>
+<p class="uitleg">De cijfers die laten zien of ZEROHERO autoriteit opbouwt. Afgelopen {{ plabel }}, met het verschil ten opzichte van de {{ plabel }} daarvoor.</p>
+{% if exports_nodig %}<p class="melding herinnering">📥 Tijd voor de maandelijkse export: {% for naam, url, _ in exports_nodig %}<a href="{{ url }}">{{ naam }}</a>{{ ' en ' if not loop.last else '.' }}{% endfor %} Upload de bestanden, dan blijven de cijfers op Bereik actueel.</p>{% endif %}
+<section class="tegels tegels-groot">
+  <a class="tegel tegel-link" href="#kansen">
+    <span class="tegel-kop">Uitnodigingen en kansen</span>
+    <span class="getal groen">{{ kern.kansen.nu }} {{ delta(kern.kansen.nu - kern.kansen.toen, plabel) }}</span>
+    <span>{{ kern.kansen.bevestigd }} bevestigd{% if kern.kansen.waarde %} ({{ euro(kern.kansen.waarde) }}){% endif %}, {{ kern.kansen.open }} open</span>
+    {% if kern.kansen.laatste %}<small>Laatste open: {{ kern.kansen.laatste.organisatie }} ({{ soorten.get(kern.kansen.laatste.soort, kern.kansen.laatste.soort)|lower }}, {{ kern.kansen.laatste.datum.strftime('%d-%m') }})</small>
+    {% else %}<small>Geen open kansen.</small>{% endif %}
+  </a>
+  <a class="tegel tegel-link" href="/congres">
+    <span class="tegel-kop">Keeperscongres 2027</span>
+    <span class="getal">{{ kern.kaarten.nu }} {{ delta(kern.kaarten.nu - kern.kaarten.toen, plabel) }}</span>
+    <span>kaarten in deze periode, {{ kern.kaarten.totaal }} in totaal</span>
+    <small>{{ euro(kern.kaarten.omzet) }} omzet{% if congres_dagen > 0 %}, nog {{ congres_dagen }} dagen{% endif %}</small>
+  </a>
+  {% set boek_extra = boek.waarde or 0 %}
+  {% set bestseller = (winkel.producten|selectattr('nu')|list or [none])[0] %}
+  <a class="tegel tegel-link" href="#webshop">
+    <span class="tegel-kop">Boeken verkocht</span>
+    <span class="getal">{{ getal(winkel.boeken_nu + boek_extra) }} {{ delta(winkel.boeken_nu - winkel.boeken_toen, plabel) }}</span>
+    <span>{{ winkel.boeken_nu }} via de webshop{% if boek_extra %}, {{ getal(boek_extra) }} elders{% endif %} <span class="noot">(vorige {{ plabel }}: {{ winkel.boeken_toen }})</span></span>
+    <small>{% if winkel.bestellingen %}{{ winkel.bestellingen }} {{ 'bestelling' if winkel.bestellingen == 1 else 'bestellingen' }}, {{ euro((winkel.omzet * 100)|round|int) }} omzet incl. btw, zonder verzendkosten{% if bestseller %}. Meest verkocht: {{ bestseller.naam|safe }}{% endif %}{% elif winkel.actief %}Geen webshopbestellingen in deze periode.{% else %}Webshop nog niet gekoppeld.{% endif %}</small>
+  </a>
+  {% set laatste_nb = ml.campagnes[0] if ml.campagnes else none %}
+  <a class="tegel tegel-link" href="#nieuwsbrief">
+    <span class="tegel-kop">Nieuwsbrief</span>
+    <span class="getal">{{ getal(nieuwsbrief.waarde) }} {{ delta(nieuwsbrief.delta, plabel) }}</span>
+    <span>abonnees{% if ml.aanmeldingen is not none and ml.volledig %}, {{ ml.aanmeldingen }} aanmeldingen via formulieren{% endif %}</span>
+    <small>{% if laatste_nb and laatste_nb.verzonden_op %}Laatste nieuwsbrief {{ laatste_nb.verzonden_op.strftime('%d-%m-%Y') }} ({{ geleden(laatste_nb.verzonden_op) }}){% if laatste_nb.open_ratio is not none %}, {{ getal(laatste_nb.open_ratio|float) }}% geopend{% endif %}{% else %}Nog geen verzonden nieuwsbrief bekend.{% endif %}</small>
+  </a>
+  <a class="tegel tegel-link" href="#nieuws">
+    <span class="tegel-kop">In het nieuws</span>
+    <span class="getal">{{ kern.media|length }}</span>
+    <span>berichten over ZEROHERO of Martijn Buurman</span>
+    <small>{% if kern.media %}Laatste: {{ kern.media[0].titel|truncate(70) }} ({{ kern.media[0].bron }}){% else %}Niets gevonden in deze periode.{% endif %}</small>
+  </a>
+  {% set li = (kanalen|selectattr('id', 'equalto', 'linkedin')|list)[0] %}
+  {% set lr = {} %}{% for r in li.regels %}{% set _ = lr.update({r.sleutel: r}) %}{% endfor %}
+  <a class="tegel tegel-link" href="/bereik/linkedin?periode={{ periode }}">
+    <span class="tegel-kop">LinkedIn: Martijn Buurman</span>
+    <span class="getal">{{ getal(lr.volgers.waarde) }} {{ delta(lr.volgers.delta, plabel) }}</span>
+    <span>volgers{% if lr.ssi.waarde is not none %}, SSI {{ getal(lr.ssi.waarde) }}{% endif %}</span>
+    <small>{% if lr.impressies.waarde is not none %}{{ getal(lr.impressies.waarde) }} impressies en {{ getal(lr.interacties.waarde) }} interacties in deze periode.{% else %}Nog geen export van je profiel.{% endif %}{% if li_nodig %} <b>Tijd voor de export.</b>{% endif %}</small>
+  </a>
+  {% set lpk = (kanalen|selectattr('id', 'equalto', 'linkedin_pagina')|list)[0] %}
+  {% set pr = {} %}{% for r in lpk.regels %}{% set _ = pr.update({r.sleutel: r}) %}{% endfor %}
+  <a class="tegel tegel-link" href="/bereik/linkedin_pagina?periode={{ periode }}">
+    <span class="tegel-kop">LinkedIn: ZEROHERO</span>
+    <span class="getal">{{ getal(pr.weergaven.waarde) }} {{ delta(pr.weergaven.delta, plabel) }}</span>
+    <span>weergaven van de bedrijfspagina{% if pr.volgers.waarde is not none %}, {{ getal(pr.volgers.waarde) }} volgers{% endif %}</span>
+    <small>{% if pr.weergaven.peil %}{{ getal(pr.interacties.waarde) }} klikken en reacties, {{ getal(pr.nieuwe_volgers.waarde) }} nieuwe volgers, {{ getal(pr.bezoeken.waarde) }} paginabezoeken.{% else %}Nog geen export van de bedrijfspagina.{% endif %}{% if lp_nodig %} <b>Tijd voor de export.</b>{% endif %}</small>
+  </a>
+</section>
+</div>
+<div class="tabblad" id="kansen" role="tabpanel" data-paneel="kansen">
+<h2 class="sub">Uitnodigingen en kansen</h2>
+<p class="uitleg">Elke vraag voor een lezing, interview, podcast of samenwerking. Dit is de belangrijkste graadmeter: hier moet het platform uiteindelijk toe leiden.</p>
+<details class="invoer">
+  <summary class="knop knop-zoek">+ Nieuwe kans</summary>
+  <form method="post" action="/dashboard/kansen" class="formulier">
+    <label>Soort<select name="soort" required>{% for s, label in soorten.items() %}<option value="{{ s }}">{{ label }}</option>{% endfor %}</select></label>
+    <label>Organisatie of persoon<input name="organisatie" required maxlength="200"></label>
+    <label>Datum<input type="date" name="datum" value="{{ vandaag.isoformat() }}"></label>
+    <label>Via<select name="bron"><option value="">Onbekend</option>{% for b in bronnen %}<option>{{ b }}</option>{% endfor %}</select></label>
+    <label class="breed">Omschrijving<input name="omschrijving" maxlength="500" placeholder="Bijvoorbeeld: MT-dag, 40 personen, maart 2027"></label>
+    <label>Waarde in euro (optioneel)<input name="waarde" inputmode="decimal" placeholder="1.500"></label>
+    <label class="breed">Notitie<textarea name="notitie" rows="2"></textarea></label>
+    <button class="knop knop-zoek" type="submit">Opslaan</button>
+  </form>
+</details>
+<div class="tabelvak"><table class="tabel kansen">
+  <tr><th>Datum</th><th>Wie en wat</th><th>Soort</th><th>Waarde</th><th>Status</th></tr>
+  {% for k in open_kansen %}{% include "_kans.html" %}{% else %}<tr><td colspan="5" class="noot">Nog geen open kansen.</td></tr>{% endfor %}
+</table></div>
+{% if recent %}
+<details class="sectie"><summary>Afgehandeld (laatste 10)</summary>
+<div class="tabelvak"><table class="tabel kansen">{% for k in recent %}{% include "_kans.html" %}{% endfor %}</table></div>
+</details>
+{% endif %}
+</div>
+<div class="tabblad" id="website" role="tabpanel" data-paneel="website">
+<h2 class="sub">Website</h2>
+{% if not site.actief %}
+<p class="noot">Google Analytics en Search Console zijn nog niet gekoppeld. Zet de sleutel van het serviceaccount op de server met <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh google</code>.</p>
+{% else %}
+<div class="koppelstatus">
+  {% if site.status %}
+    {% if site.status.ok %}<span class="noot">Bijgewerkt {{ geleden(site.status.laatst) }}, daarna elke drie uur.</span>
+    {% else %}<span class="melding fout">⚠️ {{ site.status.fout }}</span>{% endif %}
+  {% else %}<span class="noot">Eerste keer ophalen loopt (16 maanden terug, dat duurt even)…</span>{% endif %}
+  <form method="post" action="/dashboard/ververs/google"><button class="knop" type="submit">Nu verversen</button></form>
+</div>
+<nav class="tabs subtabs" role="tablist" aria-label="Website">
+  <a role="tab" href="#website" data-subtab="w-cijfers" class="aan" aria-selected="true">Cijfers</a>
+  <a role="tab" href="#website" data-subtab="w-herkomst">Populairste pagina's en herkomst</a>
+  <a role="tab" href="#website" data-subtab="w-termen">Waarop mensen je vinden</a>
+  <a role="tab" href="#website" data-subtab="w-kansen">SEO-kansen{% if site.kansen %} <span class="teller">{{ site.kansen|length }}</span>{% endif %}</a>
+</nav>
+<div data-subpaneel="w-cijfers">
+{% set g, gt, s, st = site.ga_nu, site.ga_toen, site.gsc_nu, site.gsc_toen %}
+<section class="tegels tegels-groot compact">
+  <div class="tegel"><span class="tegel-kop">Bezoekers</span><span class="getal">{{ getal(g.gebruikers|int) }} {{ delta((g.gebruikers - gt.gebruikers)|int, plabel) }}</span><small>opgeteld per dag, alleen met cookietoestemming</small></div>
+  <div class="tegel"><span class="tegel-kop">Paginaweergaven</span><span class="getal">{{ getal(g.weergaven|int) }} {{ delta((g.weergaven - gt.weergaven)|int, plabel) }}</span><small>{{ getal(g.sessies|int) }} bezoeken, {{ ((g.betrokken / g.sessies * 100)|round|int) if g.sessies else 0 }}% betrokken</small></div>
+  <div class="tegel"><span class="tegel-kop">Via LinkedIn</span><span class="getal groen">{{ getal(site.linkedin|int) }}</span><small>bezoeken die via LinkedIn binnenkwamen</small></div>
+  <div class="tegel"><span class="tegel-kop">Klikken uit Google</span><span class="getal">{{ getal(s.klikken|int) }} {{ delta((s.klikken - st.klikken)|int, plabel) }}</span><small>alle bezoekers via Google, ook zonder cookies</small></div>
+  <div class="tegel"><span class="tegel-kop">Vertoningen in Google</span><span class="getal">{{ getal(s.vertoningen|int) }} {{ delta((s.vertoningen - st.vertoningen)|int, plabel) }}</span><small>zo vaak stond zerohero.one in de zoekresultaten</small></div>
+  <div class="tegel"><span class="tegel-kop">Gemiddelde positie</span><span class="getal">{{ getal(site.positie|float) if site.positie is not none else '·' }}</span><small>in Google (lager is beter){% if site.laatste_gsc %}, cijfers t/m {{ site.laatste_gsc.strftime('%d-%m') }}{% endif %}</small></div>
+</section>
+{% if site.reeks and site.heeft_ga %}
+{% set hoogste = (site.reeks|map(attribute='gebruikers')|max) or 1 %}
+<h3 class="fotokop">Bezoekers per dag</h3>
+<div class="staven" role="img" aria-label="Bezoekers per dag">
+  {% set wd = ['ma','di','wo','do','vr','za','zo'] %}
+  {% for r in site.reeks %}<div class="staaf tip" tabindex="0" data-tip="{{ wd[r.datum.weekday()] }} {{ r.datum.strftime('%d-%m') }}: {{ r.gebruikers }} {{ 'bezoeker' if r.gebruikers == 1 else 'bezoekers' }}{{ (', ' ~ r.klikken ~ ' uit Google') if r.klikken else '' }}" aria-label="{{ r.datum.strftime('%d-%m') }}: {{ r.gebruikers }} bezoekers">
+    <span class="balk" style="height: {{ (r.gebruikers / hoogste * 100)|round(0) }}%"></span>{% if site.reeks|length <= 31 %}<span class="dag">{{ r.datum.strftime('%d') }}</span>{% endif %}</div>{% endfor %}
+</div>
+{% endif %}
+</div>
+<div data-subpaneel="w-herkomst" hidden>
+<div class="tweekoloms">
+  <div>
+    <h3 class="fotokop">Populairste pagina's</h3>
+    {% if site.paginas %}<div class="tabelvak"><table class="tabel">
+      <tr><th>Pagina</th><th>Weergaven</th></tr>
+      {% for p in site.paginas %}<tr><td><a href="https://zerohero.one{{ p.pad }}" target="_blank" rel="noopener">{{ (p.titel or p.pad)|replace(' - ZEROHERO', '')|truncate(60) }}</a><br><small>{{ p.pad|truncate(50) }}</small></td><td>{{ getal(p.weergaven|int) }}</td></tr>{% endfor %}
+    </table></div>{% else %}<p class="noot">Nog geen gegevens.</p>{% endif %}
+  </div>
+  <div>
+    <h3 class="fotokop">Waar bezoekers vandaan komen</h3>
+    {% if site.bronnen %}<div class="tabelvak"><table class="tabel">
+      <tr><th>Bron</th><th>Bezoeken</th></tr>
+      {% for b in site.bronnen %}<tr><td>{{ b.bron }}<br><small>{{ b.kanaal }}</small></td><td>{{ getal(b.sessies|int) }}</td></tr>{% endfor %}
+    </table></div>{% else %}<p class="noot">Nog geen gegevens.</p>{% endif %}
+  </div>
+</div>
+</div>
+<div data-subpaneel="w-termen" hidden>
+<p class="noot">Zoektermen uit Google Search Console in deze periode: hoe vaak zerohero.one verscheen, hoe vaak er werd geklikt en op welke plek.</p>
+{% if site.termen %}<div class="tabelvak"><table class="tabel">
+  <tr><th>Zoekterm</th><th>Klikken</th><th>Vertoningen</th><th>Positie</th></tr>
+  {% for t in site.termen %}<tr><td>{{ t.term }}</td><td>{{ getal(t.klikken|int) }}</td><td>{{ getal(t.vertoningen|int) }}</td><td>{{ getal(t.positie|float) if t.positie is not none else '·' }}</td></tr>{% endfor %}
+</table></div>{% else %}<p class="noot">Nog geen gegevens uit Search Console.</p>{% endif %}
+</div>
+<div data-subpaneel="w-kansen" hidden>
+<p class="noot">Zoektermen waarbij zerohero.one al in Google verschijnt, maar waar met weinig werk meer bezoekers te halen zijn. Gerekend over de laatste {{ site.kansen_dagen }} dagen, gesorteerd op het geschatte aantal extra klikken per maand als de pagina in de top 3 komt. Je eigen naam en merk tellen niet mee. De schatting is een vuistregel om te kiezen, geen belofte.</p>
+{% if site.kansen %}<dl class="seouitleg">{% for sleutel, sk in seo_soorten.items() %}<div><dt><span class="seolabel seo-{{ sleutel }}">{{ sk[0] }}</span></dt><dd>{{ sk[1] }}</dd></div>{% endfor %}</dl>
+<div class="tabelvak"><table class="tabel sorteerbaar">
+  <thead><tr><th>Zoekterm</th><th>Soort kans</th><th data-sorteer>Vertoningen</th><th data-sorteer>Klikken</th><th data-sorteer>Positie</th><th data-sorteer>Klikkans</th><th data-sorteer>Extra klikken per maand</th><th></th></tr></thead>
+  <tbody>{% for k in site.kansen %}{% set sk = seo_soorten[k.soort] %}<tr>
+    <td><strong>{{ k.term }}</strong>{% if k.pagina %}<br><small><a href="{{ k.pagina }}" target="_blank" rel="noopener">{{ k.pagina|replace('https://zerohero.one', '')|replace('https://www.zerohero.one', '')|truncate(48) or '/' }}</a></small>{% endif %}</td>
+    <td><span class="seolabel seo-{{ k.soort }}">{{ sk[0] }}</span></td>
+    <td data-waarde="{{ k.vertoningen }}">{{ getal(k.vertoningen) }}</td>
+    <td data-waarde="{{ k.klikken }}">{{ getal(k.klikken) }}</td>
+    <td data-waarde="{{ k.positie }}">{{ getal(k.positie) }}</td>
+    <td data-waarde="{{ k.ctr }}">{{ getal(k.ctr) }}%<br><small>normaal {{ getal(k.verwacht) }}%</small></td>
+    <td data-waarde="{{ k.extra }}">+{{ getal(k.extra|round|int) if k.extra >= 1 else '<1' }}</td>
+    <td><a class="knop knop-klein" href="{{ k.link }}" style="white-space:nowrap">{{ 'Schrijf artikel' if k.soort in ('nieuw', 'pagina2') else 'Artikel' }}</a></td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+<p class="noot">Titel verbeteren en Bijna bovenaan pak je het snelst aan in WordPress (SEO-titel, metabeschrijving, tussenkop). Tweede pagina en Nieuw artikel vragen om nieuwe tekst; de knop opent Artikelen met de zoekterm al ingevuld. De adviseur gebruikt deze lijst ook.</p>
+{% elif site.heeft_gsc %}<p class="noot">Op dit moment geen duidelijke kansen: geen zoektermen met genoeg vertoningen buiten de top 3. Kijk over een paar weken opnieuw.</p>
+{% else %}<p class="noot">Nog geen gegevens uit Search Console.</p>{% endif %}
+</div>
+<p class="noot">Google Analytics telt alleen bezoekers die cookies accepteren, dus het echte aantal ligt hoger. Search Console telt alle klikken vanuit Google, maar loopt twee tot drie dagen achter.</p>
+{% endif %}
+</div>
+<div class="tabblad" id="bereik" role="tabpanel" data-paneel="bereik">
+<h2 class="sub">Bereik per kanaal</h2>
+<p class="uitleg">Context, geen doel op zich. Volgers en weergaven zeggen pas iets als ze leiden tot de cijfers op het overzicht. Klik op een kanaal voor grafieken, analyses en alle details. <a href="/dashboard/cijfers">Cijfers invoeren</a> · <a href="/dashboard/linkedin">LinkedIn-exports</a> · <a href="/dashboard/ssi">SSI-screenshot</a> · <a href="/dashboard/profielbezoek">Profielbezoekers</a> · <a href="/dashboard/podcast">Spotify-export</a> · <a href="/dashboard/statistieken.csv">Alle statistieken downloaden (CSV)</a></p>
+{% if exports_nodig %}<p class="melding herinnering">📥 Tijd voor de maandelijkse export: {% for naam, url, _ in exports_nodig %}<a href="{{ url }}">{{ naam }}</a>{{ ' en ' if not loop.last else '.' }}{% endfor %} Upload de bestanden, dan blijven de cijfers op Bereik actueel.</p>{% endif %}
+{% set doelen = {'youtube': '/bereik/youtube', 'podcast': '/bereik/podcast', 'nieuwsbrief': '#nieuwsbrief', 'boek': '/bereik/boek',
+                 'linkedin': '/bereik/linkedin', 'linkedin_pagina': '/bereik/linkedin_pagina', 'instagram': '/bereik/instagram', 'facebook': '/bereik/facebook', 'threads': '/bereik/threads'} %}
+<div class="kanalen">
+{% for k in kanalen %}
+  {% set doel = doelen.get(k.id) if (k.heeft_cijfers or k.id in ('youtube', 'podcast', 'linkedin', 'linkedin_pagina', 'instagram', 'facebook', 'threads')) else none %}
+  {% if doel %}<a class="kanaal" href="{{ doel }}{{ ('?periode=' ~ periode) if doel.startswith('/') else '' }}">{% else %}<section class="kanaal leeg-kanaal">{% endif %}
+    <h3>{{ k.naam }}</h3>
+    <dl>
+    {% for r in k.regels %}
+      <div><dt>{{ r.label }}</dt><dd><b>{{ getal(r.waarde) }}</b> {{ delta(r.delta, plabel) }}</dd></div>
+    {% endfor %}
+    </dl>
+    <p class="noot">{{ k.koppeling }}{% set peil = k.regels|selectattr('peil')|map(attribute='peil')|max %}{% if peil %} · laatste cijfer {{ peil.strftime('%d-%m-%Y') }}{% endif %}</p>
+    {% if k.id == 'youtube' and yt.actief and yt.status and not yt.status.ok %}<p class="melding fout">⚠️ {{ yt.status.fout }}</p>{% endif %}
+    {% if (k.id == 'linkedin' and li_nodig) or (k.id == 'linkedin_pagina' and lp_nodig) %}<p class="noot"><b>Tijd voor de maandelijkse export.</b></p>{% endif %}
+    {% if k.id == 'podcast' and pod_nodig %}<p class="noot"><b>Tijd voor de maandelijkse export.</b></p>{% endif %}
+    {% if doel %}<span class="meer">{{ 'Naar het tabblad Nieuwsbrief' if doel.startswith('#') else 'Grafieken en analyse' }} →</span></a>{% else %}</section>{% endif %}
+{% endfor %}
+</div>
+</div>
+<div class="tabblad" id="nieuwsbrief" role="tabpanel" data-paneel="nieuwsbrief">
+<h2 class="sub">Nieuwsbrief en formulieren</h2>
+{% if not ml.actief %}
+<p class="noot">MailerLite is nog niet gekoppeld. Zet de API-sleutel op de server met <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh mailerlite</code>.</p>
+{% else %}
+<div class="koppelstatus">
+  {% if ml.status %}
+    {% if ml.status.ok %}<span class="noot">Bijgewerkt {{ geleden(ml.status.laatst) }}, daarna elke drie uur.</span>
+    {% else %}<span class="melding fout">⚠️ {{ ml.status.fout }}</span>{% endif %}
+  {% else %}<span class="noot">Eerste keer ophalen loopt…</span>{% endif %}
+  <form method="post" action="/dashboard/ververs/mailerlite"><button class="knop" type="submit">Nu verversen</button></form>
+</div>
+{% if ml.formulieren %}
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Formulier</th><th>Aanmeldingen {{ plabel }}</th><th>Totaal</th><th>Weergaven</th><th>Conversie</th></tr>
+  {% for f in ml.formulieren %}<tr><td>{{ f.naam }}<br><small>{{ {'embedded':'ingebed','popup':'pop-up','promotion':'promotie'}.get(f.soort, f.soort) }}</small></td>
+    <td>{{ f.in_periode if f.in_periode is not none else '·' }}</td><td>{{ getal(f.conversies) }}</td><td>{{ getal(f.weergaven) }}</td>
+    <td>{{ (getal(f.ratio|float) ~ '%') if f.ratio is not none else '·' }}</td></tr>{% endfor %}
+</table></div>
+{% if not ml.volledig %}<p class="noot">Aanmeldingen per periode tellen vanaf de eerste meting ({{ ml.formulieren[0].sinds.strftime('%d-%m-%Y') if ml.formulieren[0].sinds else 'vandaag' }}). Totaal is alles sinds het formulier bestaat.</p>{% endif %}
+{% endif %}
+{% if ml.campagnes %}
+<h3 class="fotokop">Laatste nieuwsbrieven</h3>
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Verzonden</th><th>Nieuwsbrief</th><th>Ontvangers</th><th>Geopend</th><th>Geklikt</th><th>Afmeldingen</th></tr>
+  {% for c in ml.campagnes %}<tr><td>{{ c.verzonden_op.strftime('%d-%m-%Y') if c.verzonden_op else '' }}</td><td>{{ c.onderwerp or c.naam }}</td>
+    <td>{{ getal(c.verzonden) }}</td><td>{{ (getal(c.open_ratio|float) ~ '%') if c.open_ratio is not none else '·' }}</td>
+    <td>{{ (getal(c.klik_ratio|float) ~ '%') if c.klik_ratio is not none else '·' }}</td><td>{{ getal(c.afmeldingen) }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endif %}
+</div>
+<div class="tabblad" id="webshop" role="tabpanel" data-paneel="webshop">
+<h2 class="sub">Webshop</h2>
+{% if not winkel.actief %}
+<p class="noot">De webshop is nog niet gekoppeld: de cockpit heeft geen WordPress-gegevens.</p>
+{% else %}
+<div class="koppelstatus">
+  {% if winkel.status %}
+    {% if winkel.status.ok %}<span class="noot">Bijgewerkt {{ geleden(winkel.status.laatst) }}, daarna elke drie uur. {{ winkel.bestellingen }} {{ 'bestelling' if winkel.bestellingen == 1 else 'bestellingen' }}, {{ euro((winkel.omzet * 100)|round|int) }} omzet in deze periode (incl. btw, zonder verzendkosten).</span>
+    {% else %}<span class="melding fout">⚠️ {{ winkel.status.fout }}</span>{% endif %}
+  {% else %}<span class="noot">Eerste keer ophalen loopt…</span>{% endif %}
+  <form method="post" action="/dashboard/ververs/woocommerce"><button class="knop" type="submit">Nu verversen</button></form>
+</div>
+{% if winkel.producten %}
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Product</th><th>Verkocht {{ plabel }}</th><th>Vorige {{ plabel }}</th></tr>
+  {% for p in winkel.producten %}<tr><td>{{ p.naam|safe }}<br><small>{{ p.categorie }}</small></td>
+    <td><b>{{ p.nu }}</b>{% if p.nu %} <span class="noot">({{ euro((p.omzet * 100)|round|int) }})</span>{% endif %}</td>
+    <td>{{ p.toen }}{% if p.toen %} <span class="noot">({{ euro((p.omzet_toen * 100)|round|int) }})</span>{% endif %}</td></tr>{% endfor %}
+</table></div>
+<p class="noot">Telt bestellingen met de status In behandeling of Afgerond. Verzending loopt via MyParcel, dus bestellingen blijven gewoon op In behandeling staan. Een bundel telt als één verkoop. Tussen haakjes de omzet, inclusief btw en zonder verzendkosten.</p>
+{% elif winkel.status and winkel.status.ok %}<p class="noot">Geen verkopen in deze en de vorige periode.</p>{% endif %}
+{% endif %}
+</div>
+<div class="tabblad" id="nieuws" role="tabpanel" data-paneel="nieuws">
+<h2 class="sub">In het nieuws</h2>
+{% if kern.media %}
+<ul class="media-lijst">{% for m in kern.media %}<li><a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.titel }}</a> <small class="noot">{{ m.bron }}, {{ geleden(m.binnen) }}</small></li>{% endfor %}</ul>
+{% else %}<p class="noot">Doellijn vond in deze periode geen berichten over ZEROHERO, Martijn Buurman of De Keeper-mindset.</p>{% endif %}
+</div>
+<div class="tabblad" id="doellijn" role="tabpanel" data-paneel="doellijn">
+<h2 class="sub">Doellijn aan het werk</h2>
+<section class="tegels tegels-groot compact">
+  <div class="tegel"><span class="getal">{{ getal(kern.werk.berichten) }}</span><span>berichten gewogen</span></div>
+  <div class="tegel"><span class="getal">{{ kern.werk.top }}</span><span>topberichten (80+)</span></div>
+  <div class="tegel"><span class="getal">{{ kern.werk.geselecteerd }}</span><span>geselecteerd</span></div>
+  <div class="tegel"><span class="getal">{{ kern.werk.concepten }}</span><span>concepten gemaakt</span></div>
+  <div class="tegel"><span class="getal">{{ kern.werk.in_wp }}</span><span>in WordPress gezet</span></div>
+  <div class="tegel"><span class="getal groen">{{ kern.werk.gepubliceerd }}</span><span>gepubliceerd vanuit de cockpit</span></div>
+</section>
+{% if kost %}
+{% macro usd(v) %}$&nbsp;{{ '%.2f'|format(v or 0)|replace('.', ',') }}{% endmacro %}
+{% macro eur(v) %}€&nbsp;{{ '%.2f'|format(v or 0)|replace('.', ',') }}{% endmacro %}
+<h2 class="sub" id="kosten">Kosten</h2>
+{% if request.query_params.get('kosten') %}<p class="melding ok">✓ Vaste kosten opgeslagen.</p>{% endif %}
+{% if request.query_params.get('spaar') %}<p class="melding ok">✓ Spaarstand opgeslagen. n8n gebruikt hem vanaf de volgende ronde (binnen een kwartier).</p>{% endif %}
+{% if request.query_params.get('rekening') == 'ok' %}<p class="melding ok">✓ Rekening opgehaald bij Anthropic.</p>{% elif request.query_params.get('rekening') == 'fout' %}<p class="melding fout">Ophalen bij Anthropic mislukt{% if kost.echt and kost.echt.status %}: {{ kost.echt.status.fout }}{% endif %}.</p>{% endif %}
+{% if kost.echt %}
+<p class="uitleg">Wat Claude kost volgens de rekening van Anthropic, inclusief alles wat n8n doet en de webzoekopdrachten. Anthropic werkt de cijfers een paar keer per dag bij; laatst opgehaald {{ geleden(kost.echt.status.laatst) if kost.echt.status else 'onbekend' }}. Claude rekent in dollars; de totalen in euro gebruiken een koers van {{ '%.2f'|format(kost.koers)|replace('.', ',') }}.</p>
+{% else %}
+<p class="uitleg">Wat Claude kost, geschat uit de tokens die de cockpit per bericht, concept, artikel en advies bijhoudt, plus de vaste kosten die je hieronder invult. {% if kost.rekening_actief %}De echte rekening wordt opgehaald; ververs de pagina over een minuut.{% else %}<b>Let op:</b> zonder koppeling met Anthropic mist de schatting een deel van n8n (zoekstap, Telegram, feitencontrole); de echte rekening lag in oktober ongeveer 65 procent hoger. Koppel hem met <code>deploy/anthropic_admin.sh</code>.{% endif %} Claude rekent in dollars; de totalen in euro gebruiken een koers van {{ '%.2f'|format(kost.koers)|replace('.', ',') }}.</p>
+{% endif %}
+<section class="tegels tegels-groot compact">
+  <div class="tegel"><span class="tegel-kop">Claude deze maand</span><span class="getal">{{ usd(kost.deze_maand) }}</span><small>Tot en met vandaag.</small></div>
+  <div class="tegel"><span class="tegel-kop">Claude vorige maand</span><span class="getal">{{ usd(kost.vorige_maand) }}</span><small>Sinds de start ({{ kost.sinds.astimezone().strftime('%d-%m-%Y') }}): {{ usd(kost.totaal) }}.</small></div>
+  <div class="tegel"><span class="tegel-kop">Verwacht deze maand</span><span class="getal">{{ usd(kost.prognose_maand) }}</span><small>Bij het tempo van de laatste {{ kost.gemeten_dagen }} dagen ({{ usd(kost.per_dag) }} per dag).{% if kost.spaar.budget %} Budget: {{ usd(kost.spaar.budget) }}.{% endif %}</small></div>
+  <div class="tegel"><span class="tegel-kop">Claude per jaar (schatting)</span><span class="getal">{{ usd(kost.prognose_jaar) }}</span><small>Ongeveer {{ eur(kost.prognose_jaar * kost.koers) }}.</small></div>
+  <div class="tegel"><span class="tegel-kop">Vaste kosten per maand</span><span class="getal">{{ eur(kost.vast_maand) }}</span><small>{% if kost.vast|selectattr('bedrag', 'none')|list %}Nog niet alles ingevuld.{% else %}Zoals hieronder ingevuld.{% endif %}</small></div>
+  <div class="tegel"><span class="tegel-kop">Alles samen</span><span class="getal groen">{{ eur(kost.totaal_maand_eur) }}</span><small>Per maand verwacht; per jaar ongeveer {{ eur(kost.totaal_jaar_eur) }}.</small></div>
+</section>
+{% if kost.reeks|length > 1 %}
+<h3 class="fotokop">Claude per maand</h3>
+{% set punten = [] %}{% for r in kost.reeks %}{% set _ = punten.append({'w': r.dollar, 'tip': r.maand.strftime('%m-%Y') ~ ': $ ' ~ ('%.2f'|format(r.dollar))|replace('.', ','), 'lab': ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'][r.maand.month - 1]}) %}{% endfor %}
+{{ staven(punten, 'Claude-kosten per maand') }}
+{% endif %}
+{% if kost.echt and kost.echt.per_model %}
+<h3 class="fotokop">Volgens de rekening, {{ plabel }}</h3>
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Model of soort</th><th>Kosten</th><th>Aandeel</th></tr>
+  {% for m in kost.echt.per_model %}<tr><td>{{ m.naam }}</td><td>{{ usd(m.dollar|float) }}</td><td>{{ (100 * m.dollar|float / kost.echt.periode)|round|int if kost.echt.periode else 0 }}%</td></tr>{% endfor %}
+  <tr><td><b>Totaal</b></td><td><b>{{ usd(kost.echt.periode) }}</b></td><td></td></tr>
+</table></div>
+<p class="noot">Haiku doet het kleine, veelvuldige werk (nieuws wegen in n8n, Telegram-links, feitencontrole), Sonnet het schrijfwerk en de adviseur. Webzoekopdrachten kosten 1 cent per stuk; de gevonden pagina's tellen daarnaast als invoertokens.</p>
+{% endif %}
+<h3 class="fotokop">Per onderdeel, {{ plabel }}</h3>
+<div class="tabelvak"><table class="tabel">
+  <tr><th>Onderdeel</th><th>Aantal</th><th>Kosten</th><th>Per stuk</th></tr>
+  {% for o in kost.periode %}<tr><td>{{ o.naam }}{% if o.geschat %} <small class="noot">*</small>{% endif %}</td><td>{% if o.rest %}·{% else %}{{ getal(o.aantal) }} <small class="noot">{{ o.eenheid }}</small>{% endif %}</td>
+    <td>{{ usd(o.dollar) }}</td><td>{{ usd(o.dollar / o.aantal) if o.aantal else '·' }}</td></tr>{% endfor %}
+  <tr><td><b>Totaal</b></td><td></td><td><b>{{ usd(kost.periode_totaal) }}</b></td><td></td></tr>
+</table></div>
+<p class="noot">* Deels geschat: de n8n-werkstromen houden het aantal webzoekopdrachten (1 cent per stuk) niet bij, en het lezen van screenshots wordt per stuk geschat. Tarieven: Sonnet 2 en 10 dollar, Haiku 1 en 5 dollar per miljoen tokens (in en uit).{% if kost.echt %} Het totaal van deze tabel is gelijk gemaakt aan de rekening; de regel Niet apart te meten is het verschil.{% endif %}</p>
+<h3 class="fotokop" id="spaarstand">Spaarstand</h3>
+{% set sp = kost.spaar %}
+{% if sp.over_budget %}<p class="melding fout">Het maandbudget van {{ usd(sp.budget) }} is bereikt ({{ usd(sp.besteed) }}{{ '' if sp.echt else ', geschat' }}). De zoekstap van de weging en de automatische maandaganalyse staan uit tot {{ sp.tot }}. Wat je zelf start, werkt gewoon.</p>
+{% elif sp.budget %}<p class="noot">Deze maand {{ usd(sp.besteed) }}{{ '' if sp.echt else ' (geschat)' }} van het budget van {{ usd(sp.budget) }} ({{ sp.procent }}%).</p>{% endif %}
+<form method="post" action="/dashboard/spaarstand" class="artikelformulier spaarstand">
+  <fieldset><legend>Zoekstap in de nieuwsweging (n8n)</legend>
+  <p class="noot">Google News levert alleen een kop. Bij een veelbelovende kop zoekt Claude de inhoud op het web. Dat is de grootste kostenpost van de weging: elke zoekopdracht kost 1 cent en de gevonden pagina's tellen als invoer.</p>
+  {% for sleutel, z in kost.zoekstanden.items() %}<label class="keuze"><input type="radio" name="zoekstand" value="{{ sleutel }}"{{ ' checked' if sp.gekozen == sleutel }}> <b>{{ z.naam }}</b><br><small>{{ z.uitleg }}</small></label>{% endfor %}
+  </fieldset>
+  <label>Maandbudget voor Claude in dollars (leeg = geen budget)<input name="budget" value="{{ ('%.0f'|format(sp.budget)) if sp.budget else '' }}" inputmode="decimal" placeholder="bijvoorbeeld 60"></label>
+  <p class="noot">Boven het budget gaan de zoekstap en de automatische maandaganalyse vanzelf uit. Houd het budget onder de uitgavenlimiet van de werkruimte in de Claude Console (nu 100 dollar), anders stopt Anthropic eerder dan de cockpit.</p>
+  <button class="knop knop-zoek" type="submit">Spaarstand opslaan</button>
+</form>
+{% if kost.rekening_actief %}<form method="post" action="/dashboard/ververs/anthropic" class="inline"><button class="knop knop-klein" type="submit">Rekening nu ophalen</button></form>{% endif %}
+<details class="nieuwe-analyse">
+  <summary class="knop">Vaste kosten aanpassen</summary>
+  <form method="post" action="/dashboard/kosten" class="artikelformulier">
+    <label>Vaste kosten, één per regel als <i>Naam: bedrag</i> in euro per maand (zet er 'per jaar' achter voor een jaarbedrag)
+      <textarea name="vast" rows="6">{{ kost.vast_tekst }}</textarea></label>
+    <label>Koers (euro per dollar)<input name="koers" value="{{ '%.2f'|format(kost.koers)|replace('.', ',') }}" inputmode="decimal"></label>
+    <button class="knop knop-zoek" type="submit">Opslaan</button>
+  </form>
+</details>
+{% endif %}
+</div>
+<script>
+document.querySelectorAll('nav.subtabs').forEach(nav => {
+  const knoppen = nav.querySelectorAll('[data-subtab]');
+  const sleutel = 'subtab-' + (nav.getAttribute('aria-label') || '');
+  function toon(naam) {
+    knoppen.forEach(k => { const aan = k.dataset.subtab === naam; k.classList.toggle('aan', aan); k.setAttribute('aria-selected', aan); });
+    nav.parentElement.querySelectorAll(':scope > [data-subpaneel]').forEach(p => p.hidden = p.dataset.subpaneel !== naam);
+  }
+  knoppen.forEach(k => k.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); toon(k.dataset.subtab);
+    try { sessionStorage.setItem(sleutel, k.dataset.subtab); } catch (err) {} }));
+  try { const b = sessionStorage.getItem(sleutel); if (b && nav.querySelector('[data-subtab="' + b + '"]')) toon(b); } catch (err) {}
+});
+(function () {
+  const tabs = document.querySelectorAll('.tabs [data-tab]');
+  const panelen = document.querySelectorAll('[data-paneel]');
+  const naamVan = h => {
+    h = (h || '').replace('#', '');
+    if (h.startsWith('kans-')) return 'kansen';
+    if (h === 'media') return 'nieuws';
+    return [...panelen].some(p => p.dataset.paneel === h) ? h : 'overzicht';
+  };
+  function toon(h, scroll) {
+    const naam = naamVan(h);
+    panelen.forEach(p => p.hidden = p.dataset.paneel !== naam);
+    tabs.forEach(t => { const aan = t.dataset.tab === naam; t.classList.toggle('aan', aan); t.setAttribute('aria-selected', aan); });
+    document.querySelectorAll('.periodes a').forEach(a => { a.hash = naam === 'overzicht' ? '' : naam; });
+    const doel = h && h.startsWith('#kans-') ? document.querySelector(h) : null;
+    if (doel) doel.scrollIntoView({ block: 'center' });
+    else if (scroll) window.scrollTo({ top: 0 });
+  }
+  tabs.forEach(t => t.addEventListener('click', e => { e.preventDefault(); history.replaceState(null, '', '#' + t.dataset.tab); toon('#' + t.dataset.tab, true); }));
+  document.addEventListener('click', e => {
+    const a = e.target.closest('a[href^="#"]');
+    if (a && !a.dataset.tab && a.getAttribute('href').length > 1) { e.preventDefault(); history.replaceState(null, '', a.getAttribute('href')); toon(a.getAttribute('href'), true); }
+  });
+  window.addEventListener('hashchange', () => toon(location.hash));
+  toon(location.hash);
+})();
+</script>
+{% endblock %}

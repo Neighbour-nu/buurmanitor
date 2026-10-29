@@ -1,0 +1,10 @@
+<div id="uitgelicht" class="uitgelicht">
+  {% if fout %}<p class="melding fout">⚠️ {{ fout }}</p>{% endif %}
+  {% if c.beeld_url %}
+    <img src="{{ c.beeld_url }}" alt="Uitgelicht beeld" loading="lazy">
+    <p class="noot">Uitgelicht beeld in WordPress ({{ {'huisstijl':'huisstijl','mediabibliotheek':'uit je mediabibliotheek','commons':'van Wikimedia Commons, met naamsvermelding','eigen':'eigen upload'}.get(c.beeld_bron, c.beeld_bron) }}).</p>
+  {% else %}
+    <img src="/concepten/{{ c.id }}/huisstijl.png" alt="Voorbeeld huisstijlbeeld" loading="lazy">
+    <p class="noot">Voorbeeld van het huisstijlbeeld. Nog niet in WordPress gezet.</p>
+  {% endif %}
+</div>

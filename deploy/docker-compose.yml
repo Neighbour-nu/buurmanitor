@@ -34,6 +34,11 @@ services:
       POLITIEK_MAIL_AAN: ${POLITIEK_MAIL_AAN:-}
       POLITIEK_MAIL_VAN: ${POLITIEK_MAIL_VAN:-}
       TZ: Europe/Amsterdam
+    # Werkruimte ZEROHERO (de Doellijn, fase 2): alle ZEROHERO_-instellingen staan in zerohero.env (alleen leesbaar voor
+    # jou). Leeg = nog niet overgestapt. deploy/overstap-zerohero.sh vult het bestand met de instellingen van de oude app.
+    env_file:
+      - path: zerohero.env
+        required: false
     volumes:
       - ${HOME}/cockpit/backups:/backups/doellijn:ro
       - ${HOME}/promonitor/backups:/backups/promonitor:ro
@@ -42,6 +47,8 @@ services:
       cockpit:
         aliases:
           - buurmanitor-app
+          # Na de overstap van de Doellijn ook "cockpit-app", zodat n8n zonder aanpassing de portal bereikt.
+          - ${ZEROHERO_ALIAS:-buurmanitor-reserve}
 
 networks:
   cockpit:

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% from "_macros.html" import getal, delta, staven %}
+{% block inhoud %}
+{% set plabel = periodes[periode] %}{% set titel = "Podcast op Spotify" %}{% set sorteer = pod.sorteer %}
+{% include "_bereik_kop.html" %}
+<div class="koppelstatus">
+  {% if pod.laatste_upload %}<span class="noot">Laatste export geüpload {{ geleden(pod.laatste_upload.moment) }}{% if pod.som.tot %}, cijfers tot en met {{ pod.som.tot.strftime('%d-%m-%Y') }}{% endif %}.</span>
+  {% else %}<span class="noot">Nog geen export geüpload.</span>{% endif %}
+  {% if pod_nodig %}<span class="melding herinnering">Tijd voor de maandelijkse export</span>{% endif %}
+  <a class="knop" href="/dashboard/podcast">Export uploaden</a>
+</div>
+{% if not pod.heeft_data %}
+<p class="noot">Nog geen cijfers. Upload de CSV-bestanden uit Spotify for Creators.</p>
+{% else %}
+<p class="uitleg">De {{ plabel }} tot en met de laatste dag in de export, vergeleken met de {{ plabel }} daarvoor.</p>
+<section class="tegels tegels-groot compact">
+  <div class="tegel"><span class="tegel-kop">Afgespeeld en gedownload</span>
+    <span class="getal">{{ getal(pod.som.nu|int) }} {{ delta((pod.som.nu - pod.som.toen)|int, plabel) }}</span>
+    <small>Vorige {{ plabel }}: {{ getal(pod.som.toen|int) }}. Sinds de start{% if pod.som.vanaf %} ({{ pod.som.vanaf.strftime('%m-%Y') }}){% endif %}: {{ getal(pod.som.ooit|int) }}.</small></div>
+  <div class="tegel"><span class="tegel-kop">Luistertijd</span>
+    <span class="getal">{{ getal(pod.som.uren|float) }} <small>uur</small></span>
+    <small>{{ getal(pod.som.nieuw|int) }} nieuwe luisteraars, {{ getal(pod.som.weergaven|int) }} keer getoond in Spotify.</small></div>
+  <div class="tegel"><span class="tegel-kop">Volgers</span>
+    <span class="getal">{{ getal(pod.volgers.volgers) if pod.volgers else '·' }} {% if pod.volgers and pod.volgers_eerder is not none %}{{ delta(pod.volgers.volgers - pod.volgers_eerder, plabel) }}{% endif %}</span>
+    <small>{% if pod.gem7 %}Een aflevering haalt gemiddeld {{ getal(pod.gem7|int) }} keer afspelen in de eerste 7 dagen.{% endif %}</small></div>
+</section>
+
+{% if pod.inzichten %}
+<h2 class="sub">Wat opvalt</h2>
+<ul class="inzichten">{% for i in pod.inzichten %}<li>{{ i }}</li>{% endfor %}</ul>
+{% endif %}
+
+{% set wd = ['ma','di','wo','do','vr','za','zo'] %}
+{% if pod.dagreeks %}
+<h3 class="fotokop">Afgespeeld per dag</h3>
+{% set punten = [] %}
+{% for r in pod.dagreeks %}{% set _ = punten.append({'w': r.afspelen, 'tip': wd[r.datum.weekday()] ~ ' ' ~ r.datum.strftime('%d-%m') ~ ': ' ~ r.afspelen ~ ' keer, ' ~ (r.uren|float|round(2)|string)|replace('.', ',') ~ ' uur' ~ ((', ' ~ r.weergaven ~ ' keer getoond') if r.weergaven else ''), 'lab': r.datum.strftime('%d') if pod.dagreeks|length <= 31 else ''}) %}{% endfor %}
+{{ staven(punten, 'Afgespeeld per dag') }}
+{% endif %}
+
+{% if pod.maanden %}
+{% set mnd = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'] %}
+<h3 class="fotokop">Afgespeeld per maand, sinds de start</h3>
+{% set punten = [] %}
+{% for m in pod.maanden %}{% set _ = punten.append({'w': m.afspelen|int, 'tip': mnd[m.maand.month - 1] ~ ' ' ~ m.maand.year ~ ': ' ~ (m.afspelen|int) ~ ' keer', 'lab': mnd[m.maand.month - 1][:1] ~ (('<br>' ~ m.maand.strftime('%y')) if m.maand.month == 1 else '')}) %}{% endfor %}
+{{ staven(punten, 'Afgespeeld per maand', true) }}
+{% endif %}
+
+<div class="tweekoloms">
+  <div>
+    {% if pod.jaren %}<h3 class="fotokop">Per jaar</h3>
+    <div class="tabelvak"><table class="tabel">
+      <tr><th>Jaar</th><th>Afgespeeld</th><th>Per maand</th><th>Luistertijd</th></tr>
+      {% for j in pod.jaren %}<tr><td>{{ j.jaar }}</td><td>{{ getal(j.afspelen) }}</td><td>{{ getal((j.afspelen / j.maanden)|round|int) }}</td><td>{{ (getal(j.uren|float) ~ ' uur') if j.uren is not none else '·' }}</td></tr>{% endfor %}
+    </table></div><p class="noot">"Per maand" telt alleen maanden waarvan cijfers zijn. Luistertijd staat alleen in de exports van Betrokkenheid.</p>{% endif %}
+  </div>
+  <div>
+    {% if pod.weekdagen %}<h3 class="fotokop">Gemiddeld per weekdag (afgelopen jaar)</h3>
+    {% set hoogste_w = (pod.weekdagen|map(attribute='gem')|max) or 1 %}
+    <div class="verdeling">
+      {% for r in pod.weekdagen %}<div class="verdeel-regel"><span>{{ weekdagen[r.dag - 1] }}</span><span class="verdeel-balk"><span style="width: {{ (r.gem / hoogste_w * 100)|round(0) }}%"></span></span><b>{{ (r.gem|string)|replace('.', ',') }}</b></div>{% endfor %}
+    </div>{% endif %}
+  </div>
+</div>
+
+<h3 class="fotokop">Afleveringen</h3>
+<nav class="periodes sorteer" aria-label="Sorteren">
+  {% for s, label in sorteringen.items() %}<a href="?periode={{ periode }}&sorteer={{ s }}" class="knop {{ 'aan' if s == pod.sorteer }}">{{ label }}</a>{% endfor %}
+</nav>
+{% if pod.afleveringen %}{% set h7 = (pod.afleveringen|selectattr('eerste7')|map(attribute='eerste7')|max) or 1 %}<div class="tabelvak"><table class="tabel">
+  <tr><th>Aflevering</th><th>Online sinds</th><th>Eerste 7 dagen</th><th>Ten opzichte van normaal</th><th>Uitgeluisterd</th></tr>
+  {% for a in pod.afleveringen %}<tr><td>{% if a.uri %}<a href="https://open.spotify.com/episode/{{ a.uri.split(':')[-1] }}" target="_blank" rel="noopener">{{ a.titel|truncate(80) }}</a>{% else %}{{ a.titel|truncate(80) }}{% endif %}</td>
+    <td>{{ a.publicatie.strftime('%d-%m-%Y') if a.publicatie else '' }}</td>
+    <td>{% if a.eerste7 is not none %}<span class="minibalk"><span style="width: {{ (a.eerste7 / h7 * 100)|round(0) }}%"></span></span> {{ a.eerste7 }}{% else %}·{% endif %}</td>
+    <td><small class="{{ 'groen-tekst' if a.prestatie and 'meer' in a.prestatie else 'noot' }}">{{ a.prestatie or '' }}</small></td>
+    <td>{{ (a.voltooiing|float|round|int ~ '%') if a.voltooiing is not none else '·' }}</td></tr>{% endfor %}
+</table></div>
+<p class="noot">"Ten opzichte van normaal" is de vergelijking die Spotify zelf maakt met jouw gemiddelde aflevering. Uitgeluisterd: welk deel van de aflevering een luisteraar gemiddeld afmaakt (Spotify geeft dit alleen voor recente afleveringen).</p>
+{% endif %}
+
+    {% set tw = pod.snap.get('top_weergaven') %}
+    {% if tw %}<h3 class="fotokop">Meest getoond in Spotify</h3>
+    <div class="tabelvak"><table class="tabel">
+      <tr><th>Aflevering</th><th>Getoond</th><th>Home</th><th>Zoeken</th><th>Bibliotheek</th></tr>
+      {% for r in tw.data.rijen %}<tr><td>{{ r[0]|truncate(90) }}</td><td>{{ r[1] }}</td><td>{{ r[2] }}</td><td>{{ r[3] }}</td><td>{{ r[4] }}</td></tr>{% endfor %}
+    </table></div><p class="noot">Periode {{ tw.periode }}.</p>{% endif %}
+<div class="tweekoloms">
+  <div>
+    {% set tl = pod.snap.get('top_luistertijd') %}
+    {% if tl %}<h3 class="fotokop">Meeste luistertijd</h3>
+    <div class="tabelvak"><table class="tabel">
+      <tr><th>Aflevering</th><th>Uur</th></tr>
+      {% for r in tl.data.rijen %}<tr><td>{{ r[0]|truncate(60) }}</td><td>{{ (r[1]|float|round(2)|string)|replace('.', ',') }}</td></tr>{% endfor %}
+    </table></div><p class="noot">Periode {{ tl.periode }}.</p>{% endif %}
+  </div>
+  <div>
+    {% set ge = pod.snap.get('geslacht') %}{% set lf = pod.snap.get('leeftijd') %}{% set ap = pod.snap.get('apps') %}
+    {% if ge or lf or ap %}<h3 class="fotokop">Wie luistert</h3>
+    <div class="verdeling">
+      {% for snap in [ge, lf, ap] if snap %}
+        {% for r in snap.data.rijen if (r[1]|float) > 0 %}
+        <div class="verdeel-regel"><span>{{ r[0] }}</span><span class="verdeel-balk"><span style="width: {{ r[1]|float|round(0) }}%"></span></span><b>{{ r[1]|float|round|int }}%</b></div>
+        {% endfor %}
+        {% if not loop.last %}<hr>{% endif %}
+      {% endfor %}
+    </div>
+    <p class="noot">Bij weinig luisteraars schommelt dit sterk.{% if ge %} Periode {{ ge.periode }}.{% endif %}</p>{% endif %}
+    {% set rt = pod.snap.get('retentie') %}
+    {% if rt and rt.data.rijen %}<h3 class="fotokop">Luisteraars die de week erna terugkomen</h3>
+    {% set punten = [] %}
+    {% for r in rt.data.rijen %}{% set _ = punten.append({'w': r[1]|float, 'tip': 'week van ' ~ r[0] ~ ': ' ~ (r[1]|float|round|int) ~ '%', 'lab': r[0].split('-')[0] ~ '/' ~ r[0].split('-')[1]}) %}{% endfor %}
+    {% if punten|map(attribute='w')|max > 0 %}{{ staven(punten, 'Retentie per week') }}{% else %}<p class="noot">In de periode {{ rt.periode }} kwam niemand de week erna terug (0% in alle weken).</p>{% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

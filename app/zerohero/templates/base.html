@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<title>ZEROHERO | {{ pagina|capitalize }} · Buurmanitor</title>
+<link rel="stylesheet" href="/static/style.css?v=37">
+<script src="/static/htmx.min.js?v=1.9.12" defer></script>
+</head>
+<body>
+<header class="kop">
+  <a class="merk" href="https://{{ portal_host }}/" aria-label="Buurmanitor, naar Vandaag">
+    <img src="/static/logo.svg" alt="" width="40" height="40">
+    <span class="naam">BUURMANITOR</span>
+  </a>
+  <a class="werkruimte-naam" href="/" title="Werkruimte ZEROHERO, naar Vandaag in de Doellijn">ZEROHERO</a>
+  <nav class="menu" aria-label="Menu ZEROHERO">
+    <a href="/" class="{{ 'actief' if pagina == 'vandaag' }}">Vandaag</a>
+    <a href="/inbox" class="{{ 'actief' if pagina == 'inbox' }}">Inbox</a>
+    <a href="/artikelen" class="{{ 'actief' if pagina == 'artikelen' }}">Artikelen</a>
+    <a href="/concepten" class="{{ 'actief' if pagina == 'concepten' }}">Concepten</a>
+    <a href="/congres" class="{{ 'actief' if pagina == 'congres' }}">Congres</a>
+    <a href="/dashboard" class="{{ 'actief' if pagina == 'dashboard' }}">Dashboard</a>
+    <a href="/links" class="{{ 'actief' if pagina == 'links' }}">Links</a>
+    <a href="/adviseur" class="{{ 'actief' if pagina == 'adviseur' }}">Adviseur</a>
+    <span class="scheiding" aria-hidden="true"></span>
+    <a class="terug" href="https://{{ portal_host }}/">Buurmanitor</a>
+  </nav>
+  <div class="aftel" title="Dagen tot het ZEROHERO Keeperscongres">
+    {% if congres_dagen > 0 %}<b>{{ congres_dagen }}</b> dagen tot het congres{% endif %}
+  </div>
+</header>
+<main class="inhoud">
+{% block inhoud %}{% endblock %}
+</main>
+<footer class="voet">
+  <a href="https://feeds.zerohero.one" target="_blank" rel="noopener">Miniflux</a>
+  <a href="https://n8n.zerohero.one" target="_blank" rel="noopener">n8n</a>
+  <a href="{{ auth_url }}/logout">Uitloggen</a>
+</footer>
+<dialog id="voorbeeld" class="voorbeeld" aria-label="Voorbeeld op zerohero.one">
+  <div class="voorbeeld-kop">
+    <span>Voorbeeld op zerohero.one <small class="noot">(je moet in deze browser ingelogd zijn in WordPress)</small></span>
+    <span class="voorbeeld-knoppen">
+      <button type="button" class="knop" data-breedte="390">Telefoon</button>
+      <button type="button" class="knop" data-breedte="">Computer</button>
+      <a class="knop" id="voorbeeld-los" href="#" target="_blank" rel="noopener">Nieuw tabblad</a>
+      <button type="button" class="knop" onclick="document.getElementById('voorbeeld').close()">Sluiten</button>
+    </span>
+  </div>
+  <div class="voorbeeld-vak"><iframe id="voorbeeld-frame" title="Voorbeeld van het bericht" src="about:blank"></iframe></div>
+</dialog>
+<script>
+function toonVoorbeeld(id) {
+  const url = 'https://zerohero.one/?p=' + id + '&preview=true';
+  const d = document.getElementById('voorbeeld'), f = document.getElementById('voorbeeld-frame');
+  f.src = url; f.style.width = ''; document.getElementById('voorbeeld-los').href = url; d.showModal();
+}
+document.addEventListener('click', e => {
+  const k = e.target.closest('[data-breedte]'); if (!k) return;
+  document.getElementById('voorbeeld-frame').style.width = k.dataset.breedte ? k.dataset.breedte + 'px' : '';
+});
+document.getElementById('voorbeeld').addEventListener('close', () => { document.getElementById('voorbeeld-frame').src = 'about:blank'; });
+</script>
+<script>
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('.kopieer'); if (!b) return;
+  const t = document.getElementById(b.dataset.doel).innerText;
+  try { await navigator.clipboard.writeText(t); b.textContent = 'Gekopieerd ✓'; } catch (err) { b.textContent = 'Selecteer en kopieer zelf'; }
+  setTimeout(() => b.textContent = 'Kopieer', 2500);
+});
+</script>
+<script src="/static/tabs.js?v=1" defer></script>
+<script src="/static/sorteer.js?v=1" defer></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<p class="terug"><a href="/adviseur#archief">← Adviseur, eerdere analyses</a></p>
+<h1 class="titel">Analyse {{ an.aangemaakt.astimezone().strftime('%d-%m-%Y') }}</h1>
+{% if an.status == 'bezig' %}
+<div class="melding herinnering" hx-get="/adviseur/analyse/{{ an.id }}/status" hx-trigger="load, every 5s" hx-swap="innerHTML">De adviseur is bezig. Deze pagina ververst vanzelf.</div>
+{% elif an.status == 'fout' %}
+<p class="melding fout">⚠️ {{ an.fout }}</p>
+{% elif an.r %}
+{% include "_advies_resultaat.html" %}
+{% endif %}
+{% endblock %}

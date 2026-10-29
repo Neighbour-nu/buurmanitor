@@ -60,6 +60,7 @@ else
 fi
 chmod 600 "$DOEL/.env"
 cp "$DOEL/app/deploy/docker-compose.yml" "$DOEL/docker-compose.yml"
+touch "$DOEL/zerohero.env" && chmod 600 "$DOEL/zerohero.env"
 PW=$(grep -m1 '^BUURMANITOR_DB_PASSWORD=' "$DOEL/.env" | cut -d= -f2-)
 
 echo "== 4. Database buurmanitor in de PostgreSQL van de cockpit"
