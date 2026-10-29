@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block titel %}Clara · Buurmanitor{% endblock %}
+{% macro tijd(a) -%}
+  {%- if a.heledag %}hele dag{% else %}{{ a.start.astimezone(tz).strftime('%H.%M') }}–{{ a.eind.astimezone(tz).strftime('%H.%M') }}{% if a.geschat %}*{% endif %}{% endif -%}
+{%- endmacro %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Clara <span class="noot">{{ p.rol }}</span></h1>
+    <p class="motto">{{ p.motto }}</p>
+  </div>
+  <div class="knoppen">
+    <form method="post" action="/clara/vernieuwen" class="inline"><button class="knop" type="submit">Nu bijwerken</button></form>
+    <a class="knop" href="/clara/koppelingen">Koppelingen</a>
+  </div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+{% if not koppelingen %}
+  <p class="item belangrijk">Er zijn nog geen agenda's gekoppeld. Ga naar <a href="/clara/koppelingen">Koppelingen</a>.</p>
+{% endif %}
+{% for k in koppelingen if k.fout %}<p class="item urgent"><b>{{ k.naam }}</b>: {{ k.fout }} <a href="/clara/koppelingen">oplossen</a></p>{% endfor %}
+
+<div class="clara-raster">
+  <section class="kaart">
+    <h2>
+      <span>{{ start.day }} {{ datum_lang(start).split(' ')[2] }} tot {{ alle_dagen[-1].day }} {{ datum_lang(alle_dagen[-1]).split(' ')[2] }}</span>
+      <span class="klein"><a href="/clara?week={{ week - 1 }}">vorige</a> · {% if week %}<a href="/clara">deze week</a> · {% endif %}<a href="/clara?week={{ week + 1 }}">volgende</a></span>
+    </h2>
+    {% for dag in alle_dagen %}
+      {% set items = dagen_lijst.get(dag, []) %}
+      <div class="dag {{ 'vandaag' if dag == nu.date() }}">
+        <div class="dagkop">{{ DAGEN[dag.weekday()] }} {{ dag.day }}-{{ dag.month }}{% if dag == nu.date() %} <span class="label">vandaag</span>{% endif %}</div>
+        {% for a in items %}
+          {% set sleutel = (a.koppeling_id, a.extern_id) %}
+          <div class="afspraak {{ a.domein }} {{ 'conflict' if sleutel in conflict_ids }} {{ 'vrijgehouden' if a.vrij or a.antwoord == 'afgewezen' }} {{ 'voorlopig' if a.status == 'voorlopig' or a.antwoord in ('voorlopig', 'geen') }}">
+            <span class="tijd">{{ tijd(a) }}</span>
+            <span class="wat">{% if a.link %}<a href="{{ a.link }}" target="_blank" rel="noopener">{{ a.titel }}</a>{% else %}{{ a.titel }}{% endif %}
+              {% if sleutel in conflict_ids %}<span class="label rood">dubbel</span>{% endif %}
+              {% if sleutel in krap_ids %}<span class="label rood">krap</span>{% endif %}
+              {% if a.antwoord == 'geen' %}<span class="label">uitnodiging</span>{% endif %}
+              {% if a.antwoord == 'afgewezen' %}<span class="label">afgewezen</span>{% endif %}
+              <br><span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.koppeling }}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}</span></span>
+          </div>
+        {% else %}<p class="noot leeg-dag">Geen afspraken.</p>{% endfor %}
+      </div>
+    {% endfor %}
+    <p class="noot">* einde geschat (de raadsagenda in Notubiz geeft alleen een begintijd).</p>
+  </section>
+
+  <aside>
+    <section class="kaart">
+      <h2>Dubbele boekingen <span class="klein">komende 8 weken</span></h2>
+      {% for x in conflicten %}
+        <div class="item belangrijk"><b>{{ DAGEN[x.van.astimezone(tz).weekday()] }} {{ x.van.astimezone(tz).strftime('%d-%m %H.%M') }}</b><br>
+          {{ x.a.titel }} <span class="noot">({{ x.a.koppeling }})</span><br>{{ x.b.titel }} <span class="noot">({{ x.b.koppeling }})</span></div>
+      {% else %}<p class="noot">Geen dubbele boekingen.</p>{% endfor %}
+      {% if overgangen %}
+        <h2>Krappe overgangen</h2>
+        {% for x in overgangen %}
+          <div class="item"><b>{{ x.van.eind.astimezone(tz).strftime('%d-%m %H.%M') }}</b>: {{ x.minuten }} min van {{ x.van.locatie }} naar {{ x.naar.locatie }}
+            <br><span class="noot">{{ x.van.titel }} → {{ x.naar.titel }} (reistijd ingesteld op {{ inst.reistijd }} min)</span></div>
+        {% endfor %}
+      {% endif %}
+    </section>
+
+    <section class="kaart" id="uitnodigingen">
+      <h2>Uitnodigingen</h2>
+      {% for a in uitnodigingen %}
+        <div class="item">
+          <b>{{ a.titel }}</b><br><span class="noot">{{ DAGEN[a.start.astimezone(tz).weekday()] }} {{ a.start.astimezone(tz).strftime('%d-%m') }} {{ tijd(a) }} · {{ a.koppeling }}{% if a.organisator %} · van {{ a.organisator }}{% endif %}</span>
+          {% if a.schrijven and a.soort in ('google', 'microsoft') %}
+          <form method="post" action="/clara/uitnodiging/{{ a.id }}" class="knoppenrij">
+            <button class="knop klein" name="antwoord" value="geaccepteerd">Accepteren</button>
+            <button class="knop klein" name="antwoord" value="voorlopig">Voorlopig</button>
+            <button class="knop klein" name="antwoord" value="afgewezen">Afwijzen</button>
+          </form>
+          {% else %}<br><span class="noot">Alleen lezen: beantwoorden in de agenda zelf.</span>{% endif %}
+        </div>
+      {% else %}<p class="noot">Geen openstaande uitnodigingen.</p>{% endfor %}
+    </section>
+
+    <section class="kaart" id="vrij">
+      <h2>Vrije tijd zoeken</h2>
+      <form method="get" action="/clara#vrij" class="velden">
+        <label>Hoe lang <select name="duur">{% for m, t in [(30, 'half uur'), (60, '1 uur'), (90, 'anderhalf uur'), (120, '2 uur'), (180, '3 uur'), (240, 'halve dag')] %}<option value="{{ m }}" {{ 'selected' if duur == m }}>{{ t }}</option>{% endfor %}</select></label>
+        <label>Binnen <select name="dagen">{% for d, t in [(3, '3 dagen'), (7, 'een week'), (14, 'twee weken'), (28, 'vier weken')] %}<option value="{{ d }}" {{ 'selected' if dagen == d }}>{{ t }}</option>{% endfor %}</select></label>
+        <button class="knop" type="submit">Zoek</button>
+      </form>
+      {% if duur %}
+        {% for b in vrij %}
+          <form method="post" action="/clara/blok" class="vrij-blok">
+            <b>{{ DAGEN[b.start.weekday()] }} {{ b.start.strftime('%d-%m %H.%M') }}–{{ b.eind.strftime('%H.%M') }}</b> <span class="noot">ruimte {{ b.ruimte }} min</span>
+            <input type="hidden" name="start" value="{{ b.start.strftime('%Y-%m-%dT%H:%M') }}">
+            <input type="hidden" name="eind" value="{{ b.eind.strftime('%Y-%m-%dT%H:%M') }}">
+            {% if doelen %}
+            <div class="knoppenrij"><input type="text" name="titel" placeholder="Wat ga je doen?" required>
+              <select name="doel">{% for w, label, d in doelen %}<option value="{{ w }}">{{ label }}</option>{% endfor %}</select>
+              <button class="knop klein vol" type="submit">Zet in agenda</button></div>
+            {% endif %}
+          </form>
+        {% else %}<p class="noot">Geen vrij blok van deze lengte binnen je werktijden. Pas de werktijden aan bij Koppelingen.</p>{% endfor %}
+        {% if vrij and not doelen %}<p class="noot">Om iets in te plannen is een Google- of Microsoft-agenda met schrijfrechten nodig.</p>{% endif %}
+      {% endif %}
+    </section>
+  </aside>
+</div>
+
+<section class="kaart" id="gesprek">
+  <h2>Vraag het Clara
+    <form method="post" action="/clara/nieuw" class="inline"><button class="knop klein" type="submit">Nieuw gesprek</button></form></h2>
+  {% if not sleutel_ok %}<p class="item urgent">Er is nog geen Claude-sleutel ingesteld. Draai op de server: <code>bash ~/buurmanitor/app/deploy/sleutel.sh</code></p>{% endif %}
+  {% for b in berichten %}
+    <div class="bericht {{ b.rol }}" {% if loop.last %}id="laatste"{% endif %}><span class="noot">{{ 'Jij' if b.rol == 'user' else 'Clara' }} · {{ geleden(b.tijd) }}</span>
+      <div class="tekst">{{ b.tekst }}</div></div>
+  {% else %}
+    <p class="noot">Bijvoorbeeld: "Kan ik volgende week ergens twee uur schrijven aan het keepersverhaal?" of "Wat botst er deze week?"</p>
+  {% endfor %}
+  {% for v in voorstellen %}
+    <form method="post" action="/clara/voorstel/{{ v.id }}" class="voorstel">
+      <b>Voorstel:</b> {{ v.titel }}, {{ DAGEN[v.start.astimezone(tz).weekday()] }} {{ v.start.astimezone(tz).strftime('%d-%m %H.%M') }}–{{ v.eind.astimezone(tz).strftime('%H.%M') }}
+      {% if doelen %}<select name="doel">{% for w, label, d in doelen %}<option value="{{ w }}" {{ 'selected' if d == v.domein }}>{{ label }}</option>{% endfor %}</select>
+      <button class="knop klein vol" name="actie" value="inplannen">Zet in agenda</button>{% endif %}
+      <button class="knop klein" name="actie" value="weg">Niet doen</button>
+    </form>
+  {% endfor %}
+  <form method="post" action="/clara/vraag">
+    <input type="hidden" name="gesprek" value="{{ gesprek.id if gesprek else '' }}">
+    <textarea name="vraag" required placeholder="Vraag Clara iets over je agenda"></textarea>
+    <p><button class="knop vol" type="submit">Stuur</button> <span class="noot">Clara zet alleen iets in je agenda als jij op de knop drukt.</span></p>
+  </form>
+</section>
+{% endblock %}

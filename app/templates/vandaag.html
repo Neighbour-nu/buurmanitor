@@ -21,6 +21,19 @@
   </section>
 
   <section class="kaart">
+    <h2>Agenda vandaag <a class="klein" href="/clara">week</a></h2>
+    {% if agenda is none %}<p class="noot">Nog geen agenda's gekoppeld. <a href="/clara/koppelingen">Koppel ze bij Clara</a>.</p>
+    {% else %}
+      {% for a in agenda.vandaag %}
+        <div class="afspraak {{ a.domein }} {{ 'vrijgehouden' if a.vrij or a.antwoord == 'afgewezen' }}"><span class="tijd">{% if a.heledag %}hele dag{% else %}{{ a.start.astimezone(agenda.tz).strftime('%H.%M') }}{% endif %}</span>
+          <span class="wat">{{ a.titel }}<br><span class="noot">{{ a.koppeling }}{% if a.locatie %} · {{ a.locatie }}{% endif %}</span></span></div>
+      {% else %}<p class="noot">Geen afspraken vandaag.</p>{% endfor %}
+      {% if agenda.conflicten %}<p class="item belangrijk"><a href="/clara">{{ agenda.conflicten | length }} dubbele boeking{{ 'en' if agenda.conflicten | length > 1 }}</a> in de komende week.</p>{% endif %}
+      {% if agenda.uitnodigingen %}<p class="noot"><a href="/clara#uitnodigingen">{{ agenda.uitnodigingen | length }} uitnodiging{{ 'en' if agenda.uitnodigingen | length > 1 }}</a> nog te beantwoorden.</p>{% endif %}
+    {% endif %}
+  </section>
+
+  <section class="kaart">
     <h2>Werkruimtes</h2>
     {% for w in werkruimtes %}
       <a class="tegel {{ w.sleutel }}" href="{{ w.url }}"><b>{{ w.naam }}</b><span>{{ w.app }}</span></a>
@@ -31,8 +44,9 @@
   <section class="kaart">
     <h2>Het team</h2>
     {% for p in team %}
-      <div class="persoon"><b>{% if p.sleutel == 'iris' %}<a href="/iris">{{ p.naam }}</a>{% else %}{{ p.naam }}{% endif %}</b> <span class="noot">{{ p.rol }}</span>
-        <span class="label {{ 'groen' if p.fase == 0 }}">{{ 'actief' if p.fase == 0 else 'fase ' ~ p.fase }}</span></div>
+      {% set actief = p.fase <= fase %}
+      <div class="persoon"><b>{% if p.sleutel in ('iris', 'clara') %}<a href="/{{ p.sleutel }}">{{ p.naam }}</a>{% else %}{{ p.naam }}{% endif %}</b> <span class="noot">{{ p.rol }}</span>
+        <span class="label {{ 'groen' if actief }}">{{ 'actief' if actief else 'fase ' ~ p.fase }}</span></div>
     {% endfor %}
   </section>
 

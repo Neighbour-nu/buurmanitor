@@ -123,3 +123,48 @@ code { background: var(--ijs); padding: 1px 4px; border-radius: 3px; }
 .voet { max-width: 1100px; margin: 0 auto; padding: 16px; display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--zacht);
         font-size: 14px; border-top: 1px solid var(--lijn); }
 .voet a { color: var(--zacht); }
+
+/* Clara: agenda */
+.clara-raster { display: grid; grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .clara-raster { grid-template-columns: 1fr; } }
+.knoppen { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.knoppenrij { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0 2px; }
+.knoppenrij input[type=text] { flex: 1 1 160px; width: auto; }
+.knoppenrij select { width: auto; flex: 0 1 220px; }
+.dag { padding: 8px 0 10px; border-top: 1px solid var(--lijn); }
+.dag:first-of-type { border-top: 0; }
+.dag.vandaag .dagkop { color: var(--blauw); }
+.dagkop { font-family: var(--kop); font-weight: 600; text-transform: uppercase; font-size: 15px; letter-spacing: .02em;
+          color: var(--blauwdonker); margin-bottom: 4px; }
+.afspraak { display: flex; gap: 10px; padding: 5px 8px; margin: 3px 0; border-left: 4px solid var(--lijn); background: var(--wit);
+            border-radius: 0 4px 4px 0; }
+.afspraak .tijd { flex: 0 0 92px; font-variant-numeric: tabular-nums; color: var(--zacht); font-size: 14px; padding-top: 1px; }
+.afspraak .wat { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.afspraak .wat a { color: var(--inkt); text-decoration: none; }
+.afspraak .wat a:hover { text-decoration: underline; }
+.afspraak.politiek { border-left-color: var(--politiek); } .afspraak.prive { border-left-color: var(--prive); }
+.afspraak.zerohero { border-left-color: var(--zerohero); } .afspraak.fbim { border-left-color: var(--fbim); }
+.afspraak.upperspire { border-left-color: var(--upperspire); }
+.afspraak.conflict { background: #FFF6F6; box-shadow: inset 0 0 0 1px var(--rozig); }
+.afspraak.voorlopig { background-image: repeating-linear-gradient(135deg, transparent 0 8px, rgba(37, 99, 184, .05) 8px 16px); }
+.afspraak.vrijgehouden { opacity: .55; }
+.afspraak.vrijgehouden .wat { text-decoration: line-through; text-decoration-color: var(--zacht); }
+.leeg-dag { margin: 2px 0; }
+.velden { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; margin: 8px 0; }
+.velden label { display: flex; flex-direction: column; gap: 3px; font-size: 14px; color: var(--zacht); }
+.velden label.breed { flex: 1 1 100%; }
+.velden label input[type=text], .velden label select { min-width: 140px; color: var(--inkt); }
+.velden label.vink, label.vink { flex-direction: row; align-items: center; gap: 6px; color: var(--inkt); }
+.vinkjes { display: flex; gap: 10px; flex-wrap: wrap; }
+.vrij-blok, .voorstel { padding: 8px 10px; margin: 6px 0; border: 1px solid var(--lijn); border-radius: 6px; background: var(--wit); }
+.voorstel { border-left: 4px solid var(--blauw); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.voorstel select { width: auto; }
+.tabel { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 15px; }
+.tabel th { text-align: left; font-family: var(--kop); font-weight: 600; text-transform: uppercase; font-size: 13px;
+            color: var(--blauwdonker); background: var(--ijs); padding: 5px 8px; }
+.tabel td { border-bottom: 1px solid var(--lijn); padding: 5px 8px; vertical-align: middle; }
+.tabel td select { width: auto; }
+code.lang { display: block; white-space: pre-wrap; overflow-wrap: anywhere; padding: 6px 8px; font-size: 13px; }
+details > summary { cursor: pointer; color: var(--blauwdonker); }
+details.kaart > summary { font-family: var(--kop); font-weight: 600; text-transform: uppercase; }
+h2 form.inline { margin: 0; }

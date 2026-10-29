@@ -5,6 +5,10 @@ psycopg[binary]==3.2.3
 psycopg-pool==3.2.4
 python-multipart==0.0.20
 pyyaml==6.0.2
+# Clara: kluis en agendalinks (ICS)
+cryptography==44.0.0
+icalendar==6.1.0
+recurring-ical-events==3.4.0
 # Werkruimte Politiek (Promonitor)
 python-docx==1.2.0
 pypdf==5.1.0

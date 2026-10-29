@@ -7,11 +7,10 @@ from .kern import claude, config, gezondheid, meldingen
 from .kern.web import datum_lang
 
 PLANNING = """Stand van de bouw:
-- Fase 0 (nu): de kern van Buurmanitor: inloggen, meldingen, planner, gezondheid en gesprekken met jou (Iris).
-- Fase 1 en 2: Promonitor (politiek) en de Doellijn (ZEROHERO) verhuizen één op één naar deze portal.
-- Fase 3 tot en met 7: Clara (agenda), Bram (mail, Teams, WhatsApp en Signal), Noor (taken), Vera (nieuws), Jesse (socials).
-Tot die fases klaar zijn, kun je agenda's, mail, taken, nieuws en socials nog niet zien. Zeg dat eerlijk als ernaar
-gevraagd wordt, en verwijs voor politiek naar Promonitor en voor ZEROHERO naar de Doellijn."""
+- Klaar: de kern van Buurmanitor, de werkruimtes Politiek (Promonitor) en ZEROHERO (de Doellijn), en Clara (agenda).
+- Volgende fases: Bram (mail, Teams, WhatsApp en Signal), Noor (taken), Vera (nieuws), Jesse (socials).
+Mail, taken, nieuws en socials kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt. Voor de agenda
+is Clara er; voor politiek en ZEROHERO de werkruimtes."""
 
 
 def context(c):
@@ -20,6 +19,9 @@ def context(c):
     open_ = meldingen.open_meldingen(c, 10)
     if open_:
         delen.append("Open meldingen:\n" + "\n".join(f"- [{m['niveau']}] {m['titel']}" for m in open_))
+    agenda = _agenda(c, nu)
+    if agenda:
+        delen.append(agenda)
     g, s = gezondheid.geheugen(), gezondheid.schijf()
     if g and s:
         delen.append(f"Server: geheugen {g['procent']} procent in gebruik, schijf {s['procent']} procent vol.")
@@ -28,6 +30,23 @@ def context(c):
         delen.append("Back-ups: " + "; ".join(
             f"{x['naam']} {'in orde' if x['ok'] else 'te oud of ontbreekt'}" for x in b))
     return "\n\n".join(delen)
+
+
+def _agenda(c, nu):
+    """Wat Clara vandaag ziet, kort, zodat Iris de dagstart kan maken."""
+    from .clara import analyse, sync  # pylint: disable=import-outside-toplevel
+    if not sync.koppelingen(c, alleen_actief=True):
+        return "Agenda: nog geen agenda's gekoppeld bij Clara."
+    begin = dt.datetime.combine(nu.date(), dt.time(0), tzinfo=config.TZ)
+    vandaag = sync.afspraken(c, begin, begin + dt.timedelta(days=1))
+    regels = [f"- {'hele dag' if a['heledag'] else a['start'].astimezone(config.TZ).strftime('%H.%M')} {a['titel']} ({a['koppeling']})"
+              for a in sorted(vandaag, key=lambda a: (not a["heledag"], a["start"])) if a["antwoord"] != "afgewezen"]
+    week = sync.afspraken(c, nu, nu + dt.timedelta(days=7))
+    conf = analyse.conflicten(week)
+    uit = ["Agenda vandaag (van Clara):"] + (regels or ["- geen afspraken"])
+    if conf:
+        uit.append(f"Dubbele boekingen komende week: {len(conf)} (details bij Clara).")
+    return "\n".join(uit)
 
 
 def antwoord(c, gesprek_id):

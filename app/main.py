@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 
 from . import iris, personas
+from .clara import sync as clara_sync, web as clara_web  # noqa: F401  (sync registreert de planner-taak)
 from .kern import claude, config, db, gezondheid, meldingen, planner, prefix, web
 from .kern.db import q, q1, uitvoeren
 from .kern.web import controleer_herkomst, ctx, templates
@@ -55,6 +56,7 @@ async def lifespan(_app):
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=os.path.join(web.BASIS, "static")), name="static")
 app.middleware("http")(web.alleen_via_caddy)
+app.include_router(clara_web.router)
 if politiek:
     app.mount("/politiek", prefix.Voorvoegsel(politiek.app, "/politiek"))
 if zerohero:
@@ -65,18 +67,31 @@ if zerohero:
 
 # ---------- Vandaag ----------
 
+def clara_vandaag(c, nu):
+    """Wat Clara vandaag ziet: de afspraken van vandaag en de dubbele boekingen van de komende week."""
+    from .clara import analyse  # pylint: disable=import-outside-toplevel
+    if not clara_sync.koppelingen(c, alleen_actief=True):
+        return None
+    begin = dt.datetime.combine(nu.date(), dt.time(0), tzinfo=config.TZ)
+    vandaag = clara_sync.afspraken(c, begin, begin + dt.timedelta(days=1))
+    week = clara_sync.afspraken(c, nu, nu + dt.timedelta(days=7))
+    return {"vandaag": sorted(vandaag, key=lambda a: (not a["heledag"], a["start"])),
+            "conflicten": analyse.conflicten(week), "uitnodigingen": analyse.uitnodigingen(week, nu), "tz": config.TZ}
+
+
 @app.get("/", response_class=HTMLResponse)
 def vandaag(request: Request):
     nu = dt.datetime.now(config.TZ)
     with db.pool.connection() as c:
         open_ = meldingen.open_meldingen(c, 12)
         besteed, _ = claude.verbruik_maand(c)
+        agenda = clara_vandaag(c, nu)
     urgent = [m for m in open_ if m["niveau"] == "urgent"]
     g, s = gezondheid.geheugen(), gezondheid.schijf()
     return templates.TemplateResponse("vandaag.html", ctx(
-        request, "vandaag", nu=nu, meldingen=open_, urgent=urgent, werkruimtes=config.werkruimtes(),
+        request, "vandaag", nu=nu, meldingen=open_, urgent=urgent, werkruimtes=config.werkruimtes(), agenda=agenda,
         team=personas.alle().values(), geheugen=g, schijf=s, backups=gezondheid.backups(), besteed=besteed,
-        plafond=config.MAANDPLAFOND_EUR))
+        plafond=config.MAANDPLAFOND_EUR, fase=config.FASE))
 
 
 # ---------- Iris ----------

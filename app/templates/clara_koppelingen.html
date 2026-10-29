@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block titel %}Koppelingen · Clara · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>Koppelingen <span class="noot">Clara</span></h1>
+<p class="uitleg">Welke agenda's Clara leest, en in welke ze (na jouw klik) iets mag zetten. Je afspraken blijven in Google
+  en Outlook zelf; Clara bewaart alleen een kopie van een week terug tot acht weken vooruit. <a href="/clara">Terug naar de week</a></p>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+{% if not kluis_ok %}<p class="item urgent">Er is nog geen kluissleutel voor de tokens. Draai op de server: <code>bash ~/buurmanitor/app/deploy/clara.sh</code></p>{% endif %}
+
+{% for k in koppelingen %}
+<section class="kaart koppeling">
+  <form method="post" action="/clara/koppeling/{{ k.id }}">
+    <h2><span>{{ k.naam }}</span>
+      <span class="klein">{{ {'google': 'Google Agenda', 'microsoft': 'Microsoft 365', 'ics': 'agendalink (ICS)', 'raad': 'Notubiz'}[k.soort] }}
+        · {{ 'lezen en schrijven' if k.schrijven else 'alleen lezen' }}</span></h2>
+    <p class="noot">{% if k.account %}{{ k.account }} · {% endif %}{% if k.laatst %}bijgewerkt {{ geleden(k.laatst) }}{% else %}nog niet bijgewerkt{% endif %}
+      · {{ aantallen.get(k.id, 0) }} komende afspraken</p>
+    {% if k.fout %}<p class="item urgent">{{ k.fout }}</p>{% endif %}
+    <div class="velden">
+      <label>Naam <input type="text" name="naam" value="{{ k.naam }}"></label>
+      <label>Domein <select name="domein">{% for d, n in domeinen %}<option value="{{ d }}" {{ 'selected' if k.domein == d }}>{{ n }}</option>{% endfor %}</select></label>
+      <label class="vink"><input type="checkbox" name="actief" value="1" {{ 'checked' if k.actief }}> actief</label>
+    </div>
+    {% if k.agendas %}
+      <table class="tabel">
+        <tr><th>Meelezen</th><th>Agenda</th><th>Domein</th>{% if k.schrijven %}<th>Hier inplannen</th>{% endif %}</tr>
+        {% for a in k.agendas %}
+        <tr><td><input type="checkbox" name="aan_{{ a.id }}" value="1" {{ 'checked' if a.aan }}></td>
+          <td>{{ a.naam }}{% if a.primair %} <span class="label">hoofdagenda</span>{% endif %}{% if not a.schrijven %} <span class="noot">(alleen lezen)</span>{% endif %}</td>
+          <td><select name="domein_{{ a.id }}">{% for d, n in domeinen %}<option value="{{ d }}" {{ 'selected' if (a.domein or k.domein) == d }}>{{ n }}</option>{% endfor %}</select></td>
+          {% if k.schrijven %}<td>{% if a.schrijven %}<input type="radio" name="schrijfagenda" value="{{ a.id }}" {{ 'checked' if k.schrijfagenda == a.id }}>{% endif %}</td>{% endif %}</tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+    <p class="knoppenrij">
+      <button class="knop vol" name="actie" value="opslaan">Opslaan</button>
+      {% if k.soort in ('google', 'microsoft') %}<button class="knop" name="actie" value="agendas">Lijst agenda's verversen</button>{% endif %}
+      <button class="knop" name="actie" value="weg">Ontkoppelen</button>
+    </p>
+  </form>
+</section>
+{% else %}
+<p class="item belangrijk">Nog geen koppelingen. Begin hieronder.</p>
+{% endfor %}
+
+<div class="raster">
+  <section class="kaart">
+    <h2>Google Agenda</h2>
+    <p class="noot">Voor neighbour.nu en zerohero.one. Clara krijgt toegang tot je agenda's, niet tot je mail.</p>
+    {% if google_ok %}
+    <form method="post" action="/clara/koppel/google" class="velden">
+      <label>Naam <input type="text" name="naam" placeholder="bijvoorbeeld Neighbour"></label>
+      <label>Domein <select name="domein">{% for d, n in domeinen %}<option value="{{ d }}" {{ 'selected' if d == 'prive' }}>{{ n }}</option>{% endfor %}</select></label>
+      <button class="knop vol" type="submit">Google-account koppelen</button>
+    </form>
+    {% else %}<p class="item">De Google-app is nog niet ingesteld. Zie de stappen in de README en draai daarna <code>bash ~/buurmanitor/app/deploy/clara.sh</code>.</p>{% endif %}
+  </section>
+
+  <section class="kaart">
+    <h2>Microsoft 365 (Outlook)</h2>
+    <p class="noot">Voor IV-professional, Upper Spire en de gemeenteraad. Bij werkaccounts moet de beheerder van die organisatie
+      de app meestal eerst goedkeuren; kies dan bij voorkeur 'alleen lezen'.</p>
+    {% if ms_ok %}
+    <form method="post" action="/clara/koppel/microsoft" class="velden">
+      <label>Naam <input type="text" name="naam" placeholder="bijvoorbeeld Upper Spire"></label>
+      <label>Domein <select name="domein">{% for d, n in domeinen %}<option value="{{ d }}" {{ 'selected' if d == 'fbim' }}>{{ n }}</option>{% endfor %}</select></label>
+      <label class="vink"><input type="checkbox" name="alleen_lezen" value="1"> alleen lezen</label>
+      <button class="knop vol" type="submit">Microsoft-account koppelen</button>
+    </form>
+    <details><summary>Link voor de beheerder van een organisatie</summary>
+      <p class="noot">Stuur deze link naar de ICT van de organisatie. Na hun goedkeuring kun je het account gewoon koppelen.
+        Toestemming geldt alleen voor de agenda's (lezen, en bij 'lezen en schrijven' ook inplannen), niet voor mail.</p>
+      <p><code class="lang">{{ beheerder_url }}</code></p>
+    </details>
+    {% else %}<p class="item">De Microsoft-app is nog niet ingesteld. Zie de stappen in de README en draai daarna <code>bash ~/buurmanitor/app/deploy/clara.sh</code>.</p>{% endif %}
+  </section>
+
+  <section class="kaart">
+    <h2>Agendalink (ICS)</h2>
+    <p class="noot">Alleen lezen. Werkt als een organisatie geen app toelaat: in Outlook via Instellingen › Agenda › Gedeelde agenda's ›
+      Een agenda publiceren (kies 'Kan alle details zien' of 'Kan zien wanneer ik bezet ben') en kopieer de ICS-link.
+      De link is geheim en staat versleuteld opgeslagen.</p>
+    <form method="post" action="/clara/koppel/ics" class="velden">
+      <label>Naam <input type="text" name="naam" placeholder="bijvoorbeeld Gemeenteraad"></label>
+      <label>Domein <select name="domein">{% for d, n in domeinen %}<option value="{{ d }}" {{ 'selected' if d == 'politiek' }}>{{ n }}</option>{% endfor %}</select></label>
+      <label class="breed">Link <input type="text" name="url" placeholder="https://outlook.office365.com/owa/calendar/.../calendar.ics" required></label>
+      <button class="knop vol" type="submit">Agendalink toevoegen</button>
+    </form>
+  </section>
+
+  {% if politiek_ok %}
+  <section class="kaart">
+    <h2>Raadsagenda Helmond</h2>
+    <p class="noot">De openbare vergaderingen uit Notubiz (dezelfde bron als Politiek). Geen account nodig. Staat dezelfde
+      vergadering ook in je gemeenteraad-agenda, dan toont Clara hem één keer.</p>
+    <form method="post" action="/clara/koppel/raad"><input type="hidden" name="domein" value="politiek">
+      <button class="knop vol" type="submit">Raadsagenda koppelen</button></form>
+  </section>
+  {% endif %}
+</div>
+
+<section class="kaart">
+  <h2>Werktijden en lucht</h2>
+  <form method="post" action="/clara/instellingen" class="velden">
+    <span class="vinkjes">{% for d in range(7) %}<label class="vink"><input type="checkbox" name="dag_{{ d }}" value="1" {{ 'checked' if d in inst.werkdagen }}> {{ DAGEN[d][:2] }}</label>{% endfor %}</span>
+    <label>Van <input type="text" name="begin" value="{{ inst.begin }}" size="5"></label>
+    <label>Tot <input type="text" name="eind" value="{{ inst.eind }}" size="5"></label>
+    <label class="vink"><input type="checkbox" name="avond" value="1" {{ 'checked' if inst.avond }}> ook 's avonds (19.00 tot 22.00)</label>
+    <label>Lucht rond afspraken (min) <input type="text" name="buffer" value="{{ inst.buffer }}" size="3"></label>
+    <label>Reistijd tussen plekken (min) <input type="text" name="reistijd" value="{{ inst.reistijd }}" size="3"></label>
+    <button class="knop vol" type="submit">Opslaan</button>
+  </form>
+</section>
+
+<details class="kaart"><summary>Adressen voor de apps bij Google en Microsoft</summary>
+  <p class="noot">Terugkeeradres Google: <code>{{ terug_google }}</code><br>
+    Terugkeeradressen Microsoft: <code>{{ terug_ms }}</code> en <code>{{ terug_ms_beheerder }}</code></p>
+</details>
+{% endblock %}

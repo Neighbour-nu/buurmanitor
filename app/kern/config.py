@@ -21,10 +21,19 @@ CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")
 CLAUDE_MODEL_LICHT = os.environ.get("CLAUDE_MODEL_LICHT", "claude-haiku-4-5")
 MAANDPLAFOND_EUR = float(os.environ.get("MAANDPLAFOND_EUR", "20") or 20)
 
+# Clara (agenda's, fase 3): de kluissleutel voor tokens en de eigen apps bij Google en Microsoft (deploy/clara.sh).
+KLUIS_SLEUTEL = os.environ.get("KLUIS_SLEUTEL", "")
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+MS_CLIENT_ID = os.environ.get("MS_CLIENT_ID", "")
+MS_CLIENT_SECRET = os.environ.get("MS_CLIENT_SECRET", "")
+
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 PLANNER_AAN = os.environ.get("BUURMANITOR_PLANNER", "1") != "0"
+# Hoe ver de bouw is: persona's met een fase tot en met deze zijn actief (Iris 0, Clara 3, ...).
+FASE = 3
 BACKUP_MAP = os.environ.get("BACKUP_MAP", "/backups")
 
 # Werkruimtes. Politiek draait onder /politiek zodra POLITIEK_DATABASE_URL is ingesteld (fase 1), ZEROHERO onder

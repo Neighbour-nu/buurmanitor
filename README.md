@@ -4,7 +4,7 @@ De persoonlijke portal van Martijn Buurman: één login en één overzicht voor 
 Upper Spire, met een team van zes persona's (Iris, Clara, Bram, Noor, Vera en Jesse). Het ontwerp staat in het
 project Personal Assistant (ontwerp versie 0.6).
 
-## Stand: fase 2 (Promonitor en de Doellijn als werkruimtes)
+## Stand: fase 3 (Clara, agendabeheer)
 
 - Inloggen via Caddy en Authelia (wachtwoord plus TOTP), met het proxygeheim en een exacte herkomstcontrole.
 - Vandaag: meldingen, de werkruimtes Politiek en ZEROHERO, het team en de server.
@@ -20,13 +20,20 @@ project Personal Assistant (ontwerp versie 0.6).
 Huisstijl: Barlow en Barlow Condensed (zelf gehost, OFL), blauw #2563B8 met donkerblauw #14427E voor tekst.
 Het logo (twee buurhuizen) is eigen werk.
 
-Volgende fases: Clara (3), Bram (4), Noor (5), Vera (6) en Jesse (7).
+- Clara (Agenda): al je agenda's in één week, met dubbele boekingen, krappe overgangen, open uitnodigingen en vrije
+  blokken. Uitnodigingen beantwoorden en blokken inplannen kan, maar alleen na jouw klik. Praat met Clara over je agenda;
+  stelt ze een tijdstip voor, dan verschijnt dat als knop.
+
+Volgende fases: Bram (4), Noor (5), Vera (6) en Jesse (7).
 
 ## Opbouw
 
 - `app/kern`: instellingen, database, toegang, planner, meldingen, Claude-client, gezondheid.
 - `app/kern/prefix.py`: draait een werkruimte-app onder een voorvoegsel (/politiek) zonder de code ervan te
   veranderen; links, formulieren en doorverwijzingen krijgen het voorvoegsel erbij.
+- `app/clara`: bronnen (Google, Microsoft 365, ICS, raadsagenda uit Notubiz), synchroniseren (planner-taak `agenda`,
+  elke 5 minuten), analyse (pure functies), gesprek en schermen. Tokens en geheime agendalinks staan versleuteld in de
+  database met `KLUIS_SLEUTEL` uit `.env`.
 - `app/zerohero`: de Doellijn, met de database `doellijn` (die al in de PostgreSQL van de cockpit stond). Alle
   instellingen staan met `ZEROHERO_` ervoor in `~/buurmanitor/zerohero.env`. n8n roept `/intern/...` aan op
   `cockpit-app`; na de overstap draagt de portal die naam ook en geeft `/intern/...` door aan de werkruimte.
@@ -68,11 +75,42 @@ Volgende fases: Clara (3), Bram (4), Noor (5), Vera (6) en Jesse (7).
 |---|---|
 | Nieuwe versie | `bash ~/buurmanitor/app/deploy/bijwerken.sh` |
 | Sleutels wijzigen | `bash ~/buurmanitor/app/deploy/sleutel.sh` |
+| Clara: kluis en apps | `bash ~/buurmanitor/app/deploy/clara.sh` |
 | Sleutels ZEROHERO | `bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh claude` (of admin, google, mailerlite, meta, threads, tickettailor, youtube, wordpress) |
 | Logboek | `cd ~/buurmanitor && docker compose logs --tail=100 app` |
 | Back-up | elke nacht 03:37 in `~/buurmanitor/backups`, de laatste 60 |
 | Back-up Politiek | elke nacht 03:27 in `~/promonitor/backups` (na de overstap uit de cockpit-database) |
 | Back-up ZEROHERO | elke nacht 03:17 in `~/cockpit/backups`, ongewijzigd |
+
+## Clara: apps bij Google en Microsoft
+
+Clara koppelt met je eigen app bij Google en bij Microsoft. Die maak je één keer aan; daarna zet je de gegevens met
+`bash ~/buurmanitor/app/deploy/clara.sh` op de server (de geheimen zie je niet terwijl je ze plakt).
+
+**Google** (console.cloud.google.com, ingelogd met je Workspace-account van neighbour.nu):
+
+1. Maak een project, bijvoorbeeld `Buurmanitor`, en zet bij API's en services de **Google Calendar API** aan.
+2. Google Auth Platform › Branding: app-naam `Buurmanitor`, je eigen e-mailadres.
+3. Audience: staan neighbour.nu en zerohero.one in **dezelfde** Workspace, kies **Internal**. Zijn het twee aparte
+   Workspaces, kies **External** en zet de status op **In production** (niet Testing: dan vervalt de toegang na 7 dagen).
+   Je ziet bij het koppelen dan een waarschuwing dat de app niet geverifieerd is; die kun je voor je eigen app negeren.
+4. Data access: voeg de scopes `.../auth/calendar.readonly` en `.../auth/calendar.events` toe.
+5. Clients › Create client › Web application. Authorized redirect URI:
+   `https://buurmanitor.neighbour.nu/clara/koppel/google/terug`. Kopieer client-id en client-geheim.
+
+**Microsoft** (entra.microsoft.com, ingelogd in een organisatie waar je beheerder bent, bijvoorbeeld IV-professional):
+
+1. App-registraties › Nieuwe registratie. Naam `Buurmanitor`. Ondersteunde accounttypen: **Accounts in een
+   organisatiemap (multitenant)**. Omleidings-URI (Web): `https://buurmanitor.neighbour.nu/clara/koppel/microsoft/terug`.
+2. Verificatie: voeg nog een omleidings-URI toe: `https://buurmanitor.neighbour.nu/clara/koppel/microsoft/beheerder`.
+3. Certificaten en geheimen › Nieuw clientgeheim (24 maanden; zet de vervaldatum in je agenda). Kopieer de **waarde**.
+4. API-machtigingen › Microsoft Graph › Gedelegeerd: `Calendars.Read`, `Calendars.ReadWrite`, `User.Read`,
+   `offline_access`, `openid`, `email`. Klik in je eigen organisatie op **Beheerderstoestemming verlenen**.
+5. Kopieer bij Overzicht de **toepassings-id (client-id)**.
+
+Bij andere organisaties (Upper Spire, gemeente Helmond) moet hun beheerder de app goedkeuren: Microsoft staat gebruikers
+standaard niet meer toe om zelf agendatoegang aan een app te geven. Op Agenda › Koppelingen staat een link voor die
+beheerder. Komt die toestemming er niet, gebruik dan een agendalink (ICS) of de raadsagenda uit Notubiz.
 
 ## Overstap van Promonitor naar /politiek
 
@@ -156,6 +194,7 @@ pip install -r requirements.txt pytest httpx
 bash tests/alles.sh
 ```
 
+Clara wordt getest met nagebootste antwoorden van Google, Microsoft en ICS; er is geen echt account nodig.
 Met `TEST_DATABASE_URL`, `TEST_POLITIEK_DATABASE_URL` en `TEST_ZEROHERO_DATABASE_URL` naar drie lege, wegwerpbare
 PostgreSQL-databases draaien ook de database-, scherm- en koppelingstests. `alles.sh` draait de portal, Politiek en de koppeling in aparte
 processen, omdat ze bij het laden elk hun eigen instellingen uit de omgeving lezen. Voor ZEROHERO maakt de test zelf

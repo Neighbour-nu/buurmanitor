@@ -20,6 +20,12 @@ services:
       MAANDPLAFOND_EUR: ${MAANDPLAFOND_EUR:-20}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # Clara (fase 3): kluissleutel voor tokens en de eigen apps bij Google en Microsoft (deploy/clara.sh).
+      KLUIS_SLEUTEL: ${KLUIS_SLEUTEL:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      MS_CLIENT_ID: ${MS_CLIENT_ID:-}
+      MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
       # Werkruimte Politiek (Promonitor, fase 1). Leeg = nog niet overgestapt; de portal linkt dan naar Promonitor.
       # deploy/overstap-politiek.sh vult deze waarden vanuit ~/promonitor/.env.
       POLITIEK_DATABASE_URL: ${POLITIEK_DATABASE_URL:-}

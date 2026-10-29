@@ -1,6 +1,6 @@
 """Databaseschema van Buurmanitor (de kern en de assistent).
 
-Promonitor en de Doellijn houden in fase 1 en 2 hun eigen database; die tabellen staan hier niet.
+Politiek (Promonitor) en ZEROHERO (de Doellijn) hebben hun eigen database; die tabellen staan hier niet.
 Migraties draaien bij elke start en zijn veilig om opnieuw uit te voeren.
 """
 
@@ -58,4 +58,63 @@ MIGRATIES = [
         persona text NOT NULL,
         actie text NOT NULL,
         details jsonb)""",
+    # ---------- Clara (fase 3) ----------
+    # Een koppeling is één account of agendalink. geheim: versleuteld refresh-token (Google, Microsoft) of de geheime
+    # ICS-link. agendas: per agenda id, naam, aan/uit en domein. Afspraken zelf blijven in Google en Outlook leidend;
+    # agenda_items is een kopie van het venster dat Clara bekijkt.
+    """CREATE TABLE IF NOT EXISTS agenda_koppelingen (
+        id serial PRIMARY KEY,
+        soort text NOT NULL CHECK (soort IN ('google', 'microsoft', 'ics', 'raad')),
+        naam text NOT NULL,
+        account text NOT NULL DEFAULT '',
+        tenant text NOT NULL DEFAULT '',
+        domein text NOT NULL DEFAULT 'prive',
+        geheim text,
+        schrijven boolean NOT NULL DEFAULT false,
+        agendas jsonb NOT NULL DEFAULT '[]',
+        schrijfagenda text NOT NULL DEFAULT '',
+        actief boolean NOT NULL DEFAULT true,
+        laatst timestamptz,
+        fout text,
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    """CREATE TABLE IF NOT EXISTS agenda_items (
+        id bigserial PRIMARY KEY,
+        koppeling_id int NOT NULL REFERENCES agenda_koppelingen(id) ON DELETE CASCADE,
+        agenda_id text NOT NULL DEFAULT '',
+        extern_id text NOT NULL,
+        domein text NOT NULL DEFAULT '',
+        ical_uid text NOT NULL DEFAULT '',
+        titel text NOT NULL DEFAULT '',
+        locatie text NOT NULL DEFAULT '',
+        start timestamptz NOT NULL,
+        eind timestamptz NOT NULL,
+        heledag boolean NOT NULL DEFAULT false,
+        status text NOT NULL DEFAULT 'bevestigd',
+        vrij boolean NOT NULL DEFAULT false,
+        antwoord text NOT NULL DEFAULT 'eigen',
+        organisator text NOT NULL DEFAULT '',
+        online boolean NOT NULL DEFAULT false,
+        link text NOT NULL DEFAULT '',
+        geschat boolean NOT NULL DEFAULT false,
+        bijgewerkt timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (koppeling_id, agenda_id, extern_id))""",
+    "CREATE INDEX IF NOT EXISTS agenda_items_start ON agenda_items (start)",
+    # Kortlevende 'state' voor het koppelen bij Google en Microsoft (tegen nagemaakte terugkeerverzoeken).
+    """CREATE TABLE IF NOT EXISTS oauth_staat (
+        staat text PRIMARY KEY,
+        soort text NOT NULL,
+        opties jsonb NOT NULL DEFAULT '{}',
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    # Voorstellen van Clara (een blok in de agenda zetten): pas na een klik van Martijn komt het in de agenda.
+    """CREATE TABLE IF NOT EXISTS agenda_voorstellen (
+        id serial PRIMARY KEY,
+        gesprek_id int REFERENCES gesprekken(id) ON DELETE SET NULL,
+        titel text NOT NULL,
+        start timestamptz NOT NULL,
+        eind timestamptz NOT NULL,
+        domein text NOT NULL DEFAULT '',
+        status text NOT NULL DEFAULT 'open',
+        koppeling_id int,
+        extern_id text,
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
 ]
