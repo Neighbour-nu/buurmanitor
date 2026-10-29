@@ -260,7 +260,7 @@ def koppelingen_scherm(request: Request, melding: str = "", fout: str = ""):
             "SELECT koppeling_id, count(*) AS n FROM agenda_items WHERE start > now() GROUP BY koppeling_id").fetchall()}
     return templates.TemplateResponse("clara_koppelingen.html", ctx(
         request, "clara", koppelingen=lijst, aantallen=aantallen, inst=inst, melding=melding, fout=fout, regels=regels,
-        reis_actief=reis.actief(), vertrekpunt_label=vertrekpunt_label,
+        reis_actief=reis.actief(), vertrekpunt_label=vertrekpunt_label, reis_dienst=reis.dienst_naam(),
         kluis_ok=kluis.actief(), google_ok=bool(config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET),
         ms_ok=bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET), politiek_ok=config.POLITIEK_ACTIEF,
         beheerder_url=bronnen.ms_beheerder_url() if config.MS_CLIENT_ID else "", DAGEN=DAGEN,
@@ -500,14 +500,14 @@ async def reistijd_instellingen(request: Request):
         if not inst["vertrekpunt"]:
             return _terug("/clara/koppelingen", melding="Reistijd: vertrekpunt leeggemaakt.")
         if not reis.actief():
-            return _terug("/clara/koppelingen", fout="Opgeslagen, maar er is nog geen sleutel voor OpenRouteService (draai clara.sh).")
+            return _terug("/clara/koppelingen", fout="Opgeslagen, maar er is nog geen sleutel voor Google Maps of OpenRouteService (draai clara.sh).")
         try:
             c.execute("DELETE FROM plekken WHERE sleutel = %s AND NOT gevonden", (reis._sleutel(inst["vertrekpunt"]),))  # pylint: disable=protected-access
             gevonden = await asyncio.to_thread(lambda: _adres_los(inst["vertrekpunt"]))
         except bronnen.BronFout as e:
             return _terug("/clara/koppelingen", fout=f"Opgeslagen, maar het opzoeken lukte niet: {e}")
     if not gevonden:
-        return _terug("/clara/koppelingen", fout="Dit adres vond OpenRouteService niet. Probeer straat, huisnummer, postcode en plaats.")
+        return _terug("/clara/koppelingen", fout=f"Dit adres vond {reis.dienst_naam()} niet. Probeer straat, huisnummer, postcode en plaats.")
     return _terug("/clara/koppelingen", melding=f"Vertrekpunt gevonden: {gevonden['label']}. Clara rekent de reistijd binnen vijf minuten uit.")
 
 

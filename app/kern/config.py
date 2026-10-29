@@ -29,6 +29,8 @@ MS_CLIENT_ID = os.environ.get("MS_CLIENT_ID", "")
 MS_CLIENT_SECRET = os.environ.get("MS_CLIENT_SECRET", "")
 # Reistijd: sleutel voor OpenRouteService (api.heigit.org), via deploy/clara.sh.
 ORS_API_KEY = os.environ.get("ORS_API_KEY", "")
+# Of Google Maps (Routes API en Geocoding API, met openbaar vervoer). Gaat voor OpenRouteService als beide er zijn.
+GOOGLE_MAPS_KEY = os.environ.get("GOOGLE_MAPS_KEY", "")
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")

@@ -8,7 +8,7 @@ import re
 from .. import personas
 from ..kern import claude, config
 from ..kern.web import DAGEN, datum_lang
-from . import analyse, sync
+from . import analyse, reis, sync
 
 VOORSTEL = re.compile(r"<voorstel>\s*(\{.*?\})\s*</voorstel>", re.S)
 VERVOER_TAG = re.compile(r"<vervoer>\s*(\{.*?\})\s*</vervoer>", re.S)
@@ -75,7 +75,8 @@ def context(c, nu=None):
     except Exception:  # noqa: BLE001  (reistijd is een extra; het gesprek gaat altijd door)
         plan = {"regels": []}
     if plan.get("regels"):
-        delen.append("# Reistijd (berekend met OpenRouteService; OV is een schatting)\n" + "\n".join(
+        delen.append(f"# Reistijd (berekend met {reis.dienst_naam()}"
+                     + ("; OV is een schatting" if reis.dienst() == "ors" else "; OV volgens de dienstregeling") + ")\n" + "\n".join(
             f"- [id {r['afspraak']['id']}] {r['afspraak']['titel']} ({r['afspraak']['start'].astimezone(tz):%d-%m %H.%M}): {r['richting']} "
             f"{r['minuten']} min {r['vervoer']} {'vanaf ' + r['van'] if r['richting'] == 'heen' else 'naar huis'}"
             f"{' (zelf gekozen)' if r.get('gekozen') else ''}{', ingepland' if r['ingepland'] else ''}"

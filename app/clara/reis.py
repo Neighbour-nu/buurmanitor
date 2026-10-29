@@ -3,10 +3,13 @@
 - Vertrekpunt: het adres dat Martijn bij Koppelingen invult (staat in de database, niet in de code).
 - Vervoer volgens zijn eigen regels: dichtbij (zoals het Huis voor de Stad) met de fiets; verder weg met de auto;
   midden in een grote stad met het openbaar vervoer.
-- Routes en adressen komen van OpenRouteService (api.heigit.org). Die kent geen openbaar vervoer: voor OV maakt Clara
-  een schatting op basis van de autotijd, en zegt dat erbij.
-- Uitkomsten worden bewaard (adressen voor altijd, routes 30 dagen), zodat de dienst weinig vragen krijgt. Het scherm
-  rekent alleen met wat al bewaard is; de planner-taak vult aan.
+- Routedienst: Google Maps als er een sleutel is (Routes API en Geocoding API, met echte OV-reistijd voor het tijdstip
+  van de afspraak), anders OpenRouteService (api.heigit.org). OpenRouteService kent geen openbaar vervoer: dan maakt
+  Clara voor OV een schatting op basis van de autotijd, en zegt dat erbij. Vindt Google een adres niet, dan probeert
+  Clara OpenRouteService (als die sleutel er ook is).
+- Uitkomsten worden bewaard (adressen voor altijd, routes 30 dagen, ook 'geen route'), zodat de dienst weinig vragen
+  krijgt en je binnen het gratis maandvolume van Google blijft. Het scherm rekent alleen met wat al bewaard is; de
+  planner-taak vult aan.
 """
 import datetime as dt
 import math
@@ -17,6 +20,10 @@ from ..kern import config
 from . import analyse, bronnen
 
 ORS = "https://api.heigit.org"
+GOOGLE_ROUTES = "https://routes.googleapis.com/directions/v2:computeRoutes"
+GOOGLE_GEOCODE = "https://maps.googleapis.com/maps/api/geocode/json"
+MODUS = {"fiets": "BICYCLE", "auto": "DRIVE", "lopen": "WALK", "ov": "TRANSIT"}
+GEEN_ROUTE = -1  # bewaard als er geen route is (bijvoorbeeld 's nachts geen OV), zodat Clara het niet steeds opnieuw vraagt
 MARKER = "[clara-reistijd:"
 PROFIEL = {"fiets": "cycling-regular", "auto": "driving-car", "lopen": "foot-walking"}
 VERVOER = {"fiets": "fiets", "auto": "auto", "ov": "openbaar vervoer", "lopen": "lopen", "geen": "geen reistijd"}
@@ -36,8 +43,19 @@ class ReisFout(bronnen.BronFout):
     pass
 
 
+def dienst():
+    """Welke routedienst Clara gebruikt: 'google', 'ors' of None."""
+    if config.GOOGLE_MAPS_KEY:
+        return "google"
+    return "ors" if config.ORS_API_KEY else None
+
+
+def dienst_naam():
+    return {"google": "Google Maps", "ors": "OpenRouteService"}.get(dienst(), "geen routedienst")
+
+
 def actief():
-    return bool(config.ORS_API_KEY)
+    return dienst() is not None
 
 
 def km(a, b):
@@ -97,6 +115,44 @@ def _ors(pad, params=None, body=None):
         raise ReisFout("OpenRouteService accepteert de sleutel niet. Controleer hem met clara.sh.") from e
 
 
+def _google(url, params=None, body=None, kop=None):
+    try:
+        return bronnen._http(url + ("?" + urllib.parse.urlencode(params) if params else ""), headers=kop or {},  # pylint: disable=protected-access
+                             body=body, soort="Google Maps")
+    except bronnen.OpnieuwKoppelen as e:
+        raise ReisFout("Google Maps accepteert de sleutel niet. Controleer hem met clara.sh.") from e
+
+
+def _google_adres(tekst, focus):
+    params = {"address": tekst, "key": config.GOOGLE_MAPS_KEY, "region": "nl", "language": "nl"}
+    if focus:  # voorkeur voor de omgeving van het vertrekpunt (geen harde grens)
+        lo, la = focus
+        params["bounds"] = f"{la - 0.25:.4f},{lo - 0.4:.4f}|{la + 0.25:.4f},{lo + 0.4:.4f}"
+    j = _google(GOOGLE_GEOCODE, params)
+    status = j.get("status", "")
+    if status == "ZERO_RESULTS":
+        return None
+    if status != "OK":
+        raise ReisFout(f"Google Maps (adressen) gaf {status}: {j.get('error_message', '')[:150]}")
+    r = j["results"][0]
+    precies = {"establishment", "point_of_interest", "premise", "street_address", "subpremise", "route", "locality"}
+    if r.get("partial_match") and not precies & set(r.get("types", [])):
+        return None
+    plek = r["geometry"]["location"]
+    return (plek["lng"], plek["lat"]), r.get("formatted_address", tekst)
+
+
+def _ors_adres(tekst, focus):
+    params = {"text": tekst, "boundary.country": "NL,BE,DE", "size": "1"}
+    if focus:
+        params.update({"focus.point.lon": f"{focus[0]:.5f}", "focus.point.lat": f"{focus[1]:.5f}"})
+    j = _ors("/pelias/v1/search", params)
+    f = (j.get("features") or [None])[0]
+    if not f or (f.get("properties", {}).get("confidence") or 0) < 0.6:
+        return None
+    return tuple(f["geometry"]["coordinates"]), f.get("properties", {}).get("label", tekst)
+
+
 def adres(c, tekst, focus=None, alleen_cache=False):
     """Coördinaten (lengte, breedte) en een leesbaar label voor een plek, of None als hij niet te vinden is."""
     sleutel = _sleutel(tekst)
@@ -107,46 +163,77 @@ def adres(c, tekst, focus=None, alleen_cache=False):
         return {"punt": (r["lon"], r["lat"]), "label": r["label"]} if r["gevonden"] else None
     if alleen_cache or not actief():
         return None
-    params = {"text": tekst, "boundary.country": "NL,BE,DE", "size": "1"}
-    if focus:
-        params.update({"focus.point.lon": f"{focus[0]:.5f}", "focus.point.lat": f"{focus[1]:.5f}"})
-    j = _ors("/pelias/v1/search", params)
-    f = (j.get("features") or [None])[0]
-    gevonden = bool(f) and (f.get("properties", {}).get("confidence") or 0) >= 0.6
-    lon, lat = (f["geometry"]["coordinates"] if f else (None, None))
-    label = (f or {}).get("properties", {}).get("label", "") if f else ""
+    uitkomst = _google_adres(tekst, focus) if config.GOOGLE_MAPS_KEY else None
+    if uitkomst is None and config.ORS_API_KEY:
+        uitkomst = _ors_adres(tekst, focus)
+    gevonden = uitkomst is not None
+    (lon, lat), label = uitkomst if gevonden else ((None, None), "")
     c.execute("""INSERT INTO plekken (sleutel, tekst, lon, lat, label, gevonden) VALUES (%s, %s, %s, %s, %s, %s)
                  ON CONFLICT (sleutel) DO NOTHING""", (sleutel, tekst[:300], lon, lat, label[:300], gevonden))
     return {"punt": (lon, lat), "label": label} if gevonden else None
 
 
-def route(c, van, naar, soort, alleen_cache=False):
-    """Reistijd in minuten met fiets of auto (met bewaarde uitkomst), of None."""
-    sleutel = f"{soort}:{van[0]:.4f},{van[1]:.4f}>{naar[0]:.4f},{naar[1]:.4f}"
-    r = c.execute("SELECT duur FROM routes WHERE sleutel = %s AND bijgewerkt > now() - interval '30 days'", (sleutel,)).fetchone()
-    if r:
-        return r["duur"]
-    if alleen_cache or not actief():
+def _vijf_minuten(t):
+    return t.replace(minute=t.minute - t.minute % 5, second=0, microsecond=0)
+
+
+def _google_route(van, naar, soort, tijd, aankomst):
+    def punt(p):
+        return {"location": {"latLng": {"latitude": p[1], "longitude": p[0]}}}
+    body = {"origin": punt(van), "destination": punt(naar), "travelMode": MODUS[soort], "languageCode": "nl", "units": "METRIC"}
+    if soort == "auto":
+        body["routingPreference"] = "TRAFFIC_UNAWARE"  # zonder files: blijft in het goedkope (gratis) deel
+    if soort == "ov" and tijd:
+        body["arrivalTime" if aankomst else "departureTime"] = tijd.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    j = _google(GOOGLE_ROUTES, body=body, kop={"X-Goog-Api-Key": config.GOOGLE_MAPS_KEY,
+                                               "X-Goog-FieldMask": "routes.duration,routes.distanceMeters"})
+    routes = j.get("routes") or []
+    if not routes or not routes[0].get("duration"):
         return None
+    return float(str(routes[0]["duration"]).rstrip("s"))
+
+
+def _ors_route(van, naar, soort):
     j = _ors(f"/openrouteservice/v2/directions/{PROFIEL[soort]}", body={"coordinates": [list(van), list(naar)]})
     try:
-        seconden = j["routes"][0]["summary"]["duration"]
+        return j["routes"][0]["summary"]["duration"]
     except (KeyError, IndexError, TypeError):
         try:
-            seconden = j["features"][0]["properties"]["summary"]["duration"]
-        except (KeyError, IndexError, TypeError) as e:
-            raise ReisFout("OpenRouteService vond geen route.") from e
-    minuten = max(1, round(seconden / 60))
+            return j["features"][0]["properties"]["summary"]["duration"]
+        except (KeyError, IndexError, TypeError):
+            return None
+
+
+def route(c, van, naar, soort, alleen_cache=False, tijd=None, aankomst=True):
+    """Reistijd in minuten (met bewaarde uitkomst), of None. OV alleen met Google Maps, voor het tijdstip van de
+    afspraak (aankomen voor het begin, of vertrekken na het einde)."""
+    bron = dienst()
+    if bron is None or (soort == "ov" and bron != "google"):
+        return None
+    sleutel = f"{bron}:{soort}:{van[0]:.4f},{van[1]:.4f}>{naar[0]:.4f},{naar[1]:.4f}"
+    if soort == "ov":
+        sleutel += f"@{'a' if aankomst else 'v'}{_vijf_minuten(tijd):%Y%m%d%H%M}" if tijd else "@?"
+    r = c.execute("SELECT duur FROM routes WHERE sleutel = %s AND bijgewerkt > now() - interval '30 days'", (sleutel,)).fetchone()
+    if r:
+        return None if r["duur"] == GEEN_ROUTE else r["duur"]
+    if alleen_cache:
+        return None
+    seconden = _google_route(van, naar, soort, tijd, aankomst) if bron == "google" else _ors_route(van, naar, soort)
+    minuten = GEEN_ROUTE if seconden is None else max(1, round(seconden / 60))
     c.execute("""INSERT INTO routes (sleutel, duur) VALUES (%s, %s)
                  ON CONFLICT (sleutel) DO UPDATE SET duur = EXCLUDED.duur, bijgewerkt = now()""", (sleutel, minuten))
-    return minuten
+    return None if minuten == GEEN_ROUTE else minuten
 
 
-def reistijd(c, van, naar, soort, alleen_cache=False):
-    """(minuten, geschat). Openbaar vervoer kent OpenRouteService niet: autotijd keer 1,5 plus 20 minuten
-    (lopen, wachten, overstappen), afgerond op 5 minuten."""
+def reistijd(c, van, naar, soort, alleen_cache=False, tijd=None, aankomst=True):
+    """(minuten, geschat). OV met Google Maps is echt (voor het tijdstip van de afspraak). Zonder Google, of als Google
+    op dat tijdstip geen OV-verbinding vindt: autotijd keer 1,5 plus 20 minuten (lopen, wachten, overstappen),
+    afgerond op 5 minuten, als schatting."""
     if soort != "ov":
         return route(c, van, naar, soort, alleen_cache), False
+    echt = route(c, van, naar, "ov", alleen_cache, tijd=tijd, aankomst=aankomst)
+    if echt is not None:
+        return echt, False
     auto = route(c, van, naar, "auto", alleen_cache)
     if auto is None:
         return None, True
@@ -212,7 +299,7 @@ def plan(c, afspraken, inst, nu=None, alleen_cache=True):
                            "sleutel": _sleutel_blok(a, "heen"), "ingepland": False, "past": True, "van": van_naam, "naar": a["locatie"]})
             continue
         soort = keuze or vervoer(van, doel["punt"], inst)
-        minuten, geschat = reistijd(c, van, doel["punt"], soort, alleen_cache)
+        minuten, geschat = reistijd(c, van, doel["punt"], soort, alleen_cache, tijd=a["start"], aankomst=True)
         if minuten is not None:
             minuten += marge
             start = a["start"] - dt.timedelta(minutes=minuten)
@@ -229,7 +316,7 @@ def plan(c, afspraken, inst, nu=None, alleen_cache=True):
                     and volgende["start"] - a["eind"] < tussendoor and volgende["start"] >= a["eind"])
         if not door:
             terug = keuze or vervoer(doel["punt"], thuis["punt"], inst)
-            m2, g2 = reistijd(c, doel["punt"], thuis["punt"], terug, alleen_cache)
+            m2, g2 = reistijd(c, doel["punt"], thuis["punt"], terug, alleen_cache, tijd=a["eind"], aankomst=False)
             if m2 is not None:
                 regels.append({"afspraak": a, "richting": "terug", "van": a["locatie"], "naar": "thuis", "vervoer": terug,
                                "gekozen": bool(keuze), "minuten": m2 + marge, "geschat": g2, "start": a["eind"],
@@ -247,4 +334,4 @@ def blok_titel(r):
 
 def blok_omschrijving(r):
     return (f"{MARKER}{r['sleutel']}] Ingepland door Clara (Buurmanitor). Vervoer: {r['vervoer']}, {r['minuten']} min"
-            + (" (schatting: OpenRouteService kent geen OV)" if r.get("geschat") else " (OpenRouteService)") + ".")
+            + (" (schatting op basis van de autotijd)" if r.get("geschat") else f" ({dienst_naam()})") + ".")

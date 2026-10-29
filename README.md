@@ -84,15 +84,28 @@ Volgende fases: Bram (4), Noor (5), Vera (6) en Jesse (7).
 
 ## Clara: reistijd
 
-Clara rekent de reistijd naar afspraken buiten de deur uit met OpenRouteService (api.heigit.org; het oude adres
-api.openrouteservice.org stopt in november 2026). Vervoer: tot 6 km hemelsbreed de fiets, midden in een grote stad het
-openbaar vervoer, anders de auto. Per afspraak (bij een reeks voor alle keren) kies je in de week ander vervoer, of
-zeg je het tegen Clara. OpenRouteService kent geen OV: daarvoor is de reistijd een schatting (autotijd x 1,5 plus 20
-minuten). Adressen en routes worden bewaard, zodat de dienst weinig vragen krijgt. Reistijdblokken komen alleen na een
-klik in je agenda en dragen een kenmerk in de omschrijving, zodat Clara ze herkent.
+Clara rekent de reistijd naar afspraken buiten de deur uit. Vervoer: tot 6 km hemelsbreed de fiets, midden in een grote
+stad het openbaar vervoer, anders de auto. Per afspraak (bij een reeks voor alle keren) kies je in de week ander
+vervoer, of zeg je het tegen Clara. Reistijdblokken komen alleen na een klik in je agenda en dragen een kenmerk in de
+omschrijving, zodat Clara ze herkent.
 
-Instellen: sleutel aanmaken op openrouteservice.org (dashboard, API Keys), dan `bash ~/buurmanitor/app/deploy/clara.sh`
-en op Agenda › Koppelingen › Reistijd je vertrekpunt invullen. Het adres staat alleen in de database, niet in de code.
+Routedienst: **Google Maps** als `GOOGLE_MAPS_KEY` is ingesteld (Routes API en Geocoding API; OV volgens de
+dienstregeling voor het tijdstip van de afspraak, auto zonder files), anders **OpenRouteService** (api.heigit.org; het
+oude adres api.openrouteservice.org stopt in november 2026). OpenRouteService kent geen OV: dan is de OV-tijd een
+schatting (autotijd x 1,5 plus 20 minuten). Die schatting geldt ook als Google op dat tijdstip geen OV vindt.
+Adressen en routes (ook 'niet gevonden' en 'geen route') worden bewaard, zodat je ruim binnen het gratis maandvolume
+van Google blijft (op dit moment 10.000 routes en 10.000 adressen per maand).
+
+Google Maps instellen (console.cloud.google.com, hetzelfde project als de agenda-app mag):
+
+1. Facturering: koppel een betaalaccount aan het project (vereist door Google, ook binnen het gratis volume).
+   Zet desgewenst bij Budgetten en meldingen een budget van een paar euro met een melding.
+2. API's en services › Bibliotheek: zet **Routes API** en **Geocoding API** aan.
+3. API's en services › Inloggegevens › API-sleutel maken. Beperk de sleutel: API-beperkingen op Routes API en
+   Geocoding API; toepassingsbeperking op IP-adressen: het IPv4- en IPv6-adres van de server.
+4. `bash ~/buurmanitor/app/deploy/clara.sh` en plak de sleutel bij Google Maps.
+
+Vertrekpunt: op Agenda › Koppelingen › Reistijd. Het adres staat alleen in de database, niet in de code.
 
 ## Clara: apps bij Google en Microsoft
 

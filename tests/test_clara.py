@@ -517,7 +517,8 @@ def _nep_reis(monkeypatch, keuzes=None):
         {"punt": THUIS, "label": "Thuis, Helmond"} if tekst == "thuisadres" else
         ({"punt": PLEKKEN[reis._sleutel(tekst)], "label": tekst} if reis._sleutel(tekst) in PLEKKEN else None)))
     snelheid = {"fiets": 15, "auto": 60, "lopen": 5}
-    monkeypatch.setattr(reis, "route", lambda c, van, naar, soort, alleen_cache=False: max(1, round(reis.km(van, naar) * 1.3 / snelheid[soort] * 60)))
+    monkeypatch.setattr(reis, "route", lambda c, van, naar, soort, alleen_cache=False, **kw: (
+        None if soort == "ov" else max(1, round(reis.km(van, naar) * 1.3 / snelheid[soort] * 60))))  # zoals OpenRouteService: geen OV
     monkeypatch.setattr(reis, "keuzes", lambda c: keuzes or {})
     return reis
 
@@ -617,3 +618,47 @@ def test_reistijd_in_het_scherm_en_inplannen(klant, monkeypatch):
         assert reis.keuzes(c)[f"id:{k['id']}:raad1"] == "fiets"
         c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (k["id"],))
         c.execute("DELETE FROM agenda_vervoer")
+
+
+
+def test_google_maps_met_ov_volgens_dienstregeling(klant, monkeypatch):
+    from app.clara import reis  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(config, "GOOGLE_MAPS_KEY", "AIza-test")
+    monkeypatch.setattr(config, "ORS_API_KEY", "")
+    verzoeken = []
+
+    def nep_http(url, data=None, headers=None, methode=None, body=None, timeout=30, soort=""):
+        verzoeken.append((url, headers, body))
+        if "geocode" in url:
+            assert "key=AIza-test" in url and "region=nl" in url
+            if "Nergens" in url:
+                return {"status": "ZERO_RESULTS", "results": []}
+            return {"status": "OK", "results": [{"geometry": {"location": {"lat": 52.0894, "lng": 5.1103}},
+                                                 "formatted_address": "Stationsplein, Utrecht", "types": ["transit_station"]}]}
+        assert url == reis.GOOGLE_ROUTES and headers["X-Goog-Api-Key"] == "AIza-test" and "routes.duration" in headers["X-Goog-FieldMask"]
+        if body["travelMode"] == "TRANSIT" and body.get("arrivalTime", "").endswith("T03:00:00Z"):
+            return {}  # 's nachts geen OV
+        return {"routes": [{"duration": {"TRANSIT": "4380s", "DRIVE": "3900s", "BICYCLE": "900s"}[body["travelMode"]], "distanceMeters": 1}]}
+    monkeypatch.setattr(bronnen, "_http", nep_http)
+    assert reis.dienst() == "google" and reis.dienst_naam() == "Google Maps"
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM plekken")
+        c.execute("DELETE FROM routes")
+        plek = reis.adres(c, "Utrecht Centraal", focus=THUIS)
+        assert plek["label"] == "Stationsplein, Utrecht" and plek["punt"] == (5.1103, 52.0894)
+        assert reis.adres(c, "Nergens 1") is None and reis.adres(c, "Nergens 1") is None
+        assert sum(1 for u, _h, _b in verzoeken if "Nergens" in u) == 1  # 'niet gevonden' wordt bewaard
+        dag = t(10, 10)
+        assert reis.reistijd(c, THUIS, plek["punt"], "ov", tijd=dag, aankomst=True) == (73, False)
+        ov = [b for _u, _h, b in verzoeken if b and b["travelMode"] == "TRANSIT"][0]
+        assert ov["arrivalTime"] == dag.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        assert reis.reistijd(c, THUIS, plek["punt"], "auto") == (65, False)
+        auto = [b for _u, _h, b in verzoeken if b and b["travelMode"] == "DRIVE"][0]
+        assert auto["routingPreference"] == "TRAFFIC_UNAWARE" and "arrivalTime" not in auto
+        # Geen OV-verbinding (04.00 uur): schatting op basis van de autotijd, en 'geen route' wordt bewaard.
+        nacht = dt.datetime(2026, 11, 10, 4, 0, tzinfo=TZ)
+        assert reis.reistijd(c, THUIS, plek["punt"], "ov", tijd=nacht) == (120, True)
+        aantal = len(verzoeken)
+        assert reis.reistijd(c, THUIS, plek["punt"], "ov", tijd=nacht) == (120, True) and len(verzoeken) == aantal
+        assert "Google Maps" in klant.get("/clara/koppelingen", headers=KOP).text

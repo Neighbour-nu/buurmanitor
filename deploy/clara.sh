@@ -5,7 +5,7 @@
 #
 # - De kluissleutel wordt de eerste keer vanzelf gemaakt (en daarna nooit meer veranderd).
 # - Daarna vraagt het script om de client-id en het client-geheim van de Google-app en van de Microsoft-app,
-#   en om de sleutel van OpenRouteService (voor reistijd).
+#   en om de sleutel van Google Maps en/of OpenRouteService (voor reistijd).
 #   Het geheim zie je niet terwijl je het plakt. Leeg laten (Enter) houdt de huidige waarde.
 # - Hoe je die apps aanmaakt, staat in de README onder "Clara: apps bij Google en Microsoft".
 set -euo pipefail
@@ -46,7 +46,13 @@ vraag MS_CLIENT_SECRET "Microsoft clientgeheim (de waarde, niet het geheim-id)" 
 echo
 echo "== OpenRouteService (reistijd naar afspraken buiten de deur)"
 echo "   Sleutel aanmaken: account op openrouteservice.org, dan in het dashboard bij API Keys een sleutel (Standard)."
-vraag ORS_API_KEY "OpenRouteService-sleutel" 1
+vraag ORS_API_KEY "OpenRouteService-sleutel (reserve; Enter = overslaan)" 1
+
+echo
+echo "== Google Maps (reistijd met openbaar vervoer; gaat voor OpenRouteService als beide er zijn)"
+echo "   Google Cloud: zet Routes API en Geocoding API aan, koppel een betaalaccount en maak een API-sleutel,"
+echo "   beperkt tot die twee API's en het IP-adres van deze server. Stappen: README, 'Clara: reistijd'."
+vraag GOOGLE_MAPS_KEY "Google Maps API-sleutel (begint met AIza)" 1
 
 chmod 600 "$ENV"
 cd "$BM" && docker compose up -d app >/dev/null 2>&1

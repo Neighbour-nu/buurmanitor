@@ -27,6 +27,7 @@ services:
       MS_CLIENT_ID: ${MS_CLIENT_ID:-}
       MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
       ORS_API_KEY: ${ORS_API_KEY:-}
+      GOOGLE_MAPS_KEY: ${GOOGLE_MAPS_KEY:-}
       # Werkruimte Politiek (Promonitor, fase 1). Leeg = nog niet overgestapt; de portal linkt dan naar Promonitor.
       # deploy/overstap-politiek.sh vult deze waarden vanuit ~/promonitor/.env.
       POLITIEK_DATABASE_URL: ${POLITIEK_DATABASE_URL:-}

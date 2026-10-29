@@ -102,10 +102,11 @@
 
 <section class="kaart" id="reistijd">
   <h2>Reistijd</h2>
-  <p class="noot">Clara rekent de reistijd naar afspraken buiten de deur uit met OpenRouteService: dichtbij met de fiets,
-    midden in een grote stad met het openbaar vervoer (schatting: OpenRouteService kent geen OV), anders met de auto.
-    Per afspraak kun je in de week een ander vervoer kiezen. Reistijdblokken komen pas in je agenda als je op de knop drukt.</p>
-  {% if not reis_actief %}<p class="item">Er is nog geen sleutel voor OpenRouteService. Draai op de server: <code>bash ~/buurmanitor/app/deploy/clara.sh</code></p>{% endif %}
+  <p class="noot">Clara rekent de reistijd naar afspraken buiten de deur uit: dichtbij met de fiets, midden in een grote
+    stad met het openbaar vervoer, anders met de auto. Per afspraak kun je in de week een ander vervoer kiezen.
+    Reistijdblokken komen pas in je agenda als je op de knop drukt.</p>
+  <p class="noot">Routedienst: <b>{{ reis_dienst }}</b>{% if reis_dienst == 'Google Maps' %} (OV volgens de dienstregeling, auto zonder files){% elif reis_dienst == 'OpenRouteService' %} (OV is een schatting op basis van de autotijd){% endif %}.</p>
+  {% if not reis_actief %}<p class="item">Er is nog geen sleutel voor Google Maps of OpenRouteService. Draai op de server: <code>bash ~/buurmanitor/app/deploy/clara.sh</code></p>{% endif %}
   <form method="post" action="/clara/reistijd/instellingen" class="velden">
     <label class="breed">Vertrekpunt (straat, huisnummer, postcode, plaats) <input type="text" name="vertrekpunt" value="{{ inst.vertrekpunt }}" autocomplete="street-address"></label>
     <label>Fietsen tot (km hemelsbreed) <input type="text" name="fiets_km" value="{{ inst.fiets_km }}" size="4"></label>
