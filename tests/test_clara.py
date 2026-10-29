@@ -391,3 +391,48 @@ def test_planner_kent_de_agendataak():
     assert "agenda" in planner.TAKEN and planner.TAKEN["agenda"]["elke"] == dt.timedelta(minutes=5)
     van, tot = sync.venster(t(3, 12))
     assert van == t(3, 0) - dt.timedelta(days=7) and tot - van == dt.timedelta(days=63)
+
+
+def test_verbergregels():
+    whaller = afspraak("Bestuursvergadering", t(4, 19, 30), t(4, 21, 30), organisator="Whaller Event", antwoord="geen")
+    sphere = afspraak("Overleg", t(5, 19, 30), t(5, 21), organisator="Whaller Event", omschrijving="Sphere: Bestuur PRO")
+    ander = afspraak("Fractie", t(6, 19, 30), t(6, 21), organisator="Whaller Event", omschrijving="Sphere: Fractie")
+    regels = [{"organisator": "Whaller", "tekst": "Bestuur"}]
+    assert analyse.verborgen(whaller, regels) and analyse.verborgen(sphere, regels) and not analyse.verborgen(ander, regels)
+    assert not analyse.verborgen(whaller, [{"organisator": "", "tekst": ""}])
+    assert analyse.verborgen(ander, [{"organisator": "whaller event"}])
+    assert bronnen.item(titel="x", start=t(1, 1), eind=t(1, 2), omschrijving="<p>Sphere:\n <b>Bestuur</b></p>")["omschrijving"] == "Sphere: Bestuur"
+
+
+def test_whaller_bestuur_standaard_verborgen_en_negeren(klant):
+    from app.clara import sync  # pylint: disable=import-outside-toplevel
+    from app.kern import db, meldingen  # pylint: disable=import-outside-toplevel
+    s = _nu_dag(6, 19, 30)
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM instellingen WHERE sleutel = 'clara_verbergen'")
+        k = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, account, domein, schrijven, laatst)
+                         VALUES ('google', 'Whaller-test', 'test@neighbour.nu', 'prive', true, now()) RETURNING id""").fetchone()["id"]
+        for eid, titel, org, dag in (("w1", "Bestuursvergadering", "Whaller Event", 0), ("w2", "Bestuursvergadering", "Whaller Event", 28),
+                                     ("p1", "Keeperstraining", "Club", 1)):
+            c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, organisator, start, eind, antwoord)
+                         VALUES (%s, 'primary', %s, %s, %s, %s, %s, 'geen')""",
+                      (k, eid, titel, org, s + dt.timedelta(days=dag), s + dt.timedelta(days=dag, hours=2)))
+        mid = meldingen.melden(c, "normaal", "clara", "2 nieuwe uitnodigingen",
+                               f"Bestuursvergadering ({s:%d-%m %H.%M}); Bestuursvergadering (x)", "/clara", sleutel="test-whaller")
+        sync.meldingen_opruimen(c)
+        assert c.execute("SELECT gelezen FROM meldingen WHERE id = %s", (mid,)).fetchone()["gelezen"]
+    pagina = klant.get("/clara", headers=KOP).text
+    assert "Bestuursvergadering" not in pagina and "Keeperstraining" in pagina and "verborgen door je" in pagina
+    assert "Whaller" in klant.get("/clara/koppelingen", headers=KOP).text
+    # Regel weghalen: weer zichtbaar. Negeren vanaf de uitnodiging: weer weg, met een regel op organisator en titel.
+    klant.post("/clara/verbergen", headers=FORM, data={"weg": "0"})
+    assert "Bestuursvergadering" in klant.get("/clara", headers=KOP).text
+    with db.pool.connection() as c:
+        iid = c.execute("SELECT id FROM agenda_items WHERE extern_id = 'w1'").fetchone()["id"]
+    r = klant.post("/clara/verbergen", headers=FORM, data={"item": iid, "van": "week"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/clara?melding=")
+    assert "Bestuursvergadering" not in klant.get("/clara", headers=KOP).text
+    with db.pool.connection() as c:
+        assert sync.verbergregels(c) == [{"organisator": "Whaller Event", "tekst": "Bestuursvergadering"}]
+        assert "Bestuursvergadering" not in __import__("app.clara.gesprek", fromlist=["x"]).context(c).split("# Agenda komende twee weken")[1]
+        c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (k,))

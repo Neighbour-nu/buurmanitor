@@ -100,6 +100,24 @@
   {% endif %}
 </div>
 
+<section class="kaart" id="verbergen">
+  <h2>Verbergen</h2>
+  <p class="noot">Afspraken die Clara weglaat: niet in de week, niet bij dubbele boekingen of uitnodigingen, en ze houden
+    geen tijd bezet. In Google en Outlook blijven ze gewoon staan. Een regel past als de organisator het eerste stukje
+    bevat en de titel of omschrijving het tweede (een leeg veld telt niet mee).</p>
+  {% for r in regels %}
+    <form method="post" action="/clara/verbergen" class="knoppenrij">
+      <span>{% if r.organisator %}organisator bevat <b>{{ r.organisator }}</b>{% endif %}{% if r.organisator and r.tekst %} en {% endif %}{% if r.tekst %}tekst bevat <b>{{ r.tekst }}</b>{% endif %}</span>
+      <button class="knop klein" name="weg" value="{{ loop.index0 }}">Weghalen</button>
+    </form>
+  {% else %}<p class="noot">Geen regels.</p>{% endfor %}
+  <form method="post" action="/clara/verbergen" class="velden">
+    <label>Organisator bevat <input type="text" name="organisator" placeholder="bijvoorbeeld Whaller"></label>
+    <label>Titel of omschrijving bevat <input type="text" name="tekst" placeholder="bijvoorbeeld Bestuur"></label>
+    <button class="knop" type="submit">Regel toevoegen</button>
+  </form>
+</section>
+
 <section class="kaart">
   <h2>Werktijden en lucht</h2>
   <form method="post" action="/clara/instellingen" class="velden">

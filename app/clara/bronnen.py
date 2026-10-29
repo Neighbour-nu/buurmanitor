@@ -35,8 +35,9 @@ def terugadres(soort, stap="terug"):
 def item(**kw):
     basis = {"agenda_id": "", "extern_id": "", "ical_uid": "", "titel": "", "locatie": "", "heledag": False,
              "status": "bevestigd", "vrij": False, "antwoord": "eigen", "organisator": "", "online": False, "link": "",
-             "geschat": False}
+             "geschat": False, "omschrijving": ""}
     basis.update(kw)
+    basis["omschrijving"] = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", basis["omschrijving"] or "")).strip()[:1000]
     basis["titel"] = (basis["titel"] or "").strip()[:300] or "(zonder titel)"
     basis["locatie"] = (basis["locatie"] or "").strip()[:300]
     basis["online"] = bool(basis["online"] or ONLINE.search(basis["locatie"] or ""))
@@ -154,7 +155,8 @@ def google_item(e, agenda_id, tz=config.TZ):
                 status={"tentative": "voorlopig", "cancelled": "geannuleerd"}.get(e.get("status"), "bevestigd"),
                 vrij=e.get("transparency") == "transparent", antwoord=antwoord,
                 organisator=(e.get("organizer") or {}).get("displayName") or (e.get("organizer") or {}).get("email", ""),
-                online=bool(e.get("hangoutLink") or e.get("conferenceData")), link=e.get("htmlLink", ""))
+                online=bool(e.get("hangoutLink") or e.get("conferenceData")), link=e.get("htmlLink", ""),
+                omschrijving=e.get("description", ""))
 
 
 def google_items(toegang, agenda_id, van, tot):
@@ -267,12 +269,12 @@ def ms_item(e, agenda_id, tz=config.TZ):
                     "voorlopig" if e.get("showAs") == "tentative" else "bevestigd"),
                 vrij=e.get("showAs") in ("free", "workingElsewhere"), antwoord=antwoord,
                 organisator=org.get("name") or org.get("address", ""), online=bool(e.get("isOnlineMeeting")),
-                link=e.get("webLink", ""))
+                link=e.get("webLink", ""), omschrijving=e.get("bodyPreview", ""))
 
 
 def ms_items(toegang, agenda_id, van, tot):
     velden = ("id,iCalUId,subject,location,start,end,isAllDay,showAs,isCancelled,responseStatus,organizer,"
-              "isOrganizer,isOnlineMeeting,webLink,attendees")
+              "isOrganizer,isOnlineMeeting,webLink,attendees,bodyPreview")
     url = (f"{GRAPH}/me/calendars/{urllib.parse.quote(agenda_id, safe='')}/calendarView?" + urllib.parse.urlencode({
         "startDateTime": van.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "endDateTime": tot.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "$top": "250", "$select": velden}))
@@ -343,7 +345,7 @@ def ics_items(ruw, van, tot, tz=config.TZ):
                         locatie=str(e.get("LOCATION", "")), start=start, eind=eind, heledag=heledag,
                         status="voorlopig" if status == "TENTATIVE" or bezet == "TENTATIVE" else "bevestigd",
                         vrij=str(e.get("TRANSP", "")).upper() == "TRANSPARENT" or bezet == "FREE",
-                        link=str(e.get("URL", ""))))
+                        link=str(e.get("URL", "")), omschrijving=str(e.get("DESCRIPTION", ""))))
     return uit
 
 

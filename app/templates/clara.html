@@ -76,8 +76,13 @@
             <button class="knop klein" name="antwoord" value="afgewezen">Afwijzen</button>
           </form>
           {% else %}<br><span class="noot">Alleen lezen: beantwoorden in de agenda zelf.</span>{% endif %}
+          <form method="post" action="/clara/verbergen" class="inline">
+            <input type="hidden" name="item" value="{{ a.id }}"><input type="hidden" name="van" value="week">
+            <button class="knop klein" title="Deze en vergelijkbare uitnodigingen (zelfde organisator en titel) niet meer tonen">Negeren</button></form>
         </div>
       {% else %}<p class="noot">Geen openstaande uitnodigingen.</p>{% endfor %}
+      {% if verborgen %}<p class="noot">{{ verborgen }} afspra{{ 'ken' if verborgen > 1 else 'ak' }} verborgen door je
+        <a href="/clara/koppelingen#verbergen">verbergregels</a>.</p>{% endif %}
     </section>
 
     <section class="kaart" id="vrij">

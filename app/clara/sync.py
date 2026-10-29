@@ -98,16 +98,17 @@ def ophalen(c, k, van, tot):
 def opslaan(c, kid, items, van, tot):
     for i in items:
         c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, domein, ical_uid, titel, locatie, start,
-                        eind, heledag, status, vrij, antwoord, organisator, online, link, geschat, bijgewerkt)
+                        eind, heledag, status, vrij, antwoord, organisator, online, link, geschat, bijgewerkt, omschrijving)
                      VALUES (%(k)s, %(agenda_id)s, %(extern_id)s, %(domein)s, %(ical_uid)s, %(titel)s, %(locatie)s, %(start)s,
                         %(eind)s, %(heledag)s, %(status)s, %(vrij)s, %(antwoord)s, %(organisator)s, %(online)s, %(link)s,
-                        %(geschat)s, now())
+                        %(geschat)s, now(), %(omschrijving)s)
                      ON CONFLICT (koppeling_id, agenda_id, extern_id) DO UPDATE SET domein = EXCLUDED.domein,
                         ical_uid = EXCLUDED.ical_uid, titel = EXCLUDED.titel, locatie = EXCLUDED.locatie,
                         start = EXCLUDED.start, eind = EXCLUDED.eind, heledag = EXCLUDED.heledag, status = EXCLUDED.status,
                         vrij = EXCLUDED.vrij, antwoord = EXCLUDED.antwoord, organisator = EXCLUDED.organisator,
-                        online = EXCLUDED.online, link = EXCLUDED.link, geschat = EXCLUDED.geschat, bijgewerkt = now()""",
-                  {**i, "k": kid})
+                        online = EXCLUDED.online, link = EXCLUDED.link, geschat = EXCLUDED.geschat, bijgewerkt = now(),
+                        omschrijving = EXCLUDED.omschrijving""",
+                  {"omschrijving": "", **i, "k": kid})
     sleutels = [f"{i['agenda_id']}\x1f{i['extern_id']}" for i in items]
     weg = c.execute("""DELETE FROM agenda_items WHERE koppeling_id = %s AND start < %s AND eind > %s
                        AND NOT (agenda_id || chr(31) || extern_id = ANY(%s)) RETURNING id""",
@@ -135,12 +136,41 @@ def synchroniseer(c, k, forceer=False, nu=None):
     return f"{k['naam']}: {len(items)} afspraken" + (f", {weg} weg" if weg else "")
 
 
-def afspraken(c, van, tot):
-    """De afspraken in een periode, samengevoegd over alle agenda's, met de naam en het soort van de koppeling."""
+# Afspraken die Martijn niet wil zien. De eerste regel vroeg hij zelf: Whaller-uitnodigingen uit de Bestuurs-sphere.
+STANDAARD_VERBERGEN = [{"organisator": "Whaller", "tekst": "Bestuur"}]
+
+
+def verbergregels(c):
+    r = c.execute("SELECT waarde FROM instellingen WHERE sleutel = 'clara_verbergen'").fetchone()
+    if not r:
+        return list(STANDAARD_VERBERGEN)
+    try:
+        return [x for x in json.loads(r["waarde"]) if isinstance(x, dict)]
+    except ValueError:
+        return []
+
+
+def verbergregels_opslaan(c, regels):
+    instellingen_lijst(c, "clara_verbergen", regels)
+
+
+def afspraken(c, van, tot, met_verborgen=False):
+    """De afspraken in een periode, samengevoegd over alle agenda's, met de naam en het soort van de koppeling.
+    Afspraken onder een verbergregel blijven weg: niet in de week, niet bij dubbele boekingen of uitnodigingen,
+    en ze houden ook geen tijd bezet bij het zoeken naar vrije tijd."""
     rijen = c.execute("""SELECT i.*, k.naam AS koppeling, k.soort, k.schrijven, k.account
                          FROM agenda_items i JOIN agenda_koppelingen k ON k.id = i.koppeling_id
                          WHERE k.actief AND i.start < %s AND i.eind > %s ORDER BY i.start""", (tot, van)).fetchall()
-    return analyse.samenvoegen([dict(r) for r in rijen])
+    regels = verbergregels(c)
+    lijst = [dict(r) for r in rijen]
+    if not met_verborgen:
+        lijst = [a for a in lijst if not analyse.verborgen(a, regels)]
+    return analyse.samenvoegen(lijst)
+
+
+def verborgen_aantal(c, van, tot):
+    regels = verbergregels(c)
+    return sum(1 for a in afspraken(c, van, tot, met_verborgen=True) if analyse.verborgen(a, regels))
 
 
 def melden(c, nu=None):
@@ -162,6 +192,22 @@ def melden(c, nu=None):
         meldingen.melden(c, "normaal", "clara", titel, tekst, "/clara#uitnodigingen",
                          sleutel=f"clara-uitnodigingen-{nu:%Y%m%d%H%M}")
         instellingen_lijst(c, "clara_uitnodigingen", (gemeld + [f"{u['koppeling_id']}:{u['extern_id']}" for u in nieuw])[-500:])
+    meldingen_opruimen(c, nu)
+
+
+def meldingen_opruimen(c, nu=None):
+    """Meldingen over uitnodigingen die nu onder een verbergregel vallen, gelden als gelezen."""
+    nu = nu or dt.datetime.now(config.TZ)
+    regels = verbergregels(c)
+    titels = {a["titel"] for a in afspraken(c, nu - dt.timedelta(days=1), venster(nu)[1], met_verborgen=True)
+              if analyse.verborgen(a, regels)}
+    if not titels:
+        return
+    for m in c.execute("""SELECT id, tekst FROM meldingen WHERE bron = 'clara' AND NOT gelezen
+                          AND (titel LIKE 'Uitnodiging%%' OR titel LIKE '%%nieuwe uitnodigingen')""").fetchall():
+        delen = [d for d in (m["tekst"] or "").split("; ") if d]
+        if delen and all(any(d.startswith(t + " (") for t in titels) for d in delen):
+            c.execute("UPDATE meldingen SET gelezen = true WHERE id = %s", (m["id"],))
 
 
 def instellingen_lijst(c, sleutel, nieuw=None):

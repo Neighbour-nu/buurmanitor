@@ -43,6 +43,11 @@ def context(c, nu=None):
     kop.append("Gekoppelde agenda's: " + "; ".join(
         f"{k['naam']} ({k['soort']}{', ' + 'lezen en schrijven' if k['schrijven'] else ', alleen lezen'})"
         + (f" FOUT: {k['fout']}" if k["fout"] else "") for k in koppelingen))
+    regels = sync.verbergregels(c)
+    if regels:
+        kop.append("Martijn laat deze afspraken bewust weg (ze staan hieronder niet): " + "; ".join(
+            " en ".join(x for x in (f"organisator bevat '{r['organisator']}'" if r.get("organisator") else "",
+                                    f"tekst bevat '{r['tekst']}'" if r.get("tekst") else "") if x) for r in regels) + ".")
     kop.append(f"Werktijden: {inst['begin']} tot {inst['eind']} op werkdagen" + (", en 19.00 tot 22.00 's avonds" if inst["avond"] else "")
                + f". Reistijd tussen plekken: {inst['reistijd']} minuten.")
     delen = ["\n".join(kop), "# Agenda komende twee weken"]

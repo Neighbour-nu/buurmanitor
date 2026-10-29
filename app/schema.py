@@ -99,6 +99,8 @@ MIGRATIES = [
         bijgewerkt timestamptz NOT NULL DEFAULT now(),
         UNIQUE (koppeling_id, agenda_id, extern_id))""",
     "CREATE INDEX IF NOT EXISTS agenda_items_start ON agenda_items (start)",
+    # Begin van de omschrijving, voor verbergregels (bijvoorbeeld de naam van een Whaller-sphere).
+    "ALTER TABLE agenda_items ADD COLUMN IF NOT EXISTS omschrijving text NOT NULL DEFAULT ''",
     # Kortlevende 'state' voor het koppelen bij Google en Microsoft (tegen nagemaakte terugkeerverzoeken).
     """CREATE TABLE IF NOT EXISTS oauth_staat (
         staat text PRIMARY KEY,

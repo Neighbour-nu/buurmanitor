@@ -65,6 +65,7 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         berichten = c.execute("SELECT * FROM gesprek_berichten WHERE gesprek_id = %s ORDER BY id", (gs["id"],)).fetchall() if gs else []
         voorstellen = c.execute("SELECT * FROM agenda_voorstellen WHERE gesprek_id = %s AND status = 'open' ORDER BY start",
                                 (gs["id"],)).fetchall() if gs else []
+        verborgen = sync.verborgen_aantal(c, nu, nu + dt.timedelta(days=56))
     conf = analyse.conflicten(komend)
     in_conflict = {id(x["a"]) for x in conf} | {id(x["b"]) for x in conf}
     conflict_ids = {(a["koppeling_id"], a["extern_id"]) for a in komend if id(a) in in_conflict}
@@ -77,7 +78,7 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         koppelingen=koppelingen, doelen=_schrijfdoelen(koppelingen), vrij=vrij, duur=duur, dagen=dagen, tz=tz,
         DAGEN=DAGEN, gesprek=gs, berichten=berichten, voorstellen=voorstellen, melding=melding, fout=fout,
         kluis_ok=kluis.actief(), sleutel_ok=bool(config.ANTHROPIC_API_KEY), inst=inst,
-        domeinnaam=dict(DOMEINEN)))
+        domeinnaam=dict(DOMEINEN), verborgen=verborgen))
 
 
 @router.post("/clara/vernieuwen")
@@ -227,10 +228,11 @@ def koppelingen_scherm(request: Request, melding: str = "", fout: str = ""):
     with db.pool.connection() as c:
         lijst = sync.koppelingen(c)
         inst = sync.instellingen(c)
+        regels = sync.verbergregels(c)
         aantallen = {r["koppeling_id"]: r["n"] for r in c.execute(
             "SELECT koppeling_id, count(*) AS n FROM agenda_items WHERE start > now() GROUP BY koppeling_id").fetchall()}
     return templates.TemplateResponse("clara_koppelingen.html", ctx(
-        request, "clara", koppelingen=lijst, aantallen=aantallen, inst=inst, melding=melding, fout=fout,
+        request, "clara", koppelingen=lijst, aantallen=aantallen, inst=inst, melding=melding, fout=fout, regels=regels,
         kluis_ok=kluis.actief(), google_ok=bool(config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET),
         ms_ok=bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET), politiek_ok=config.POLITIEK_ACTIEF,
         beheerder_url=bronnen.ms_beheerder_url() if config.MS_CLIENT_ID else "", DAGEN=DAGEN,
@@ -387,6 +389,35 @@ async def koppeling_bijwerken(request: Request, kid: int):
                    str(f.get("schrijfagenda", k["schrijfagenda"])), f.get("actief") == "1", kid))
     uitslag = await asyncio.to_thread(_sync_los, kid)
     return _terug("/clara/koppelingen", melding=f"Opgeslagen. {uitslag}")
+
+
+@router.post("/clara/verbergen")
+async def verbergen(request: Request):
+    """Een verbergregel toevoegen (vanaf een uitnodiging of met het formulier) of weghalen."""
+    controleer_herkomst(request)
+    f = await request.form()
+    terug = "/clara" if f.get("van") == "week" else "/clara/koppelingen"
+    with db.pool.connection() as c:
+        regels = sync.verbergregels(c)
+        if f.get("weg") is not None:
+            try:
+                regels.pop(int(str(f.get("weg"))))
+            except (ValueError, IndexError):
+                pass
+            sync.verbergregels_opslaan(c, regels)
+            return _terug(terug, melding="Regel weggehaald; die afspraken zijn weer te zien.")
+        if f.get("item"):
+            i = c.execute("SELECT organisator, titel FROM agenda_items WHERE id = %s", (int(str(f.get("item"))),)).fetchone()
+            nieuw = {"organisator": (i["organisator"] if i else "")[:120], "tekst": (i["titel"] if i else "")[:200]}
+        else:
+            nieuw = {"organisator": str(f.get("organisator", "")).strip()[:120], "tekst": str(f.get("tekst", "")).strip()[:200]}
+        if not (nieuw["organisator"] or nieuw["tekst"]):
+            return _terug(terug, fout="Vul een organisator of een stukje tekst in.")
+        if nieuw not in regels:
+            regels.append(nieuw)
+        sync.verbergregels_opslaan(c, regels)
+        sync.meldingen_opruimen(c)
+    return _terug(terug, melding="Verborgen. Clara laat deze afspraken voortaan weg (in de agenda zelf blijven ze staan).")
 
 
 @router.post("/clara/instellingen")

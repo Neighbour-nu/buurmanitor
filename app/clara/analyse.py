@@ -17,6 +17,18 @@ STANDAARD = {
 }
 
 
+def verborgen(a, regels):
+    """Valt deze afspraak onder een verbergregel? Een regel heeft 'organisator' en/of 'tekst' (titel of omschrijving);
+    beide zijn 'bevat', zonder verschil tussen hoofd- en kleine letters. Lege velden tellen niet mee."""
+    org = (a.get("organisator") or "").lower()
+    tekst = f"{a.get('titel') or ''} {a.get('omschrijving') or ''}".lower()
+    for r in regels or []:
+        o, t = (r.get("organisator") or "").strip().lower(), (r.get("tekst") or "").strip().lower()
+        if (o or t) and (not o or o in org) and (not t or t in tekst):
+            return True
+    return False
+
+
 def bezet(a):
     """Telt deze afspraak mee als bezette tijd?"""
     return (not a.get("heledag") and a.get("status") != "geannuleerd" and not a.get("vrij")
