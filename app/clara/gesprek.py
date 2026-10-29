@@ -11,11 +11,19 @@ from ..kern.web import DAGEN, datum_lang
 from . import analyse, sync
 
 VOORSTEL = re.compile(r"<voorstel>\s*(\{.*?\})\s*</voorstel>", re.S)
+VERVOER_TAG = re.compile(r"<vervoer>\s*(\{.*?\})\s*</vervoer>", re.S)
 UITLEG = """# Voorstellen doen
 Stel je een concreet tijdstip voor om iets in te plannen (een schrijfblok, voorbereiding, reistijd), zet dan per
 voorstel aan het eind van je antwoord precies één regel:
 <voorstel>{"titel": "...", "start": "JJJJ-MM-DDTUU:MM", "eind": "JJJJ-MM-DDTUU:MM", "domein": "politiek|prive|zerohero|fbim|upperspire"}</voorstel>
-Tijden in Nederlandse tijd. Martijn ziet het als knop en beslist zelf. Je accepteert, verplaatst of verwijdert zelf
+Tijden in Nederlandse tijd. Martijn ziet het als knop en beslist zelf.
+
+# Vervoer per afspraak
+Zegt Martijn uitdrukkelijk hoe hij naar een afspraak gaat (bijvoorbeeld "naar Utrecht ga ik met de trein"), leg dat
+dan vast met één regel per afspraak, met het id uit de reistijdlijst:
+<vervoer>{"id": 123, "vervoer": "fiets|auto|ov|lopen|geen|automatisch"}</vervoer>
+"geen" betekent geen reistijd (hij wordt opgehaald of is er al); "automatisch" zet de vaste regels terug. Bij een
+terugkerende afspraak geldt de keuze voor de hele reeks. Doe dit alleen als hij het zelf zegt, niet uit jezelf. Je accepteert, verplaatst of verwijdert zelf
 nooit iets en zegt ook niet dat je dat gedaan hebt. Gebruik alleen tijden die in de vrije blokken passen, tenzij
 Martijn iets anders vraagt."""
 
@@ -62,7 +70,22 @@ def context(c, nu=None):
         delen.append("# Krappe overgangen\n" + "\n".join(
             f"- {x['van']['eind'].astimezone(tz):%d-%m %H.%M}: {x['minuten']} min van {x['van']['locatie']} naar {x['naar']['locatie']}"
             for x in over))
-    vrij = analyse.vrije_blokken(lijst, nu, 14, 60, inst, tz, max_aantal=20)
+    try:
+        plan = sync.reisplan(c, nu, tot)
+    except Exception:  # noqa: BLE001  (reistijd is een extra; het gesprek gaat altijd door)
+        plan = {"regels": []}
+    if plan.get("regels"):
+        delen.append("# Reistijd (berekend met OpenRouteService; OV is een schatting)\n" + "\n".join(
+            f"- [id {r['afspraak']['id']}] {r['afspraak']['titel']} ({r['afspraak']['start'].astimezone(tz):%d-%m %H.%M}): {r['richting']} "
+            f"{r['minuten']} min {r['vervoer']} {'vanaf ' + r['van'] if r['richting'] == 'heen' else 'naar huis'}"
+            f"{' (zelf gekozen)' if r.get('gekozen') else ''}{', ingepland' if r['ingepland'] else ''}"
+            f"{'' if r['past'] else ', PAST NIET (' + r['botst'] + ' loopt nog)'}"
+            for r in plan["regels"] if r.get("minuten")) + "".join(
+            f"\n- [id {r['afspraak']['id']}] {r['afspraak']['titel']}: geen reistijd (zelf gekozen)"
+            for r in plan["regels"] if r.get("vervoer") == "geen"))
+    extra = [{"start": r["start"], "eind": r["eind"], "heledag": False, "status": "bevestigd", "vrij": False, "antwoord": "eigen"}
+             for r in plan.get("regels", []) if r.get("minuten") and not r["ingepland"]]
+    vrij = analyse.vrije_blokken(lijst + extra, nu, 14, 60, inst, tz, max_aantal=20)
     if vrij:
         delen.append("# Vrije blokken (minstens een uur, binnen werktijden)\n" + "\n".join(
             f"- {DAGEN[b['start'].weekday()]} {b['start']:%d-%m %H.%M} (ruimte {b['ruimte']} min)" for b in vrij))
@@ -85,6 +108,22 @@ def voorstellen_uit(tekst, tz=config.TZ):
     return VOORSTEL.sub("", tekst).strip(), uit
 
 
+def vervoer_uit(c, tekst):
+    """Vervoerskeuzes uit het antwoord halen en vastleggen. Geeft (tekst zonder die regels, lijst met bevestigingen)."""
+    from . import reis  # pylint: disable=import-outside-toplevel
+    klaar = []
+    for m in VERVOER_TAG.finditer(tekst):
+        try:
+            v = json.loads(m.group(1))
+            a = c.execute("SELECT * FROM agenda_items WHERE id = %s", (int(v["id"]),)).fetchone()
+        except (ValueError, KeyError, TypeError):
+            continue
+        if a:
+            gekozen = reis.kies(c, a, str(v.get("vervoer", "")))
+            klaar.append(f"{a['titel']}: {reis.VERVOER[gekozen] if gekozen else 'automatisch'}")
+    return VERVOER_TAG.sub("", tekst).strip(), klaar
+
+
 def antwoord(c, gesprek_id):
     berichten = c.execute("SELECT rol, tekst FROM gesprek_berichten WHERE gesprek_id = %s ORDER BY id",
                           (gesprek_id,)).fetchall()
@@ -93,6 +132,9 @@ def antwoord(c, gesprek_id):
                            max_tokens=1500)
     tekst = tekst.replace(" — ", ", ").replace("—", ", ").replace(" – ", ", ")
     tekst, voorstellen = voorstellen_uit(tekst)
+    tekst, vervoer = vervoer_uit(c, tekst)
+    if vervoer:
+        tekst = (tekst + "\n\n" + "\n".join(f"(Vastgelegd: {v})" for v in vervoer)).strip()
     if not tekst:
         tekst = "Hier is mijn voorstel." if voorstellen else "(Geen antwoord ontvangen. Probeer het nog eens.)"
     c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)", (gesprek_id, tekst))

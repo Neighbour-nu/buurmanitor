@@ -37,7 +37,7 @@ def t(dag, uur, minuut=0):
 
 
 def afspraak(titel, start, eind, **kw):
-    return bronnen.item(titel=titel, start=start, eind=eind, extern_id=titel, koppeling=kw.pop("koppeling", "A"),
+    return bronnen.item(titel=titel, start=start, eind=eind, extern_id=kw.pop("extern_id", titel), koppeling=kw.pop("koppeling", "A"),
                         soort=kw.pop("soort", "google"), domein=kw.pop("domein", "prive"), **kw)
 
 
@@ -491,3 +491,129 @@ def test_claude_ruimte_voor_nadenken_en_nooit_leeg(monkeypatch):
     nep = _NepClaude(fout, _antw("Zonder inspanning"))
     monkeypatch.setattr(claude.urllib.request, "urlopen", nep)
     assert claude.gesprek(_NepC(), "iris", "sys", berichten[:1]) == "Zonder inspanning" and "output_config" not in nep.verzoeken[1]
+
+
+# ---------------------------------------------------------------- reistijd
+
+THUIS = (5.6560, 51.4740)          # ergens in Helmond (lengte, breedte)
+PLEKKEN = {"huis voor de stad": (5.6573, 51.4797), "utrecht centraal": (5.1103, 52.0894),
+           "veldhoven, de run": (5.4020, 51.4180), "eindhoven, stationsplein": (5.4790, 51.4430),
+           "stadhuis helmond": (5.6573, 51.4797)}
+
+
+def test_vervoer_volgens_de_regels():
+    from app.clara import reis  # pylint: disable=import-outside-toplevel
+    inst = {"fiets_km": 6}
+    assert reis.vervoer(THUIS, PLEKKEN["huis voor de stad"], inst) == "fiets"
+    assert reis.vervoer(THUIS, PLEKKEN["utrecht centraal"], inst) == "ov"
+    assert reis.vervoer(THUIS, PLEKKEN["eindhoven, stationsplein"], inst) == "ov"   # midden in een grote stad
+    assert reis.vervoer(THUIS, PLEKKEN["veldhoven, de run"], inst) == "auto"
+
+
+def _nep_reis(monkeypatch, keuzes=None):
+    from app.clara import reis  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(reis, "actief", lambda: True)
+    monkeypatch.setattr(reis, "adres", lambda c, tekst, focus=None, alleen_cache=False: (
+        {"punt": THUIS, "label": "Thuis, Helmond"} if tekst == "thuisadres" else
+        ({"punt": PLEKKEN[reis._sleutel(tekst)], "label": tekst} if reis._sleutel(tekst) in PLEKKEN else None)))
+    snelheid = {"fiets": 15, "auto": 60, "lopen": 5}
+    monkeypatch.setattr(reis, "route", lambda c, van, naar, soort, alleen_cache=False: max(1, round(reis.km(van, naar) * 1.3 / snelheid[soort] * 60)))
+    monkeypatch.setattr(reis, "keuzes", lambda c: keuzes or {})
+    return reis
+
+
+def test_reisplan_heen_terug_en_past_niet(monkeypatch):
+    reis = _nep_reis(monkeypatch)
+    inst = {"vertrekpunt": "thuisadres", "fiets_km": 6, "marge": 5, "thuis_tussendoor": 180}
+    lijst = [
+        afspraak("Commissie", t(3, 19, 30), t(3, 22), locatie="Huis voor de Stad", koppeling_id=1, extern_id="c"),
+        afspraak("Overleg", t(4, 10), t(4, 12), locatie="Utrecht Centraal", koppeling_id=1, extern_id="u"),
+        afspraak("Lunch", t(4, 12, 30), t(4, 13, 30), locatie="Veldhoven, De Run", koppeling_id=1, extern_id="v"),
+        afspraak("Teams", t(5, 9), t(5, 10), locatie="Microsoft Teams-vergadering", online=True, koppeling_id=1, extern_id="t"),
+        afspraak("Ergens", t(5, 11), t(5, 12), locatie="Onvindbaar 1", koppeling_id=1, extern_id="o"),
+        afspraak("Al gepland", t(3, 19, 10), t(3, 19, 30), omschrijving="[clara-reistijd:1:c:heen] Ingepland", koppeling_id=1, extern_id="r"),
+    ]
+    p = reis.plan(None, lijst, inst)
+    per = {(r["afspraak"]["extern_id"], r["richting"]): r for r in p["regels"]}
+    assert per[("c", "heen")]["vervoer"] == "fiets" and per[("c", "heen")]["ingepland"] and per[("c", "terug")]["vervoer"] == "fiets"
+    assert per[("u", "heen")]["vervoer"] == "ov" and per[("u", "heen")]["geschat"] and ("u", "terug") not in per  # door naar Veldhoven
+    lunch = per[("v", "heen")]
+    assert lunch["van"] == "Utrecht Centraal" and lunch["vervoer"] == "auto" and not lunch["past"] and lunch["botst"] == "Overleg"
+    assert ("t", "heen") not in per and [a["titel"] for a in p["onbekend"]] == ["Ergens"]
+    assert per[("v", "terug")]["naar"] == "thuis"
+    titel = reis.blok_titel(per[("u", "heen")])
+    assert titel == "Reistijd naar Utrecht Centraal (OV)" and "[clara-reistijd:1:u:heen]" in reis.blok_omschrijving(per[("u", "heen")])
+
+
+def test_zelf_gekozen_vervoer(monkeypatch):
+    reis = _nep_reis(monkeypatch)
+    a = afspraak("Overleg", t(4, 10), t(4, 12), locatie="Utrecht Centraal", koppeling_id=1, extern_id="u", ical_uid="REEKS@x")
+    reis = _nep_reis(monkeypatch, {reis.keuze_sleutel(a): "auto"})
+    p = reis.plan(None, [a], {"vertrekpunt": "thuisadres"})
+    assert all(r["vervoer"] == "auto" and r["gekozen"] and not r.get("geschat") for r in p["regels"])
+    reis = _nep_reis(monkeypatch, {"uid:reeks@x": "geen"})
+    p = reis.plan(None, [a], {"vertrekpunt": "thuisadres"})
+    assert [r["vervoer"] for r in p["regels"]] == ["geen"] and p["regels"][0]["minuten"] is None
+
+
+def test_reistijd_in_het_scherm_en_inplannen(klant, monkeypatch):
+    from app.clara import reis, sync  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(config, "ORS_API_KEY", "ors-test")
+    vragen = []
+
+    def nep_ors(pad, params=None, body=None):
+        vragen.append(pad)
+        if pad.startswith("/pelias"):
+            punt = THUIS if "Strik" in params["text"] else PLEKKEN.get(reis._sleutel(params["text"]))
+            return {"features": [{"geometry": {"coordinates": list(punt)}, "properties": {"label": params["text"], "confidence": 0.9}}]} if punt else {"features": []}
+        assert pad.startswith("/openrouteservice/v2/directions/") and len(body["coordinates"]) == 2
+        return {"routes": [{"summary": {"duration": 1200, "distance": 5000}}]}
+    monkeypatch.setattr(reis, "_ors", nep_ors)
+    r = klant.post("/clara/reistijd/instellingen", headers=FORM, follow_redirects=False,
+                   data={"vertrekpunt": "Meester Strikstraat 25, 5708 GA Helmond", "fiets_km": "6", "marge": "5"})
+    assert "Vertrekpunt+gevonden" in r.headers["location"], r.headers["location"]
+    s = _nu_dag(2, 19, 30)
+    gemaakt = []
+    with db.pool.connection() as c:
+        k = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, account, domein, schrijven, agendas, schrijfagenda, laatst)
+                         VALUES ('google', 'Reis-test', 'r@neighbour.nu', 'prive', true, %s, 'primary', now()) RETURNING *""",
+                      (json.dumps([{"id": "primary", "naam": "M", "primair": True, "schrijven": True, "aan": True, "domein": "prive"}]),)).fetchone()
+        iid = c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, locatie, start, eind, domein)
+                           VALUES (%s, 'primary', 'raad1', 'Raadsvergadering', 'Huis voor de Stad', %s, %s, 'politiek') RETURNING id""",
+                        (k["id"], s, s + dt.timedelta(hours=3))).fetchone()["id"]
+        assert "reistijd: 2 reizen" in sync.reistijd_bijwerken(c)
+        # tweede keer: alles uit het geheugen, geen nieuwe vragen
+        aantal = len(vragen)
+        sync.reistijd_bijwerken(c)
+        assert len(vragen) == aantal
+    pagina = klant.get("/clara?week=0", headers=KOP).text
+    assert "Heen: 25 min" in pagina and "fietsen" in pagina and "Reistijd inplannen" in pagina and "automatisch (fiets)" in pagina
+    r = klant.post(f"/clara/vervoer/{iid}", headers=FORM, data={"vervoer": "auto", "week": "0"}, follow_redirects=False)
+    assert "auto" in r.headers["location"]
+    pagina = klant.get("/clara", headers=KOP).text
+    assert "rijden" in pagina and 'value="auto" selected' in pagina
+
+    monkeypatch.setattr(bronnen, "google_toegang", lambda refresh: ("tok", 3600, None))
+    monkeypatch.setattr(sync, "synchroniseer", lambda c, k, forceer=False, nu=None: None)
+    monkeypatch.setattr(bronnen, "google_maak", lambda tok, a, titel, st, e, o="": gemaakt.append((titel, st, e, o)) or "blok1")
+    with db.pool.connection() as c:
+        c.execute("UPDATE agenda_koppelingen SET geheim = %s WHERE id = %s", (kluis.sluit("ref"), k["id"]))
+    r = klant.post("/clara/reistijd", headers=FORM, data={"week": "0", "sleutel": [f"{k['id']}:raad1:heen", f"{k['id']}:raad1:terug"]},
+                   follow_redirects=False)
+    assert "2+reistijdblokken" in r.headers["location"], r.headers["location"]
+    assert gemaakt[0][0] == "Reistijd naar Huis voor de Stad (rijden)" and gemaakt[0][2] == s and "[clara-reistijd:" in gemaakt[0][3]
+    assert gemaakt[1][0].startswith("Terugreis naar huis") and gemaakt[1][1] == s + dt.timedelta(hours=3)
+    # Komt het blok terug uit Google, dan staat de reis als ingepland.
+    with db.pool.connection() as c:
+        c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind, omschrijving)
+                     VALUES (%s, 'primary', 'blok1', %s, %s, %s, %s)""", (k["id"], gemaakt[0][0], gemaakt[0][1], gemaakt[0][2], gemaakt[0][3]))
+    assert "ingepland" in klant.get("/clara", headers=KOP).text
+    # Clara legt een vervoerskeuze vast als Martijn dat zegt.
+    from app.clara import gesprek as g  # pylint: disable=import-outside-toplevel
+    with db.pool.connection() as c:
+        tekst, klaar = g.vervoer_uit(c, f'Goed, ik zet het op de fiets.\n<vervoer>{{"id": {iid}, "vervoer": "fiets"}}</vervoer>')
+        assert tekst == "Goed, ik zet het op de fiets." and klaar == ["Raadsvergadering: fiets"]
+        assert reis.keuzes(c)[f"id:{k['id']}:raad1"] == "fiets"
+        c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (k["id"],))
+        c.execute("DELETE FROM agenda_vervoer")

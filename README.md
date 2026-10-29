@@ -82,6 +82,18 @@ Volgende fases: Bram (4), Noor (5), Vera (6) en Jesse (7).
 | Back-up Politiek | elke nacht 03:27 in `~/promonitor/backups` (na de overstap uit de cockpit-database) |
 | Back-up ZEROHERO | elke nacht 03:17 in `~/cockpit/backups`, ongewijzigd |
 
+## Clara: reistijd
+
+Clara rekent de reistijd naar afspraken buiten de deur uit met OpenRouteService (api.heigit.org; het oude adres
+api.openrouteservice.org stopt in november 2026). Vervoer: tot 6 km hemelsbreed de fiets, midden in een grote stad het
+openbaar vervoer, anders de auto. Per afspraak (bij een reeks voor alle keren) kies je in de week ander vervoer, of
+zeg je het tegen Clara. OpenRouteService kent geen OV: daarvoor is de reistijd een schatting (autotijd x 1,5 plus 20
+minuten). Adressen en routes worden bewaard, zodat de dienst weinig vragen krijgt. Reistijdblokken komen alleen na een
+klik in je agenda en dragen een kenmerk in de omschrijving, zodat Clara ze herkent.
+
+Instellen: sleutel aanmaken op openrouteservice.org (dashboard, API Keys), dan `bash ~/buurmanitor/app/deploy/clara.sh`
+en op Agenda › Koppelingen › Reistijd je vertrekpunt invullen. Het adres staat alleen in de database, niet in de code.
+
 ## Clara: apps bij Google en Microsoft
 
 Clara koppelt met je eigen app bij Google en bij Microsoft. Die maak je één keer aan; daarna zet je de gegevens met

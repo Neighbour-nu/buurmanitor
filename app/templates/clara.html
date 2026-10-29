@@ -10,6 +10,9 @@
     <p class="motto">{{ p.motto }}</p>
   </div>
   <div class="knoppen">
+    {% if open_reis %}<form method="post" action="/clara/reistijd" class="inline"><input type="hidden" name="week" value="{{ week }}">
+      {% for r in open_reis %}<input type="hidden" name="sleutel" value="{{ r.sleutel }}">{% endfor %}
+      <button class="knop vol" type="submit" title="Zet alle berekende reistijd van deze week als blokken in je agenda">Reistijd inplannen ({{ open_reis | length }})</button></form>{% endif %}
     <form method="post" action="/clara/vernieuwen" class="inline"><button class="knop" type="submit">Nu bijwerken</button></form>
     <a class="knop" href="/clara/koppelingen">Koppelingen</a>
   </div>
@@ -19,6 +22,7 @@
 {% if not koppelingen %}
   <p class="item belangrijk">Er zijn nog geen agenda's gekoppeld. Ga naar <a href="/clara/koppelingen">Koppelingen</a>.</p>
 {% endif %}
+{% if reis_actief and plan.fout %}<p class="item">Reistijd: {{ plan.fout }} <a href="/clara/koppelingen#reistijd">instellen</a></p>{% endif %}
 {% for k in koppelingen if k.fout %}<p class="item urgent"><b>{{ k.naam }}</b>: {{ k.fout }} <a href="/clara/koppelingen">oplossen</a></p>{% endfor %}
 
 <div class="clara-raster">
@@ -33,14 +37,43 @@
         <div class="dagkop">{{ DAGEN[dag.weekday()] }} {{ dag.day }}-{{ dag.month }}{% if dag == nu.date() %} <span class="label">vandaag</span>{% endif %}</div>
         {% for a in items %}
           {% set sleutel = (a.koppeling_id, a.extern_id) %}
-          <div class="afspraak {{ a.domein }} {{ 'conflict' if sleutel in conflict_ids }} {{ 'vrijgehouden' if a.vrij or a.antwoord == 'afgewezen' }} {{ 'voorlopig' if a.status == 'voorlopig' or a.antwoord in ('voorlopig', 'geen') }}">
+          <div class="afspraak {{ a.domein }} {{ 'reisblok' if is_reisblok(a) }} {{ 'conflict' if sleutel in conflict_ids }} {{ 'vrijgehouden' if a.vrij or a.antwoord == 'afgewezen' }} {{ 'voorlopig' if a.status == 'voorlopig' or a.antwoord in ('voorlopig', 'geen') }}">
             <span class="tijd">{{ tijd(a) }}</span>
             <span class="wat">{% if a.link %}<a href="{{ a.link }}" target="_blank" rel="noopener">{{ a.titel }}</a>{% else %}{{ a.titel }}{% endif %}
               {% if sleutel in conflict_ids %}<span class="label rood">dubbel</span>{% endif %}
               {% if sleutel in krap_ids %}<span class="label rood">krap</span>{% endif %}
               {% if a.antwoord == 'geen' %}<span class="label">uitnodiging</span>{% endif %}
               {% if a.antwoord == 'afgewezen' %}<span class="label">afgewezen</span>{% endif %}
-              <br><span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.koppeling }}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}</span></span>
+              <br><span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.koppeling }}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}</span>
+              {% if sleutel in onbekend_ids %}<div class="reis"><span class="noot">Reistijd onbekend: OpenRouteService vindt "{{ a.locatie }}" niet. Zet een volledig adres in de afspraak.</span></div>{% endif %}
+              {% set reizen = per_afspraak.get(sleutel, []) %}
+              {% if reizen %}
+              <div class="reis">
+                {% for r in reizen %}
+                  {% if r.vervoer == 'geen' %}<span class="noot">Geen reistijd (zelf gekozen)</span>
+                  {% elif r.minuten %}
+                  <span class="reisregel {{ 'past-niet' if not r.past }}">{{ 'Heen' if r.richting == 'heen' else 'Terug' }}: {{ r.minuten }} min
+                    {{ {'fiets': 'fietsen', 'auto': 'rijden', 'ov': 'OV', 'lopen': 'lopen'}[r.vervoer] }}{% if r.geschat %} (schatting){% endif %}
+                    {% if r.richting == 'heen' %}vanaf {{ r.van }}{% else %}naar huis{% endif %}
+                    {% if r.ingepland %}<span class="label groen">ingepland</span>
+                    {% elif not r.past %}<span class="label rood">past niet: {{ r.botst }}</span>{% endif %}</span>
+                  {% else %}<span class="noot">Reistijd {{ r.richting }} wordt berekend…</span>{% endif %}
+                {% endfor %}
+                <form method="post" action="/clara/vervoer/{{ a.id }}" class="vervoerkeuze">
+                  <input type="hidden" name="week" value="{{ week }}">
+                  <select name="vervoer" onchange="this.form.submit()" aria-label="Vervoer voor {{ a.titel }}">
+                    <option value="automatisch" {{ 'selected' if not reizen[0].gekozen }}>automatisch{% if not reizen[0].gekozen and reizen[0].vervoer != 'geen' %} ({{ reizen[0].vervoer }}){% endif %}</option>
+                    {% for w, t in [('fiets', 'fiets'), ('auto', 'auto'), ('ov', 'openbaar vervoer'), ('lopen', 'lopen'), ('geen', 'geen reistijd')] %}
+                    <option value="{{ w }}" {{ 'selected' if reizen[0].gekozen and reizen[0].vervoer == w }}>{{ t }}</option>{% endfor %}
+                  </select><noscript><button class="knop klein">Kies</button></noscript>
+                  {% set open_hier = reizen | selectattr('minuten') | rejectattr('ingepland') | list %}
+                  {% if open_hier and doelen %}
+                  {% for r in open_hier %}<input type="hidden" name="sleutel" value="{{ r.sleutel }}">{% endfor %}
+                  <button class="knop klein" formaction="/clara/reistijd">Reistijd inplannen</button>
+                  {% endif %}
+                </form>
+              </div>
+              {% endif %}</span>
           </div>
         {% else %}<p class="noot leeg-dag">Geen afspraken.</p>{% endfor %}
       </div>

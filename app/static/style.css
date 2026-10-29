@@ -168,3 +168,9 @@ code.lang { display: block; white-space: pre-wrap; overflow-wrap: anywhere; padd
 details > summary { cursor: pointer; color: var(--blauwdonker); }
 details.kaart > summary { font-family: var(--kop); font-weight: 600; text-transform: uppercase; }
 h2 form.inline { margin: 0; }
+.afspraak.reisblok { opacity: .7; border-left-style: dashed; }
+.reis { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.reisregel { color: var(--zacht); }
+.reisregel.past-niet { color: var(--rooddonker); }
+.vervoerkeuze { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 2px; }
+.vervoerkeuze select { width: auto; padding: 2px 6px; font-size: 13px; }

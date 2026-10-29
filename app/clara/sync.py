@@ -9,7 +9,7 @@ import threading
 import time
 
 from ..kern import config, meldingen, planner
-from . import analyse, bronnen, kluis
+from . import analyse, bronnen, kluis, reis
 
 INTERVAL = {"google": dt.timedelta(minutes=5), "microsoft": dt.timedelta(minutes=5), "ics": dt.timedelta(minutes=15),
             "raad": dt.timedelta(hours=1)}
@@ -27,9 +27,9 @@ def venster(nu=None):
 def instellingen(c):
     r = c.execute("SELECT waarde FROM instellingen WHERE sleutel = 'clara'").fetchone()
     try:
-        return {**analyse.STANDAARD, **json.loads(r["waarde"])} if r and r["waarde"] else dict(analyse.STANDAARD)
+        return {**analyse.STANDAARD, **reis.STANDAARD, **(json.loads(r["waarde"]) if r and r["waarde"] else {})}
     except ValueError:
-        return dict(analyse.STANDAARD)
+        return {**analyse.STANDAARD, **reis.STANDAARD}
 
 
 def instellingen_opslaan(c, inst):
@@ -228,4 +228,34 @@ def taak_agenda(c, forceer=False):
     uitslag = [u for k in koppelingen(c, alleen_actief=True) if (u := synchroniseer(c, k, forceer=forceer))]
     if koppelingen(c, alleen_actief=True):
         melden(c)
+        r = reistijd_bijwerken(c)
+        if r:
+            uitslag.append(r)
     return "; ".join(uitslag) or "niets aan de beurt"
+
+
+def reisplan(c, van, tot, alleen_cache=True):  # noqa: D401
+    """Het reisplan voor een periode (met de afspraak ervoor, voor de reis vanaf de vorige plek)."""
+    lijst = afspraken(c, van - dt.timedelta(hours=12), tot)
+    return reis.plan(c, lijst, instellingen(c), alleen_cache=alleen_cache)
+
+
+def reistijd_bijwerken(c, nu=None):
+    """Adressen en routes voor de komende twee weken opzoeken (de rest komt uit het geheugen), en melden waar de
+    reistijd niet past. Geeft een korte uitslag, of None als reistijd niet is ingesteld."""
+    nu = nu or dt.datetime.now(config.TZ)
+    inst = instellingen(c)
+    if not reis.actief() or not inst.get("vertrekpunt"):
+        return None
+    try:
+        p = reisplan(c, nu, nu + dt.timedelta(days=14), alleen_cache=False)
+    except bronnen.BronFout as e:
+        return f"reistijd: {e}"
+    for r in p["regels"]:
+        if r.get("minuten") and not r["past"] and not r["ingepland"] and r["start"] < nu + dt.timedelta(days=7):
+            a = r["afspraak"]
+            meldingen.melden(c, "belangrijk", "clara", f"Reistijd past niet: {a['titel']}",
+                             f"{r['minuten']} min {r['vervoer']} vanaf {r['van']}, maar {r['botst']} loopt dan nog. "
+                             f"{a['start'].astimezone(config.TZ):%d-%m om %H.%M}.", "/clara",
+                             sleutel=f"clara-reis-{r['sleutel']}-{a['start']:%Y%m%d%H%M}"[:250])
+    return f"reistijd: {len(p['regels'])} reizen" + (f", {len(p['onbekend'])} plekken onbekend" if p.get("onbekend") else "")

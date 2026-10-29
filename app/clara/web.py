@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from .. import personas
 from ..kern import claude, config, db
 from ..kern.web import DAGEN, controleer_herkomst, ctx, templates
-from . import analyse, bronnen, gesprek, kluis, sync
+from . import analyse, bronnen, gesprek, kluis, reis, sync
 
 router = APIRouter()
 DOMEINEN = config.DOMEINEN
@@ -56,8 +56,7 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         inst = sync.instellingen(c)
         lijst = sync.afspraken(c, van, van + dt.timedelta(days=7))
         komend = sync.afspraken(c, nu, nu + dt.timedelta(days=56))
-        vrij = analyse.vrije_blokken(sync.afspraken(c, nu, nu + dt.timedelta(days=max(1, min(dagen, 28)) + 1)), nu,
-                                     max(1, min(dagen, 28)), max(15, min(duur, 600)), inst, tz) if duur else []
+        vrij = None
         if g is None:
             gs = c.execute("SELECT * FROM gesprekken WHERE persona = 'clara' ORDER BY bijgewerkt DESC LIMIT 1").fetchone()
         else:
@@ -66,11 +65,31 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         voorstellen = c.execute("SELECT * FROM agenda_voorstellen WHERE gesprek_id = %s AND status = 'open' ORDER BY start",
                                 (gs["id"],)).fetchall() if gs else []
         verborgen = sync.verborgen_aantal(c, nu, nu + dt.timedelta(days=56))
+        try:
+            plan = sync.reisplan(c, van, van + dt.timedelta(days=7))
+        except bronnen.BronFout as e:
+            plan = {"fout": str(e), "regels": []}
+        reis_komend = sync.reisplan(c, nu, nu + dt.timedelta(days=dagen + 1)) if duur and reis.actief() else {"regels": []}
+    if duur:  # nog niet ingeplande reistijd telt bij het zoeken als bezet
+        with db.pool.connection() as c:
+            basis = sync.afspraken(c, nu, nu + dt.timedelta(days=max(1, min(dagen, 28)) + 1))
+        vrij = analyse.vrije_blokken(basis + _reis_als_bezet(reis_komend), nu, max(1, min(dagen, 28)), max(15, min(duur, 600)), inst, tz)
+    else:
+        vrij = []
+    per_afspraak = {}
+    for r in plan["regels"]:
+        per_afspraak.setdefault((r["afspraak"]["koppeling_id"], r["afspraak"]["extern_id"]), []).append(r)
+    open_reis = [r for r in plan["regels"] if r.get("minuten") and not r["ingepland"] and r["start"] > nu]
+    onbekend_ids = {(a["koppeling_id"], a["extern_id"]) for a in plan.get("onbekend", [])}
     conf = analyse.conflicten(komend)
     in_conflict = {id(x["a"]) for x in conf} | {id(x["b"]) for x in conf}
     conflict_ids = {(a["koppeling_id"], a["extern_id"]) for a in komend if id(a) in in_conflict}
-    over = analyse.overgangen(komend, inst["reistijd"])
-    krap_ids = {(x["naar"]["koppeling_id"], x["naar"]["extern_id"]) for x in over}
+    if reis.actief() and inst.get("vertrekpunt") and not plan.get("fout"):
+        over = []  # met echte reistijd zie je per afspraak of het past
+        krap_ids = {(r["afspraak"]["koppeling_id"], r["afspraak"]["extern_id"]) for r in plan["regels"] if not r["past"]}
+    else:
+        over = analyse.overgangen(komend, inst["reistijd"])
+        krap_ids = {(x["naar"]["koppeling_id"], x["naar"]["extern_id"]) for x in over}
     return templates.TemplateResponse("clara.html", ctx(
         request, "clara", p=personas.get("clara"), nu=nu, week=week, start=start, dagen_lijst=analyse.per_dag(lijst, tz),
         alle_dagen=[start + dt.timedelta(days=d) for d in range(7)], conflicten=conf, overgangen=over,
@@ -78,7 +97,13 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         koppelingen=koppelingen, doelen=_schrijfdoelen(koppelingen), vrij=vrij, duur=duur, dagen=dagen, tz=tz,
         DAGEN=DAGEN, gesprek=gs, berichten=berichten, voorstellen=voorstellen, melding=melding, fout=fout,
         kluis_ok=kluis.actief(), sleutel_ok=bool(config.ANTHROPIC_API_KEY), inst=inst,
-        domeinnaam=dict(DOMEINEN), verborgen=verborgen))
+        domeinnaam=dict(DOMEINEN), verborgen=verborgen, plan=plan, per_afspraak=per_afspraak, open_reis=open_reis,
+        reis_actief=reis.actief(), is_reisblok=reis.is_reisblok, onbekend_ids=onbekend_ids))
+
+
+def _reis_als_bezet(plan):
+    return [{"start": r["start"], "eind": r["eind"], "heledag": False, "status": "bevestigd", "vrij": False, "antwoord": "eigen"}
+            for r in plan.get("regels", []) if r.get("minuten") and not r["ingepland"]]
 
 
 @router.post("/clara/vernieuwen")
@@ -91,7 +116,7 @@ def vernieuwen(request: Request):
 
 # ---------------------------------------------------------------- iets in de agenda zetten (na een klik)
 
-def _maak(c, doel, titel, start, eind, omschrijving=""):
+def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True):
     try:
         kid, agenda_id = doel.split("|", 1)
         k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (int(kid),)).fetchone()
@@ -104,7 +129,8 @@ def _maak(c, doel, titel, start, eind, omschrijving=""):
     extern = maak(tok, agenda_id, titel, start, eind, omschrijving)
     c.execute("INSERT INTO logboek (persona, actie, details) VALUES ('clara', 'afspraak gemaakt', %s)",
               (json.dumps({"koppeling": k["naam"], "titel": titel, "start": start.isoformat(), "eind": eind.isoformat()}),))
-    sync.synchroniseer(c, k, forceer=True)
+    if bijwerken:
+        sync.synchroniseer(c, k, forceer=True)
     return k["id"], extern
 
 
@@ -229,10 +255,12 @@ def koppelingen_scherm(request: Request, melding: str = "", fout: str = ""):
         lijst = sync.koppelingen(c)
         inst = sync.instellingen(c)
         regels = sync.verbergregels(c)
+        vertrekpunt_label = (reis.adres(c, inst["vertrekpunt"], alleen_cache=True) or {}).get("label", "") if inst.get("vertrekpunt") else ""
         aantallen = {r["koppeling_id"]: r["n"] for r in c.execute(
             "SELECT koppeling_id, count(*) AS n FROM agenda_items WHERE start > now() GROUP BY koppeling_id").fetchall()}
     return templates.TemplateResponse("clara_koppelingen.html", ctx(
         request, "clara", koppelingen=lijst, aantallen=aantallen, inst=inst, melding=melding, fout=fout, regels=regels,
+        reis_actief=reis.actief(), vertrekpunt_label=vertrekpunt_label,
         kluis_ok=kluis.actief(), google_ok=bool(config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET),
         ms_ok=bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET), politiek_ok=config.POLITIEK_ACTIEF,
         beheerder_url=bronnen.ms_beheerder_url() if config.MS_CLIENT_ID else "", DAGEN=DAGEN,
@@ -391,6 +419,103 @@ async def koppeling_bijwerken(request: Request, kid: int):
     return _terug("/clara/koppelingen", melding=f"Opgeslagen. {uitslag}")
 
 
+def _doel_voor(doelen, domein):
+    """De agenda voor een reisblok: een schrijfbare agenda van hetzelfde domein, anders de eerste."""
+    return next((w for w, _l, d in doelen if d == domein), doelen[0][0] if doelen else "")
+
+
+@router.post("/clara/reistijd")
+async def reistijd_inplannen(request: Request):
+    """Reistijdblokken in de agenda zetten (na een klik): één, of alle open reizen van de getoonde week."""
+    controleer_herkomst(request)
+    f = await request.form()
+    gekozen = set(f.getlist("sleutel"))
+    try:
+        week = int(str(f.get("week", "0")))
+    except ValueError:
+        week = 0
+
+    def doe():
+        tz = config.TZ
+        van = dt.datetime.combine(_week_start(week), dt.time(0), tzinfo=tz)
+        with db.pool.connection() as c:
+            doelen = _schrijfdoelen(sync.koppelingen(c))
+            if not doelen:
+                raise bronnen.BronFout("Om reistijd in te plannen is een Google- of Microsoft-agenda met schrijfrechten nodig.")
+            plan = sync.reisplan(c, van, van + dt.timedelta(days=7), alleen_cache=False)
+            nu = dt.datetime.now(tz)
+            klaar, gebruikt = 0, set()
+            for r in plan["regels"]:
+                if r["sleutel"] not in gekozen or r["ingepland"] or not r.get("minuten") or r["start"] < nu:
+                    continue
+                doel = _doel_voor(doelen, r["afspraak"].get("domein"))
+                _maak(c, doel, reis.blok_titel(r), r["start"], r["eind"], reis.blok_omschrijving(r), bijwerken=False)
+                gebruikt.add(int(doel.split("|")[0]))
+                klaar += 1
+            for kid in gebruikt:
+                k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (kid,)).fetchone()
+                sync.synchroniseer(c, k, forceer=True)
+            return klaar
+    try:
+        n = await asyncio.to_thread(doe)
+    except (bronnen.BronFout, kluis.KluisFout) as e:
+        return _terug(f"/clara?week={week}", fout=str(e))
+    return _terug(f"/clara?week={week}", melding=f"{n} reistijdblok{'ken' if n != 1 else ''} in je agenda gezet." if n else "Er was niets meer in te plannen.")
+
+
+@router.post("/clara/vervoer/{item_id}")
+async def vervoer_kiezen(request: Request, item_id: int):
+    """Vervoer voor één afspraak (en bij een reeks voor alle keren) kiezen, of terug naar automatisch."""
+    controleer_herkomst(request)
+    f = await request.form()
+    with db.pool.connection() as c:
+        a = c.execute("SELECT * FROM agenda_items WHERE id = %s", (item_id,)).fetchone()
+        if not a:
+            raise HTTPException(404)
+        gekozen = reis.kies(c, a, str(f.get("vervoer", "")))
+
+    def opnieuw():  # meteen uitrekenen, zodat de nieuwe reistijd direct te zien is
+        with db.pool.connection() as c2:
+            sync.reistijd_bijwerken(c2)
+    await asyncio.to_thread(opnieuw)
+    tekst = f"'{a['titel']}': {reis.VERVOER[gekozen]}" if gekozen else f"'{a['titel']}': weer automatisch (fiets dichtbij, OV in een grote stad, anders auto)"
+    return _terug(f"/clara?week={f.get('week') or 0}", melding=tekst + ".")
+
+
+@router.post("/clara/reistijd/instellingen")
+async def reistijd_instellingen(request: Request):
+    controleer_herkomst(request)
+    f = await request.form()
+
+    def getal(naam, standaard, lo, hi):
+        try:
+            return max(lo, min(hi, float(str(f.get(naam)).replace(",", "."))))
+        except (TypeError, ValueError):
+            return standaard
+    with db.pool.connection() as c:
+        inst = sync.instellingen(c)
+        inst.update({"vertrekpunt": str(f.get("vertrekpunt", "")).strip()[:200], "fiets_km": getal("fiets_km", 6, 0, 50),
+                     "marge": int(getal("marge", 5, 0, 60))})
+        sync.instellingen_opslaan(c, inst)
+        if not inst["vertrekpunt"]:
+            return _terug("/clara/koppelingen", melding="Reistijd: vertrekpunt leeggemaakt.")
+        if not reis.actief():
+            return _terug("/clara/koppelingen", fout="Opgeslagen, maar er is nog geen sleutel voor OpenRouteService (draai clara.sh).")
+        try:
+            c.execute("DELETE FROM plekken WHERE sleutel = %s AND NOT gevonden", (reis._sleutel(inst["vertrekpunt"]),))  # pylint: disable=protected-access
+            gevonden = await asyncio.to_thread(lambda: _adres_los(inst["vertrekpunt"]))
+        except bronnen.BronFout as e:
+            return _terug("/clara/koppelingen", fout=f"Opgeslagen, maar het opzoeken lukte niet: {e}")
+    if not gevonden:
+        return _terug("/clara/koppelingen", fout="Dit adres vond OpenRouteService niet. Probeer straat, huisnummer, postcode en plaats.")
+    return _terug("/clara/koppelingen", melding=f"Vertrekpunt gevonden: {gevonden['label']}. Clara rekent de reistijd binnen vijf minuten uit.")
+
+
+def _adres_los(tekst):
+    with db.pool.connection() as c:
+        return reis.adres(c, tekst)
+
+
 @router.post("/clara/verbergen")
 async def verbergen(request: Request):
     """Een verbergregel toevoegen (vanaf een uitnodiging of met het formulier) of weghalen."""
@@ -430,9 +555,9 @@ async def instellingen(request: Request):
             return max(lo, min(hi, int(str(f.get(naam)))))
         except (TypeError, ValueError):
             return standaard
-    inst = {"werkdagen": [d for d in range(7) if f.get(f"dag_{d}") == "1"] or [0, 1, 2, 3, 4],
-            "begin": str(f.get("begin") or "08:30")[:5], "eind": str(f.get("eind") or "17:30")[:5],
-            "avond": f.get("avond") == "1", "buffer": getal("buffer", 10, 0, 60), "reistijd": getal("reistijd", 30, 0, 180)}
+    nieuw = {"werkdagen": [d for d in range(7) if f.get(f"dag_{d}") == "1"] or [0, 1, 2, 3, 4],
+             "begin": str(f.get("begin") or "08:30")[:5], "eind": str(f.get("eind") or "17:30")[:5],
+             "avond": f.get("avond") == "1", "buffer": getal("buffer", 10, 0, 60), "reistijd": getal("reistijd", 30, 0, 180)}
     with db.pool.connection() as c:
-        sync.instellingen_opslaan(c, inst)
+        sync.instellingen_opslaan(c, {**sync.instellingen(c), **nieuw})
     return _terug("/clara/koppelingen", melding="Instellingen opgeslagen.")

@@ -101,6 +101,25 @@ MIGRATIES = [
     "CREATE INDEX IF NOT EXISTS agenda_items_start ON agenda_items (start)",
     # Begin van de omschrijving, voor verbergregels (bijvoorbeeld de naam van een Whaller-sphere).
     "ALTER TABLE agenda_items ADD COLUMN IF NOT EXISTS omschrijving text NOT NULL DEFAULT ''",
+    # Reistijd: gevonden adressen (ook 'niet gevonden', zodat de dienst niet steeds dezelfde vraag krijgt) en routes.
+    """CREATE TABLE IF NOT EXISTS plekken (
+        sleutel text PRIMARY KEY,
+        tekst text NOT NULL,
+        lon double precision,
+        lat double precision,
+        label text NOT NULL DEFAULT '',
+        gevonden boolean NOT NULL DEFAULT false,
+        bijgewerkt timestamptz NOT NULL DEFAULT now())""",
+    # Gekozen vervoer per afspraak (bij een terugkerende afspraak voor de hele reeks): fiets, auto, ov, lopen of geen.
+    """CREATE TABLE IF NOT EXISTS agenda_vervoer (
+        sleutel text PRIMARY KEY,
+        vervoer text NOT NULL CHECK (vervoer IN ('fiets', 'auto', 'ov', 'lopen', 'geen')),
+        titel text NOT NULL DEFAULT '',
+        bijgewerkt timestamptz NOT NULL DEFAULT now())""",
+    """CREATE TABLE IF NOT EXISTS routes (
+        sleutel text PRIMARY KEY,
+        duur int NOT NULL,
+        bijgewerkt timestamptz NOT NULL DEFAULT now())""",
     # Kortlevende 'state' voor het koppelen bij Google en Microsoft (tegen nagemaakte terugkeerverzoeken).
     """CREATE TABLE IF NOT EXISTS oauth_staat (
         staat text PRIMARY KEY,

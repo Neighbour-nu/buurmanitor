@@ -27,6 +27,8 @@ GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 MS_CLIENT_ID = os.environ.get("MS_CLIENT_ID", "")
 MS_CLIENT_SECRET = os.environ.get("MS_CLIENT_SECRET", "")
+# Reistijd: sleutel voor OpenRouteService (api.heigit.org), via deploy/clara.sh.
+ORS_API_KEY = os.environ.get("ORS_API_KEY", "")
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")

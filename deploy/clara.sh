@@ -4,7 +4,8 @@
 #   bash ~/buurmanitor/app/deploy/clara.sh
 #
 # - De kluissleutel wordt de eerste keer vanzelf gemaakt (en daarna nooit meer veranderd).
-# - Daarna vraagt het script om de client-id en het client-geheim van de Google-app en van de Microsoft-app.
+# - Daarna vraagt het script om de client-id en het client-geheim van de Google-app en van de Microsoft-app,
+#   en om de sleutel van OpenRouteService (voor reistijd).
 #   Het geheim zie je niet terwijl je het plakt. Leeg laten (Enter) houdt de huidige waarde.
 # - Hoe je die apps aanmaakt, staat in de README onder "Clara: apps bij Google en Microsoft".
 set -euo pipefail
@@ -41,6 +42,11 @@ echo "   Terugkeeradressen in de Microsoft-app: https://$(grep -m1 '^PORTAL_HOST
 echo "   en .../clara/koppel/microsoft/beheerder"
 vraag MS_CLIENT_ID "Microsoft toepassings-id (client-id, een GUID)" 0
 vraag MS_CLIENT_SECRET "Microsoft clientgeheim (de waarde, niet het geheim-id)" 1
+
+echo
+echo "== OpenRouteService (reistijd naar afspraken buiten de deur)"
+echo "   Sleutel aanmaken: account op openrouteservice.org, dan in het dashboard bij API Keys een sleutel (Standard)."
+vraag ORS_API_KEY "OpenRouteService-sleutel" 1
 
 chmod 600 "$ENV"
 cd "$BM" && docker compose up -d app >/dev/null 2>&1
