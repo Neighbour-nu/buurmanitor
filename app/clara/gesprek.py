@@ -89,10 +89,12 @@ def antwoord(c, gesprek_id):
     berichten = c.execute("SELECT rol, tekst FROM gesprek_berichten WHERE gesprek_id = %s ORDER BY id",
                           (gesprek_id,)).fetchall()
     systeem = personas.systeemtekst(personas.get("clara")) + "\n\n" + UITLEG + "\n\n# Wat je nu weet\n" + context(c)
-    tekst = claude.gesprek(c, "clara", systeem, [{"role": b["rol"], "content": b["tekst"]} for b in berichten][-30:],
+    tekst = claude.gesprek(c, "clara", systeem, [{"role": b["rol"], "content": b["tekst"]} for b in berichten if (b["tekst"] or "").strip()][-30:],
                            max_tokens=1500)
     tekst = tekst.replace(" — ", ", ").replace("—", ", ").replace(" – ", ", ")
     tekst, voorstellen = voorstellen_uit(tekst)
+    if not tekst:
+        tekst = "Hier is mijn voorstel." if voorstellen else "(Geen antwoord ontvangen. Probeer het nog eens.)"
     c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)", (gesprek_id, tekst))
     for v in voorstellen:
         c.execute("INSERT INTO agenda_voorstellen (gesprek_id, titel, start, eind, domein) VALUES (%s, %s, %s, %s, %s)",

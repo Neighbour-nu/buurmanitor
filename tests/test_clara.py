@@ -436,3 +436,58 @@ def test_whaller_bestuur_standaard_verborgen_en_negeren(klant):
         assert sync.verbergregels(c) == [{"organisator": "Whaller Event", "tekst": "Bestuursvergadering"}]
         assert "Bestuursvergadering" not in __import__("app.clara.gesprek", fromlist=["x"]).context(c).split("# Agenda komende twee weken")[1]
         c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (k,))
+
+
+class _NepClaude:
+    """Bootst de Claude-API na: geeft de antwoorden in volgorde terug en onthoudt wat er gevraagd werd."""
+    def __init__(self, *antwoorden):
+        self.antwoorden, self.verzoeken = list(antwoorden), []
+
+    def __call__(self, verzoek, timeout=0):
+        body = json.loads(verzoek.data)
+        self.verzoeken.append(body)
+        a = self.antwoorden.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return io.BytesIO(json.dumps(a).encode())
+
+
+def _antw(tekst, stop="end_turn"):
+    inhoud = [{"type": "thinking", "thinking": ""}] + ([{"type": "text", "text": tekst}] if tekst else [])
+    return {"content": inhoud, "stop_reason": stop, "usage": {"input_tokens": 10, "output_tokens": 5}}
+
+
+class _NepC:
+    def execute(self, *a, **kw):
+        class R:
+            def fetchone(self):
+                return {"eur": 0, "aantal": 0}
+        return R()
+
+
+def test_claude_ruimte_voor_nadenken_en_nooit_leeg(monkeypatch):
+    from app.kern import claude  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "sk-test")
+    berichten = [{"role": "user", "content": "Vraag"}, {"role": "assistant", "content": ""}, {"role": "user", "content": "Nog een"}]
+    nep = _NepClaude(_antw("", "max_tokens"), _antw("Volledig antwoord"))
+    monkeypatch.setattr(claude.urllib.request, "urlopen", nep)
+    assert claude.gesprek(_NepC(), "clara", "sys", berichten, model="claude-sonnet-5-5", max_tokens=1500) == "Volledig antwoord"
+    eerste, tweede = nep.verzoeken
+    assert eerste["output_config"] == {"effort": "low"} and eerste["max_tokens"] == 1500 + claude.DENKRUIMTE
+    assert tweede["max_tokens"] == 2 * eerste["max_tokens"]
+    assert all(m["content"] for m in eerste["messages"]) and len(eerste["messages"]) == 2  # leeg bericht weggelaten
+    # Haiku 4.5 kent geen inspanning; afgebroken tekst krijgt een opmerking; leeg is een fout; weigering ook.
+    nep = _NepClaude(_antw("Half", "max_tokens"), _antw("Half", "max_tokens"))
+    monkeypatch.setattr(claude.urllib.request, "urlopen", nep)
+    assert "afgebroken" in claude.gesprek(_NepC(), "iris", "sys", berichten[:1], model="claude-haiku-4-5")
+    assert "output_config" not in nep.verzoeken[0]
+    monkeypatch.setattr(claude.urllib.request, "urlopen", _NepClaude(_antw("")))
+    with pytest.raises(claude.ClaudeFout, match="leeg"):
+        claude.gesprek(_NepC(), "iris", "sys", berichten[:1])
+    monkeypatch.setattr(claude.urllib.request, "urlopen", _NepClaude(_antw("", "refusal")))
+    with pytest.raises(claude.ClaudeFout, match="niet antwoorden"):
+        claude.gesprek(_NepC(), "iris", "sys", berichten[:1])
+    fout = urllib.error.HTTPError("u", 400, "x", {}, io.BytesIO(b'{"error":{"message":"output_config: Extra inputs are not permitted"}}'))
+    nep = _NepClaude(fout, _antw("Zonder inspanning"))
+    monkeypatch.setattr(claude.urllib.request, "urlopen", nep)
+    assert claude.gesprek(_NepC(), "iris", "sys", berichten[:1]) == "Zonder inspanning" and "output_config" not in nep.verzoeken[1]

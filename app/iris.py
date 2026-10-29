@@ -53,7 +53,7 @@ def antwoord(c, gesprek_id):
     berichten = c.execute("SELECT rol, tekst FROM gesprek_berichten WHERE gesprek_id = %s ORDER BY id",
                           (gesprek_id,)).fetchall()
     systeem = personas.systeemtekst(personas.get("iris")) + "\n\n# Wat je nu weet\n" + context(c)
-    tekst = claude.gesprek(c, "iris", systeem, [{"role": b["rol"], "content": b["tekst"]} for b in berichten][-30:],
+    tekst = claude.gesprek(c, "iris", systeem, [{"role": b["rol"], "content": b["tekst"]} for b in berichten if (b["tekst"] or "").strip()][-30:],
                            max_tokens=1500)
     tekst = tekst.replace(" — ", ", ").replace("—", ", ").replace(" – ", ", ")
     c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)", (gesprek_id, tekst))

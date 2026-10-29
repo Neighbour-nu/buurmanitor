@@ -65,7 +65,9 @@ def gesprek(c, onderdeel, system, berichten, model, max_tokens=4000, timeout=300
         raise
 
 
-def _gesprek(c, onderdeel, system, berichten, model, max_tokens, timeout, cache):
+def _gesprek(c, onderdeel, system, berichten, model, max_tokens, timeout, cache, opnieuw=True):
+    """Nieuwe modellen denken eerst na, en dat telt mee in max_tokens. Raakt de ruimte op voordat er (genoeg) tekst
+    is, dan volgt één nieuwe poging met vier keer zoveel ruimte (hoogstens 64.000 tokens)."""
     sleutel = os.environ.get("POLITIEK_ANTHROPIC_API_KEY", "").strip()
     if not sleutel:
         raise RuntimeError("Er is geen Claude-sleutel ingesteld (ANTHROPIC_API_KEY in ~/promonitor/.env).")
@@ -91,6 +93,8 @@ def _gesprek(c, onderdeel, system, berichten, model, max_tokens, timeout, cache)
                  VALUES (%s, %s, %s, %s, %s)""", (onderdeel, model, invoer, uitvoer, kosten_eur(model, invoer, uitvoer)))
     tekst = "".join(b.get("text", "") for b in antwoord.get("content") or [] if b.get("type") == "text")
     if antwoord.get("stop_reason") == "max_tokens":
+        if opnieuw and max_tokens < 64000:
+            return _gesprek(c, onderdeel, system, berichten, model, min(64000, max_tokens * 4), timeout, cache, opnieuw=False)
         tekst += "\n\n[Het antwoord is afgebroken omdat het te lang werd.]"
     return tekst
 
