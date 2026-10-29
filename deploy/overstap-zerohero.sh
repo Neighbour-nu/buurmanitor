@@ -199,6 +199,7 @@ if [ "$MODUS" = overstap ]; then
 fi
 
 # terug
+[ -f ~/buurmanitor/.opgeruimd ] && { echo "De oude app is opgeruimd (opruimen.sh); terug kan niet meer. De gegevens staan veilig in de cockpit-database en in de back-ups."; exit 1; }
 if [ ! -f "$OVERGESTAPT" ]; then
   echo "== Alleen een proef gedaan: /zerohero uitzetten (de oude Doellijn is altijd blijven draaien)"
   $HULP leeg "$ZENV" ZEROHERO_DATABASE_URL

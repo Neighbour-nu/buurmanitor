@@ -257,6 +257,7 @@ if [ "$MODUS" = overstap ]; then
 fi
 
 # terug
+[ -f ~/buurmanitor/.opgeruimd ] && { echo "De oude app is opgeruimd (opruimen.sh); terug kan niet meer. De gegevens staan veilig in de cockpit-database en in de back-ups."; exit 1; }
 [ -f "$OVERGESTAPT" ] || [ -f "$KOPIE" ] || { echo "Er is niets om terug te zetten."; exit 0; }
 if [ ! -f "$OVERGESTAPT" ]; then
   echo "== Alleen een proef gedaan: /politiek uitzetten (Promonitor is altijd de echte gebleven)"

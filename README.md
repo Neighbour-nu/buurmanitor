@@ -112,6 +112,17 @@ bash ~/buurmanitor/app/deploy/overstap-zerohero.sh overstap
   Doellijn weer. De scripts in `~/cockpit/doellijn-app/deploy` stoppen daarna met een verwijzing hierheen.
 - `terug` zet de oude Doellijn, het profiel en Caddy terug.
 
+## Opruimen na beide overstappen
+
+```
+bash ~/buurmanitor/app/deploy/opruimen.sh
+```
+
+Controleert eerst dat Politiek en ZEROHERO in Buurmanitor werken en dat er een back-up van Politiek is, vraagt om
+bevestiging (typ OPRUIMEN) en haalt dan weg: de oude Promonitor (containers, image, oude database en netwerk; eerst
+nog een laatste back-up daarvan), de oude Doellijn-container en het image, en de build cache van Docker. Daarna
+werkt `terug` in de overstapscripts niet meer. De databases in de cockpit en alle back-ups blijven staan.
+
 ## Back-up buiten de server
 
 Elke nacht om 04:15 gaat een versleutelde kopie naar OVHcloud Object Storage (met restic): de databasedumps van
