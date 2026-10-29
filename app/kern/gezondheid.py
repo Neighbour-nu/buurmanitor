@@ -5,6 +5,7 @@ de Doellijn, Promonitor en Buurmanitor zijn alleen-lezen in de container gekoppe
 """
 import datetime as dt
 import glob
+import json
 import os
 import shutil
 
@@ -60,6 +61,20 @@ def backups(basis=None):
     return uit
 
 
+def extern(basis=None):
+    """Stand van de back-up buiten de server (OVHcloud Object Storage), zoals extern-backup.sh die wegschrijft."""
+    pad = os.path.join(basis or config.BACKUP_MAP, "buurmanitor", "extern-status.json")
+    try:
+        with open(pad, encoding="utf-8") as f:
+            s = json.load(f)
+        tijd = dt.datetime.fromisoformat(s["tijd"])
+    except (OSError, ValueError, KeyError):
+        return {"ingericht": False, "ok": False}
+    uur = (dt.datetime.now(config.TZ) - tijd).total_seconds() / 3600
+    return {"ingericht": True, "tijd": tijd, "uur": uur, "snapshot": s.get("snapshot", ""),
+            "waarschuwingen": s.get("waarschuwingen", []), "ok": bool(s.get("ok")) and uur <= GRENS_BACKUP_UUR}
+
+
 def gb(n):
     return f"{n / 1024 ** 3:.1f} GB".replace(".", ",")
 
@@ -86,4 +101,13 @@ def controle(c):
                              "De nachtelijke back-up is niet gelukt. Kijk in backup.log in de back-upmap.", "/gezondheid",
                              sleutel=f"backup-{b['naam']}-{vandaag}")
             punten.append(f"back-up {b['naam']}")
+    e = extern()
+    if e["ingericht"] and not e["ok"]:
+        meldingen.melden(c, "urgent", "gezondheid", "Back-up buiten de server is niet gelukt of te oud",
+                         "Kijk in /var/log/buurmanitor-extern.log op de server.", "/gezondheid",
+                         sleutel=f"extern-{vandaag}")
+        punten.append("back-up buiten de server")
+    elif e["ingericht"] and e["waarschuwingen"]:
+        meldingen.melden(c, "belangrijk", "gezondheid", "Back-up buiten de server gelukt, met waarschuwingen",
+                         ", ".join(e["waarschuwingen"]), "/gezondheid", sleutel=f"extern-w-{vandaag}")
     return "alles goed" if not punten else "aandacht: " + ", ".join(punten)

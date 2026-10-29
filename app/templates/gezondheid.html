@@ -24,7 +24,12 @@
       <p><b>{{ b.naam }}</b>: {{ b.aantal }} {{ 'stuk' if b.aantal == 1 else 'stuks' }}{% if b.laatst %}, laatste {{ geleden(b.laatst) }} ({{ mb(b.grootte) }}){% endif %}
         {% if b.ok %}<span class="label groen">in orde</span>{% else %}<span class="label rood">te oud of ontbreekt</span>{% endif %}</p>
     {% else %}<p class="noot">Geen back-upmappen gekoppeld.</p>{% endfor %}
-    <p class="noot">Een back-up buiten de server volgt nog in fase 0.</p>
+    <h2 style="margin-top:14px">Buiten de server</h2>
+    {% if not extern.ingericht %}<p class="noot">Nog niet ingericht. Op de server: <code>bash ~/buurmanitor/app/deploy/extern.sh</code></p>
+    {% else %}<p>OVHcloud Object Storage: laatste kopie {{ geleden(extern.tijd) }}
+      {% if extern.ok %}<span class="label groen">in orde</span>{% else %}<span class="label rood">te oud of mislukt</span>{% endif %}</p>
+      {% if extern.waarschuwingen %}<p class="noot">Waarschuwingen: {{ extern.waarschuwingen | join(', ') }}</p>{% endif %}
+    {% endif %}
   </section>
 
   <section class="kaart">

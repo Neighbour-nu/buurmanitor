@@ -75,6 +75,22 @@ def test_backups_lezen():
         assert not uit["leeg"]["ok"] and uit["leeg"]["aantal"] == 0
 
 
+def test_extern_status():
+    import json  # pylint: disable=import-outside-toplevel
+    with tempfile.TemporaryDirectory() as basis:
+        assert not gezondheid.extern(basis)["ingericht"]
+        os.makedirs(os.path.join(basis, "buurmanitor"))
+        pad = os.path.join(basis, "buurmanitor", "extern-status.json")
+        nu = dt.datetime.now(TZ)
+        with open(pad, "w", encoding="utf-8") as f:
+            json.dump({"tijd": nu.isoformat(), "ok": True, "snapshot": "abc", "waarschuwingen": []}, f)
+        assert gezondheid.extern(basis)["ok"]
+        with open(pad, "w", encoding="utf-8") as f:
+            json.dump({"tijd": (nu - dt.timedelta(days=3)).isoformat(), "ok": True, "waarschuwingen": []}, f)
+        e = gezondheid.extern(basis)
+        assert e["ingericht"] and not e["ok"]
+
+
 def test_personas_compleet():
     alle = personas.alle()
     assert list(alle)[:6] == ["iris", "clara", "bram", "noor", "vera", "jesse"]

@@ -58,6 +58,32 @@ Bram (4), Noor (5), Vera (6) en Jesse (7).
 | Logboek | `cd ~/buurmanitor && docker compose logs --tail=100 app` |
 | Back-up | elke nacht 03:37 in `~/buurmanitor/backups`, de laatste 60 |
 
+## Back-up buiten de server
+
+Elke nacht om 04:15 gaat een versleutelde kopie naar OVHcloud Object Storage (met restic): de databasedumps van
+alle drie de apps, een volledige dump van de PostgreSQL van de cockpit (ook Miniflux), de n8n-gegevens, de
+.env-bestanden, de Caddyfile, de docker-compose-bestanden en de Authelia-configuratie. Bewaard: 14 dagen, 8 weken,
+12 maanden. De stand staat op de pagina Gezondheid; het logboek in `/var/log/buurmanitor-extern.log`.
+
+Instellen (eenmalig):
+
+1. In het beheerscherm van OVHcloud: Public Cloud, je project (of maak er een aan), Object Storage,
+   Create Object Container. Kies Standard, een andere regio dan de server (bijvoorbeeld Frankfurt, `de`) en maak bij
+   de stap gebruiker een nieuwe Object Storage-gebruiker aan. Noteer bij Object Storage users de access key en
+   secret key.
+2. Op de server: `bash ~/buurmanitor/app/deploy/extern.sh`. Het script vraagt regio, bucket en sleutels, maakt een
+   wachtwoord voor de versleuteling (bewaar dat in je wachtwoordmanager), maakt de eerste kopie en zet de nachtelijke
+   taak klaar.
+
+Terugzetten (bijvoorbeeld op een nieuwe server, met het wachtwoord uit je wachtwoordmanager):
+
+```
+sudo apt install restic
+export RESTIC_REPOSITORY=s3:https://s3.de.io.cloud.ovh.net/<bucket> AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
+restic snapshots                      # vraagt om het wachtwoord
+restic restore latest --target ~/terug
+```
+
 ## Tests
 
 ```

@@ -145,7 +145,7 @@ def gezondheid_scherm(request: Request):
         taken = {t["naam"]: t for t in c.execute("SELECT * FROM taken").fetchall()}
     return templates.TemplateResponse("gezondheid.html", ctx(
         request, "gezondheid", geheugen=gezondheid.geheugen(), schijf=gezondheid.schijf(), belasting=gezondheid.belasting(),
-        backups=gezondheid.backups(), gb=gezondheid.gb, grenzen=gezondheid, besteed=besteed, aantal=aantal,
+        backups=gezondheid.backups(), extern=gezondheid.extern(), gb=gezondheid.gb, grenzen=gezondheid, besteed=besteed, aantal=aantal,
         per_persona=per_persona, plafond=config.MAANDPLAFOND_EUR, taken=taken, geregistreerd=planner.TAKEN,
         sleutel_ok=bool(config.ANTHROPIC_API_KEY), telegram_ok=bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID)))
 
