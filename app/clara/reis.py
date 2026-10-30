@@ -27,7 +27,7 @@ GEEN_ROUTE = -1  # bewaard als er geen route is (bijvoorbeeld 's nachts geen OV)
 MARKER = "[clara-reistijd:"
 PROFIEL = {"fiets": "cycling-regular", "auto": "driving-car", "lopen": "foot-walking"}
 VERVOER = {"fiets": "fiets", "auto": "auto", "ov": "openbaar vervoer", "lopen": "lopen", "geen": "geen reistijd"}
-STANDAARD = {"vertrekpunt": "", "fiets_km": 6, "marge": 5, "thuis_tussendoor": 180}
+STANDAARD = {"vertrekpunt": "", "fiets_km": 6, "marge": 5, "thuis_tussendoor": 180, "reis_kleur": "8"}  # 8 = Grafiet
 # Centra van grote steden (breedte, lengte, straal in km): ligt een afspraak daarbinnen en is hij niet dichtbij, dan OV.
 GROTE_STEDEN = {
     "Amsterdam": (52.3731, 4.8922, 3.0), "Rotterdam": (51.9225, 4.4792, 2.5), "Den Haag": (52.0786, 4.3150, 2.5),
@@ -325,11 +325,22 @@ def plan(c, afspraken, inst, nu=None, alleen_cache=True):
     return {"fout": "", "regels": regels, "onbekend": onbekend, "thuis": thuis}
 
 
+# Icoon vooraan in de titel, zodat reistijd in elke agenda (ook op de telefoon) meteen herkenbaar is.
+ICOON = {"ov": "🚆", "auto": "🚗", "fiets": "🚲", "lopen": "🚶"}
+
+
+def titel_met_icoon(a):
+    """De titel van een bestaand reistijdblok met het juiste icoon vooraan (vervoer staat in de omschrijving)."""
+    m = re.search(r"Vervoer: (fiets|auto|ov|lopen)", a.get("omschrijving") or "")
+    titel = re.sub(r"^[\U0001F680-\U0001F6FF\s]+", "", a.get("titel") or "").strip()
+    return f"{ICOON[m.group(1)]} {titel}" if m else titel
+
+
 def blok_titel(r):
     woord = {"fiets": "fietsen", "auto": "rijden", "ov": "OV", "lopen": "lopen"}[r["vervoer"]]
     if r["richting"] == "heen":
-        return f"Reistijd naar {r['naar']} ({woord})"
-    return f"Terugreis naar huis ({woord})"
+        return f"{ICOON[r['vervoer']]} Reistijd naar {r['naar']} ({woord})"
+    return f"{ICOON[r['vervoer']]} Terugreis naar huis ({woord})"
 
 
 def blok_omschrijving(r):

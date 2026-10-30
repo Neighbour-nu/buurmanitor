@@ -111,9 +111,16 @@
     <label class="breed">Vertrekpunt (straat, huisnummer, postcode, plaats) <input type="text" name="vertrekpunt" value="{{ inst.vertrekpunt }}" autocomplete="street-address"></label>
     <label>Fietsen tot (km hemelsbreed) <input type="text" name="fiets_km" value="{{ inst.fiets_km }}" size="4"></label>
     <label>Marge per reis (min) <input type="text" name="marge" value="{{ inst.marge }}" size="3"></label>
+    <label>Kleur in Google Agenda <select name="reis_kleur">{% for k, n in kleuren.items() %}<option value="{{ k }}" {{ 'selected' if inst.reis_kleur == k }}>{{ n }}</option>{% endfor %}</select></label>
     <button class="knop vol" type="submit">Opslaan</button>
   </form>
   {% if vertrekpunt_label %}<p class="noot">Gevonden als: {{ vertrekpunt_label }}</p>{% endif %}
+  {% if reisblokken %}
+  <form method="post" action="/clara/reistijd/bijwerken" class="knoppenrij">
+    <span class="noot">{{ reisblokken }} komende reistijdblok{{ 'ken' if reisblokken != 1 }} van Clara in Google Agenda.</span>
+    <button class="knop" type="submit">Icoon en kleur bijwerken</button>
+  </form>
+  {% endif %}
 </section>
 
 <section class="kaart" id="verbergen">

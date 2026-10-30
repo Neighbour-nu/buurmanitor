@@ -272,7 +272,7 @@ def test_google_koppelen_ophalen_en_inplannen(klant, monkeypatch):
                 bronnen.item(agenda_id="primary", extern_id="a3", titel="Keepersavond", start=morgen + dt.timedelta(days=1),
                              eind=morgen + dt.timedelta(days=1, hours=2), antwoord="geen", organisator="Club")]
     monkeypatch.setattr(bronnen, "google_items", items)
-    monkeypatch.setattr(bronnen, "google_maak", lambda tok, a, titel, s, e, o="": gemaakt.append((a, titel, s, e)) or "nieuw1")
+    monkeypatch.setattr(bronnen, "google_maak", lambda tok, a, titel, s, e, o="", kleur=None: gemaakt.append((a, titel, s, e)) or "nieuw1")
     monkeypatch.setattr(bronnen, "google_antwoord", lambda tok, a, eid, antw: beantwoord.append((eid, antw)))
 
     r = klant.post("/clara/koppel/google", headers=FORM, data={"naam": "Neighbour", "domein": "prive"}, follow_redirects=False)
@@ -321,7 +321,7 @@ def test_voorstel_van_clara_inplannen(klant, monkeypatch):
     gemaakt = []
     monkeypatch.setattr(bronnen, "google_toegang", lambda refresh: ("tok", 3600, None))
     monkeypatch.setattr(bronnen, "google_items", lambda *a: [])
-    monkeypatch.setattr(bronnen, "google_maak", lambda tok, a, titel, s, e, o="": gemaakt.append(titel) or "v1")
+    monkeypatch.setattr(bronnen, "google_maak", lambda tok, a, titel, s, e, o="", kleur=None: gemaakt.append(titel) or "v1")
     s = _nu_dag(4, 9)
     with db.pool.connection() as c:
         gid = c.execute("INSERT INTO gesprekken (persona, titel) VALUES ('clara', 'test') RETURNING id").fetchone()["id"]
@@ -543,7 +543,7 @@ def test_reisplan_heen_terug_en_past_niet(monkeypatch):
     assert ("t", "heen") not in per and [a["titel"] for a in p["onbekend"]] == ["Ergens"]
     assert per[("v", "terug")]["naar"] == "thuis"
     titel = reis.blok_titel(per[("u", "heen")])
-    assert titel == "Reistijd naar Utrecht Centraal (OV)" and "[clara-reistijd:1:u:heen]" in reis.blok_omschrijving(per[("u", "heen")])
+    assert titel == "🚆 Reistijd naar Utrecht Centraal (OV)" and "[clara-reistijd:1:u:heen]" in reis.blok_omschrijving(per[("u", "heen")])
 
 
 def test_zelf_gekozen_vervoer(monkeypatch):
@@ -598,19 +598,31 @@ def test_reistijd_in_het_scherm_en_inplannen(klant, monkeypatch):
 
     monkeypatch.setattr(bronnen, "google_toegang", lambda refresh: ("tok", 3600, None))
     monkeypatch.setattr(sync, "synchroniseer", lambda c, k, forceer=False, nu=None: None)
-    monkeypatch.setattr(bronnen, "google_maak", lambda tok, a, titel, st, e, o="": gemaakt.append((titel, st, e, o)) or "blok1")
+    monkeypatch.setattr(bronnen, "google_maak", lambda tok, a, titel, st, e, o="", kleur=None: gemaakt.append((titel, st, e, o, kleur)) or "blok1")
     with db.pool.connection() as c:
         c.execute("UPDATE agenda_koppelingen SET geheim = %s WHERE id = %s", (kluis.sluit("ref"), k["id"]))
     r = klant.post("/clara/reistijd", headers=FORM, data={"week": "0", "sleutel": [f"{k['id']}:raad1:heen", f"{k['id']}:raad1:terug"]},
                    follow_redirects=False)
     assert r.headers["location"].startswith("/clara?week=0&melding=2+reistijdblokken") and r.headers["location"].count("?") == 1
-    assert gemaakt[0][0] == "Reistijd naar Huis voor de Stad (rijden)" and gemaakt[0][2] == s and "[clara-reistijd:" in gemaakt[0][3]
-    assert gemaakt[1][0].startswith("Terugreis naar huis") and gemaakt[1][1] == s + dt.timedelta(hours=3)
+    assert gemaakt[0][0] == "🚗 Reistijd naar Huis voor de Stad (rijden)" and gemaakt[0][2] == s and "[clara-reistijd:" in gemaakt[0][3]
+    assert gemaakt[0][4] == "8"  # Grafiet, de standaardkleur voor reistijd
+    assert gemaakt[1][0].startswith("🚗 Terugreis naar huis") and gemaakt[1][1] == s + dt.timedelta(hours=3)
     # Komt het blok terug uit Google, dan staat de reis als ingepland.
     with db.pool.connection() as c:
         c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind, omschrijving)
                      VALUES (%s, 'primary', 'blok1', %s, %s, %s, %s)""", (k["id"], gemaakt[0][0], gemaakt[0][1], gemaakt[0][2], gemaakt[0][3]))
     assert "ingepland" in klant.get("/clara", headers=KOP).text
+    # Bestaande blokken bijwerken: icoon (uit het vervoer in de omschrijving) en de gekozen kleur.
+    gewijzigd = []
+    monkeypatch.setattr(bronnen, "google_wijzig", lambda tok, a, eid, titel=None, kleur=None: gewijzigd.append((eid, titel, kleur)))
+    klant.post("/clara/reistijd/instellingen", headers=FORM, data={"vertrekpunt": "Meester Strikstraat 25, 5708 GA Helmond",
+                                                                   "fiets_km": "6", "marge": "5", "reis_kleur": "11"})
+    with db.pool.connection() as c:
+        c.execute("UPDATE agenda_items SET titel = 'Reistijd naar Huis voor de Stad (rijden)' WHERE extern_id = 'blok1'")
+    assert "Icoon en kleur bijwerken" in klant.get("/clara/koppelingen", headers=KOP).text
+    r = klant.post("/clara/reistijd/bijwerken", headers=FORM, follow_redirects=False)
+    assert "1+reistijdblok+bijgewerkt" in r.headers["location"], r.headers["location"]
+    assert gewijzigd == [("blok1", "🚗 Reistijd naar Huis voor de Stad (rijden)", "11")]
     # Clara legt een vervoerskeuze vast als Martijn dat zegt.
     from app.clara import gesprek as g  # pylint: disable=import-outside-toplevel
     with db.pool.connection() as c:
@@ -671,3 +683,13 @@ def test_terugkeerlink_met_vraag_en_anker():
     assert _terug("/clara/koppelingen", fout="x").headers["location"] == "/clara/koppelingen?fout=x"
     assert _terug("/clara?g=3#gesprek", melding="ok").headers["location"] == "/clara?g=3&melding=ok#gesprek"
     assert _terug("/clara?g=3#gesprek").headers["location"] == "/clara?g=3#gesprek"
+
+
+def test_google_kleur_in_verzoek(monkeypatch):
+    verzoeken = []
+    monkeypatch.setattr(bronnen, "_http", lambda url, **kw: verzoeken.append((url, kw)) or {"id": "x"})
+    bronnen.google_maak("tok", "primary", "🚲 Reistijd", t(3, 9), t(3, 9, 20), "o", kleur="8")
+    bronnen.google_maak("tok", "primary", "Blok", t(3, 9), t(3, 10), "o", kleur="99")  # onbekende kleur: geen colorId
+    bronnen.google_wijzig("tok", "primary", "e1", titel="🚗 Nieuw", kleur="11")
+    assert verzoeken[0][1]["body"]["colorId"] == "8" and "colorId" not in verzoeken[1][1]["body"]
+    assert verzoeken[2][1]["methode"] == "PATCH" and verzoeken[2][1]["body"] == {"summary": "🚗 Nieuw", "colorId": "11"}

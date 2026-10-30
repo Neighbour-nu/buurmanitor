@@ -120,7 +120,7 @@ def vernieuwen(request: Request):
 
 # ---------------------------------------------------------------- iets in de agenda zetten (na een klik)
 
-def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True):
+def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True, kleur=None):
     try:
         kid, agenda_id = doel.split("|", 1)
         k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (int(kid),)).fetchone()
@@ -130,7 +130,7 @@ def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True):
         raise bronnen.BronFout("In deze agenda mag Clara niets zetten.")
     tok = sync.toegang(c, k)
     maak = bronnen.google_maak if k["soort"] == "google" else bronnen.ms_maak
-    extern = maak(tok, agenda_id, titel, start, eind, omschrijving)
+    extern = maak(tok, agenda_id, titel, start, eind, omschrijving, kleur=kleur)
     c.execute("INSERT INTO logboek (persona, actie, details) VALUES ('clara', 'afspraak gemaakt', %s)",
               (json.dumps({"koppeling": k["naam"], "titel": titel, "start": start.isoformat(), "eind": eind.isoformat()}),))
     if bijwerken:
@@ -260,11 +260,15 @@ def koppelingen_scherm(request: Request, melding: str = "", fout: str = ""):
         inst = sync.instellingen(c)
         regels = sync.verbergregels(c)
         vertrekpunt_label = (reis.adres(c, inst["vertrekpunt"], alleen_cache=True) or {}).get("label", "") if inst.get("vertrekpunt") else ""
+        reisblokken = c.execute("""SELECT count(*) AS n FROM agenda_items i JOIN agenda_koppelingen k ON k.id = i.koppeling_id
+                                   WHERE k.soort = 'google' AND i.eind > now() AND i.omschrijving LIKE %s""",
+                                (reis.MARKER + "%",)).fetchone()["n"]
         aantallen = {r["koppeling_id"]: r["n"] for r in c.execute(
             "SELECT koppeling_id, count(*) AS n FROM agenda_items WHERE start > now() GROUP BY koppeling_id").fetchall()}
     return templates.TemplateResponse("clara_koppelingen.html", ctx(
         request, "clara", koppelingen=lijst, aantallen=aantallen, inst=inst, melding=melding, fout=fout, regels=regels,
         reis_actief=reis.actief(), vertrekpunt_label=vertrekpunt_label, reis_dienst=reis.dienst_naam(),
+        kleuren=bronnen.GOOGLE_KLEUREN, reisblokken=reisblokken,
         kluis_ok=kluis.actief(), google_ok=bool(config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET),
         ms_ok=bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET), politiek_ok=config.POLITIEK_ACTIEF,
         beheerder_url=bronnen.ms_beheerder_url() if config.MS_CLIENT_ID else "", DAGEN=DAGEN,
@@ -453,7 +457,8 @@ async def reistijd_inplannen(request: Request):
                 if r["sleutel"] not in gekozen or r["ingepland"] or not r.get("minuten") or r["start"] < nu:
                     continue
                 doel = _doel_voor(doelen, r["afspraak"].get("domein"))
-                _maak(c, doel, reis.blok_titel(r), r["start"], r["eind"], reis.blok_omschrijving(r), bijwerken=False)
+                _maak(c, doel, reis.blok_titel(r), r["start"], r["eind"], reis.blok_omschrijving(r), bijwerken=False,
+                      kleur=str(sync.instellingen(c).get("reis_kleur", "8")))
                 gebruikt.add(int(doel.split("|")[0]))
                 klaar += 1
             for kid in gebruikt:
@@ -499,7 +504,8 @@ async def reistijd_instellingen(request: Request):
     with db.pool.connection() as c:
         inst = sync.instellingen(c)
         inst.update({"vertrekpunt": str(f.get("vertrekpunt", "")).strip()[:200], "fiets_km": getal("fiets_km", 6, 0, 50),
-                     "marge": int(getal("marge", 5, 0, 60))})
+                     "marge": int(getal("marge", 5, 0, 60)),
+                     "reis_kleur": str(f.get("reis_kleur", "8")) if str(f.get("reis_kleur", "8")) in bronnen.GOOGLE_KLEUREN else "8"})
         sync.instellingen_opslaan(c, inst)
         if not inst["vertrekpunt"]:
             return _terug("/clara/koppelingen", melding="Reistijd: vertrekpunt leeggemaakt.")
@@ -513,6 +519,34 @@ async def reistijd_instellingen(request: Request):
     if not gevonden:
         return _terug("/clara/koppelingen", fout=f"Dit adres vond {reis.dienst_naam()} niet. Probeer straat, huisnummer, postcode en plaats.")
     return _terug("/clara/koppelingen", melding=f"Vertrekpunt gevonden: {gevonden['label']}. Clara rekent de reistijd binnen vijf minuten uit.")
+
+
+@router.post("/clara/reistijd/bijwerken")
+async def reistijd_blokken_bijwerken(request: Request):
+    """Bestaande reistijdblokken in Google Agenda het icoon en de gekozen kleur geven (na een klik)."""
+    controleer_herkomst(request)
+
+    def doe():
+        with db.pool.connection() as c:
+            kleur = str(sync.instellingen(c).get("reis_kleur", "8"))
+            rijen = c.execute("""SELECT i.*, k.id AS kid FROM agenda_items i JOIN agenda_koppelingen k ON k.id = i.koppeling_id
+                                 WHERE k.soort = 'google' AND k.schrijven AND i.eind > now() AND i.omschrijving LIKE %s""",
+                              (reis.MARKER + "%",)).fetchall()
+            klaar, gebruikt = 0, set()
+            for r in rijen:
+                k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (r["kid"],)).fetchone()
+                bronnen.google_wijzig(sync.toegang(c, k), r["agenda_id"], r["extern_id"], titel=reis.titel_met_icoon(r), kleur=kleur)
+                gebruikt.add(r["kid"])
+                klaar += 1
+            for kid in gebruikt:
+                sync.synchroniseer(c, c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (kid,)).fetchone(), forceer=True)
+            return klaar
+    try:
+        n = await asyncio.to_thread(doe)
+    except (bronnen.BronFout, kluis.KluisFout) as e:
+        return _terug("/clara/koppelingen", fout=str(e))
+    return _terug("/clara/koppelingen", melding=f"{n} reistijdblok{'ken' if n != 1 else ''} bijgewerkt (icoon en kleur)." if n
+                  else "Er stonden geen komende reistijdblokken van Clara in Google Agenda.")
 
 
 def _adres_los(tekst):

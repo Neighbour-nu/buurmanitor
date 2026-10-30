@@ -191,13 +191,28 @@ def google_antwoord(toegang, agenda_id, extern_id, antwoord):
     _http(url + "?sendUpdates=all", headers=kop, methode="PATCH", body={"attendees": deelnemers}, soort="Google Agenda")
 
 
-def google_maak(toegang, agenda_id, titel, start, eind, omschrijving=""):
+# De vaste afspraakkleuren van Google Agenda (colorId).
+GOOGLE_KLEUREN = {"1": "Lavendel", "2": "Salie", "3": "Druif", "4": "Flamingo", "5": "Banaan", "6": "Mandarijn",
+                  "7": "Pauw", "8": "Grafiet", "9": "Bosbes", "10": "Basilicum", "11": "Tomaat"}
+
+
+def google_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None):
+    body = {"summary": titel, "description": omschrijving,
+            "start": {"dateTime": start.isoformat(), "timeZone": "Europe/Amsterdam"},
+            "end": {"dateTime": eind.isoformat(), "timeZone": "Europe/Amsterdam"}}
+    if kleur in GOOGLE_KLEUREN:
+        body["colorId"] = kleur
     j = _http(f"{GOOGLE_API}/calendars/{urllib.parse.quote(agenda_id, safe='')}/events",
-              headers={"Authorization": f"Bearer {toegang}"}, soort="Google Agenda", body={
-                  "summary": titel, "description": omschrijving,
-                  "start": {"dateTime": start.isoformat(), "timeZone": "Europe/Amsterdam"},
-                  "end": {"dateTime": eind.isoformat(), "timeZone": "Europe/Amsterdam"}})
+              headers={"Authorization": f"Bearer {toegang}"}, soort="Google Agenda", body=body)
     return j.get("id", "")
+
+
+def google_wijzig(toegang, agenda_id, extern_id, titel=None, kleur=None):
+    """Titel en/of kleur van een afspraak aanpassen (alleen voor blokken die Clara zelf heeft gemaakt)."""
+    body = {k: v for k, v in (("summary", titel), ("colorId", kleur if kleur in GOOGLE_KLEUREN else None)) if v}
+    if body:
+        _http(f"{GOOGLE_API}/calendars/{urllib.parse.quote(agenda_id, safe='')}/events/{urllib.parse.quote(extern_id, safe='')}",
+              headers={"Authorization": f"Bearer {toegang}"}, methode="PATCH", body=body, soort="Google Agenda")
 
 
 # ---------------------------------------------------------------- Microsoft 365 (Outlook)
@@ -293,7 +308,7 @@ def ms_antwoord(toegang, agenda_id, extern_id, antwoord):
           methode="POST", body={"sendResponse": True}, soort="Outlook")
 
 
-def ms_maak(toegang, agenda_id, titel, start, eind, omschrijving=""):
+def ms_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None):  # noqa: ARG001 (Outlook: geen vaste kleuren per afspraak)
     j = _http(f"{GRAPH}/me/calendars/{urllib.parse.quote(agenda_id, safe='')}/events",
               headers={"Authorization": f"Bearer {toegang}"}, soort="Outlook", body={
                   "subject": titel, "body": {"contentType": "text", "content": omschrijving}, "showAs": "busy",

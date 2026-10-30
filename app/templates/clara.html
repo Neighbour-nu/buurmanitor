@@ -52,7 +52,7 @@
                 {% for r in reizen %}
                   {% if r.vervoer == 'geen' %}<span class="noot">Geen reistijd (zelf gekozen)</span>
                   {% elif r.minuten %}
-                  <span class="reisregel {{ 'past-niet' if not r.past }}">{{ 'Heen' if r.richting == 'heen' else 'Terug' }}: {{ r.minuten }} min
+                  <span class="reisregel {{ 'past-niet' if not r.past }}">{{ {'ov': '🚆', 'auto': '🚗', 'fiets': '🚲', 'lopen': '🚶'}[r.vervoer] }} {{ 'Heen' if r.richting == 'heen' else 'Terug' }}: {{ r.minuten }} min
                     {{ {'fiets': 'fietsen', 'auto': 'rijden', 'ov': 'OV', 'lopen': 'lopen'}[r.vervoer] }}{% if r.geschat %} (schatting){% endif %}
                     {% if r.richting == 'heen' %}vanaf {{ r.van }}{% else %}naar huis{% endif %}
                     {% if r.ingepland %}<span class="label groen">ingepland</span>
