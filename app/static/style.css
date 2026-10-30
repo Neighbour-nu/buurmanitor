@@ -125,7 +125,7 @@ code { background: var(--ijs); padding: 1px 4px; border-radius: 3px; }
 .voet a { color: var(--zacht); }
 
 /* Clara: agenda */
-.clara-raster { display: grid; grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr); gap: 16px; align-items: start; }
+.clara-raster { display: grid; grid-template-columns: minmax(0, 11fr) minmax(300px, 9fr); gap: 16px; align-items: start; }
 @media (max-width: 900px) { .clara-raster { grid-template-columns: 1fr; } }
 .knoppen { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .knoppenrij { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0 2px; }
@@ -174,3 +174,14 @@ h2 form.inline { margin: 0; }
 .reisregel.past-niet { color: var(--rooddonker); }
 .vervoerkeuze { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 2px; }
 .vervoerkeuze select { width: auto; padding: 2px 6px; font-size: 13px; }
+
+/* gesprek met Clara rechtsboven: berichten in een vak met schuifbalk */
+.berichten { max-height: 460px; overflow-y: auto; padding-right: 4px; margin-bottom: 8px; }
+#gesprek .bericht.user { margin-left: 8%; }
+#gesprek .bericht.assistant { margin-right: 0; }
+.gesprek-kop { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.gesprekken { margin-top: 8px; }
+.gesprekken summary { font-size: 14px; }
+.gesprekregel { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--lijn); }
+.gesprekregel a { flex: 1 1 140px; }
+.gesprekregel form.inline { margin-left: 0; }

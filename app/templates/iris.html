@@ -22,9 +22,26 @@
   </section>
   <aside class="kaart">
     <form method="post" action="/iris/nieuw"><button class="knop" type="submit">Nieuw gesprek</button></form>
+    {% if gesprek %}
+    <div class="knoppenrij">
+      <form method="post" action="/gesprek/{{ gesprek.id }}/archief" class="inline"><input type="hidden" name="terug" value="/iris">
+        <button class="knop klein" type="submit">{{ 'Terughalen' if gesprek.gearchiveerd else 'Dit gesprek archiveren' }}</button></form>
+      <form method="post" action="/gesprek/{{ gesprek.id }}/weg" class="inline" onsubmit="return confirm('Dit gesprek definitief verwijderen?')">
+        <input type="hidden" name="terug" value="/iris"><button class="knop klein" type="submit">Verwijderen</button></form>
+    </div>
+    {% endif %}
     <h2>Eerdere gesprekken</h2>
-    {% for e in eerdere %}<p><a href="/iris?g={{ e.id }}">{{ e.titel or 'Gesprek' }}</a><br><span class="noot">{{ geleden(e.bijgewerkt) }}</span></p>
+    {% for e in eerdere %}<div class="gesprekregel"><a href="/iris?g={{ e.id }}">{{ e.titel or 'Gesprek' }}</a> <span class="noot">{{ geleden(e.bijgewerkt) }}</span>
+      <form method="post" action="/gesprek/{{ e.id }}/archief" class="inline"><input type="hidden" name="terug" value="/iris"><button class="knop klein" type="submit">Archiveren</button></form></div>
     {% else %}<p class="noot">Nog geen gesprekken.</p>{% endfor %}
+    {% if archief %}
+    <details class="gesprekken"><summary>Archief ({{ archief | length }})</summary>
+      {% for e in archief %}<div class="gesprekregel"><a href="/iris?g={{ e.id }}">{{ e.titel or 'Gesprek' }}</a> <span class="noot">{{ geleden(e.bijgewerkt) }}</span>
+        <form method="post" action="/gesprek/{{ e.id }}/archief" class="inline"><input type="hidden" name="terug" value="/iris"><button class="knop klein" type="submit">Terughalen</button></form>
+        <form method="post" action="/gesprek/{{ e.id }}/weg" class="inline" onsubmit="return confirm('Dit gesprek definitief verwijderen?')"><input type="hidden" name="terug" value="/iris"><button class="knop klein" type="submit">Verwijderen</button></form></div>
+      {% endfor %}
+    </details>
+    {% endif %}
   </aside>
 </div>
 {% endblock %}

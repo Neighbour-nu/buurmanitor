@@ -1,5 +1,9 @@
 {% extends "base.html" %}
-{% block titel %}Clara · Buurmanitor{% endblock %}
+{% block titel %}Clara · Buurmanitor<script>
+// Het gesprek staat in een vak met een schuifbalk: altijd het laatste bericht in beeld.
+(function () { const b = document.getElementById("berichten"); if (b) b.scrollTop = b.scrollHeight; })();
+</script>
+{% endblock %}
 {% macro tijd(a) -%}
   {%- if a.heledag %}hele dag{% else %}{{ a.start.astimezone(tz).strftime('%H.%M') }}–{{ a.eind.astimezone(tz).strftime('%H.%M') }}{% if a.geschat %}*{% endif %}{% endif -%}
 {%- endmacro %}
@@ -45,7 +49,7 @@
               {% if a.antwoord == 'geen' %}<span class="label">uitnodiging</span>{% endif %}
               {% if a.antwoord == 'afgewezen' %}<span class="label">afgewezen</span>{% endif %}
               <br><span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.koppeling }}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}</span>
-              {% if sleutel in onbekend_ids %}<div class="reis"><span class="noot">Reistijd onbekend: OpenRouteService vindt "{{ a.locatie }}" niet. Zet een volledig adres in de afspraak.</span></div>{% endif %}
+              {% if sleutel in onbekend_ids %}<div class="reis"><span class="noot">Reistijd onbekend: {{ reis_dienst }} vindt "{{ a.locatie }}" niet. Zet een volledig adres in de afspraak.</span></div>{% endif %}
               {% set reizen = per_afspraak.get(sleutel, []) %}
               {% if reizen %}
               <div class="reis">
@@ -82,6 +86,62 @@
   </section>
 
   <aside>
+    <section class="kaart" id="gesprek">
+      <h2><span>Vraag het Clara</span>
+        <form method="post" action="/clara/nieuw" class="inline"><button class="knop klein" type="submit">Nieuw gesprek</button></form></h2>
+      {% if not sleutel_ok %}<p class="item urgent">Er is nog geen Claude-sleutel ingesteld. Draai op de server: <code>bash ~/buurmanitor/app/deploy/sleutel.sh</code></p>{% endif %}
+      {% if gesprek %}
+      <div class="gesprek-kop">
+        <span class="noot">{{ gesprek.titel or 'Gesprek' }}{% if gesprek.gearchiveerd %} <span class="label">gearchiveerd</span>{% endif %}</span>
+        <span class="knoppen">
+          <form method="post" action="/gesprek/{{ gesprek.id }}/archief" class="inline"><input type="hidden" name="terug" value="/clara">
+            <button class="knop klein" type="submit">{{ 'Terughalen' if gesprek.gearchiveerd else 'Archiveren' }}</button></form>
+          <form method="post" action="/gesprek/{{ gesprek.id }}/weg" class="inline" onsubmit="return confirm('Dit gesprek definitief verwijderen?')">
+            <input type="hidden" name="terug" value="/clara"><button class="knop klein" type="submit">Verwijderen</button></form>
+        </span>
+      </div>
+      {% endif %}
+      <div class="berichten" id="berichten">
+      {% for b in berichten %}
+        <div class="bericht {{ b.rol }}" {% if loop.last %}id="laatste"{% endif %}><span class="noot">{{ 'Jij' if b.rol == 'user' else 'Clara' }} · {{ geleden(b.tijd) }}</span>
+          <div class="tekst">{{ b.tekst }}</div></div>
+      {% else %}
+        <p class="noot">Bijvoorbeeld: "Kan ik volgende week ergens twee uur schrijven aan het keepersverhaal?" of "Wat botst er deze week?"</p>
+      {% endfor %}
+      </div>
+      {% for v in voorstellen %}
+        <form method="post" action="/clara/voorstel/{{ v.id }}" class="voorstel">
+          <b>Voorstel:</b> {{ v.titel }}, {{ DAGEN[v.start.astimezone(tz).weekday()] }} {{ v.start.astimezone(tz).strftime('%d-%m %H.%M') }}–{{ v.eind.astimezone(tz).strftime('%H.%M') }}
+          {% if doelen %}<select name="doel">{% for w, label, d in doelen %}<option value="{{ w }}" {{ 'selected' if d == v.domein }}>{{ label }}</option>{% endfor %}</select>
+          <button class="knop klein vol" name="actie" value="inplannen">Zet in agenda</button>{% endif %}
+          <button class="knop klein" name="actie" value="weg">Niet doen</button>
+        </form>
+      {% endfor %}
+      <form method="post" action="/clara/vraag">
+        <input type="hidden" name="gesprek" value="{{ gesprek.id if gesprek else '' }}">
+        <textarea name="vraag" required placeholder="Vraag Clara iets over je agenda"></textarea>
+        <p><button class="knop vol" type="submit">Stuur</button> <span class="noot">Clara zet alleen iets in je agenda als jij op de knop drukt.</span></p>
+      </form>
+      {% if eerdere %}
+      <details class="gesprekken"><summary>Eerdere gesprekken ({{ eerdere | length }})</summary>
+        {% for e in eerdere %}
+        <div class="gesprekregel"><a href="/clara?g={{ e.id }}#gesprek">{{ e.titel or 'Gesprek' }}</a> <span class="noot">{{ geleden(e.bijgewerkt) }}</span>
+          <form method="post" action="/gesprek/{{ e.id }}/archief" class="inline"><input type="hidden" name="terug" value="/clara#gesprek"><button class="knop klein" type="submit">Archiveren</button></form>
+          <form method="post" action="/gesprek/{{ e.id }}/weg" class="inline" onsubmit="return confirm('Dit gesprek definitief verwijderen?')"><input type="hidden" name="terug" value="/clara#gesprek"><button class="knop klein" type="submit">Verwijderen</button></form></div>
+        {% endfor %}
+      </details>
+      {% endif %}
+      {% if archief %}
+      <details class="gesprekken"><summary>Archief ({{ archief | length }})</summary>
+        {% for e in archief %}
+        <div class="gesprekregel"><a href="/clara?g={{ e.id }}#gesprek">{{ e.titel or 'Gesprek' }}</a> <span class="noot">{{ geleden(e.bijgewerkt) }}</span>
+          <form method="post" action="/gesprek/{{ e.id }}/archief" class="inline"><input type="hidden" name="terug" value="/clara#gesprek"><button class="knop klein" type="submit">Terughalen</button></form>
+          <form method="post" action="/gesprek/{{ e.id }}/weg" class="inline" onsubmit="return confirm('Dit gesprek definitief verwijderen?')"><input type="hidden" name="terug" value="/clara#gesprek"><button class="knop klein" type="submit">Verwijderen</button></form></div>
+        {% endfor %}
+      </details>
+      {% endif %}
+    </section>
+
     <section class="kaart">
       <h2>Dubbele boekingen <span class="klein">komende 8 weken</span></h2>
       {% for x in conflicten %}
@@ -143,29 +203,4 @@
     </section>
   </aside>
 </div>
-
-<section class="kaart" id="gesprek">
-  <h2>Vraag het Clara
-    <form method="post" action="/clara/nieuw" class="inline"><button class="knop klein" type="submit">Nieuw gesprek</button></form></h2>
-  {% if not sleutel_ok %}<p class="item urgent">Er is nog geen Claude-sleutel ingesteld. Draai op de server: <code>bash ~/buurmanitor/app/deploy/sleutel.sh</code></p>{% endif %}
-  {% for b in berichten %}
-    <div class="bericht {{ b.rol }}" {% if loop.last %}id="laatste"{% endif %}><span class="noot">{{ 'Jij' if b.rol == 'user' else 'Clara' }} · {{ geleden(b.tijd) }}</span>
-      <div class="tekst">{{ b.tekst }}</div></div>
-  {% else %}
-    <p class="noot">Bijvoorbeeld: "Kan ik volgende week ergens twee uur schrijven aan het keepersverhaal?" of "Wat botst er deze week?"</p>
-  {% endfor %}
-  {% for v in voorstellen %}
-    <form method="post" action="/clara/voorstel/{{ v.id }}" class="voorstel">
-      <b>Voorstel:</b> {{ v.titel }}, {{ DAGEN[v.start.astimezone(tz).weekday()] }} {{ v.start.astimezone(tz).strftime('%d-%m %H.%M') }}–{{ v.eind.astimezone(tz).strftime('%H.%M') }}
-      {% if doelen %}<select name="doel">{% for w, label, d in doelen %}<option value="{{ w }}" {{ 'selected' if d == v.domein }}>{{ label }}</option>{% endfor %}</select>
-      <button class="knop klein vol" name="actie" value="inplannen">Zet in agenda</button>{% endif %}
-      <button class="knop klein" name="actie" value="weg">Niet doen</button>
-    </form>
-  {% endfor %}
-  <form method="post" action="/clara/vraag">
-    <input type="hidden" name="gesprek" value="{{ gesprek.id if gesprek else '' }}">
-    <textarea name="vraag" required placeholder="Vraag Clara iets over je agenda"></textarea>
-    <p><button class="knop vol" type="submit">Stuur</button> <span class="noot">Clara zet alleen iets in je agenda als jij op de knop drukt.</span></p>
-  </form>
-</section>
 {% endblock %}

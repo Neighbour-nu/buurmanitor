@@ -99,13 +99,14 @@ def vandaag(request: Request):
 @app.get("/iris", response_class=HTMLResponse)
 def iris_scherm(request: Request, g: int | None = None):
     if g is None:  # zonder keuze: het laatste gesprek
-        gesprek = q1("SELECT * FROM gesprekken WHERE persona = 'iris' ORDER BY bijgewerkt DESC LIMIT 1")
+        gesprek = q1("SELECT * FROM gesprekken WHERE persona = 'iris' AND NOT gearchiveerd ORDER BY bijgewerkt DESC LIMIT 1")
     else:  # g=0 is een nieuw, leeg gesprek
         gesprek = q1("SELECT * FROM gesprekken WHERE id = %s AND persona = 'iris'", (g,)) if g else None
     berichten = q("SELECT * FROM gesprek_berichten WHERE gesprek_id = %s ORDER BY id", (gesprek["id"],)) if gesprek else []
-    eerdere = q("SELECT id, titel, bijgewerkt FROM gesprekken WHERE persona = 'iris' ORDER BY bijgewerkt DESC LIMIT 15")
+    eerdere = q("SELECT id, titel, bijgewerkt FROM gesprekken WHERE persona = 'iris' AND NOT gearchiveerd ORDER BY bijgewerkt DESC LIMIT 15")
+    archief = q("SELECT id, titel, bijgewerkt FROM gesprekken WHERE persona = 'iris' AND gearchiveerd ORDER BY bijgewerkt DESC LIMIT 30")
     return templates.TemplateResponse("iris.html", ctx(
-        request, "iris", gesprek=gesprek, berichten=berichten, eerdere=eerdere, p=personas.get("iris"),
+        request, "iris", gesprek=gesprek, berichten=berichten, eerdere=eerdere, archief=archief, p=personas.get("iris"),
         sleutel_ok=bool(config.ANTHROPIC_API_KEY)))
 
 
@@ -120,6 +121,7 @@ async def iris_vraag(request: Request):
     if not gid:
         gid = q1("INSERT INTO gesprekken (persona, titel) VALUES ('iris', %s) RETURNING id", (" ".join(vraag.split())[:80],))["id"]
     uitvoeren("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'user', %s)", (gid, vraag))
+    uitvoeren("UPDATE gesprekken SET gearchiveerd = false WHERE id = %s", (gid,))
 
     def antwoorden():
         with db.pool.connection() as c:
@@ -130,6 +132,36 @@ async def iris_vraag(request: Request):
                           (gid, f"(Ik kan nu niet antwoorden: {e})"))
     await asyncio.to_thread(antwoorden)
     return RedirectResponse(f"/iris?g={gid}#laatste", status_code=303)
+
+
+def _terug_gesprek(form, persona):
+    terug = str(form.get("terug") or f"/{persona}")
+    return terug if terug.startswith(("/clara", "/iris")) and "//" not in terug else f"/{persona}"
+
+
+@app.post("/gesprek/{gid}/archief")
+async def gesprek_archief(request: Request, gid: int):
+    """Gesprek archiveren, of uit het archief terughalen."""
+    controleer_herkomst(request)
+    form = await request.form()
+    g = q1("UPDATE gesprekken SET gearchiveerd = NOT gearchiveerd WHERE id = %s RETURNING persona, gearchiveerd", (gid,))
+    if not g:
+        raise HTTPException(404)
+    terug = _terug_gesprek(form, g["persona"])
+    return RedirectResponse(terug if g["gearchiveerd"] else f"/{g['persona']}?g={gid}", status_code=303)
+
+
+@app.post("/gesprek/{gid}/weg")
+async def gesprek_weg(request: Request, gid: int):
+    """Gesprek definitief verwijderen, met alle berichten. Open voorstellen uit dat gesprek vervallen."""
+    controleer_herkomst(request)
+    form = await request.form()
+    g = q1("SELECT persona FROM gesprekken WHERE id = %s", (gid,))
+    if not g:
+        raise HTTPException(404)
+    uitvoeren("UPDATE agenda_voorstellen SET status = 'afgewezen' WHERE gesprek_id = %s AND status = 'open'", (gid,))
+    uitvoeren("DELETE FROM gesprekken WHERE id = %s", (gid,))
+    return RedirectResponse(_terug_gesprek(form, g["persona"]), status_code=303)
 
 
 @app.post("/iris/nieuw")

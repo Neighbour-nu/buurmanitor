@@ -693,3 +693,42 @@ def test_google_kleur_in_verzoek(monkeypatch):
     bronnen.google_wijzig("tok", "primary", "e1", titel="🚗 Nieuw", kleur="11")
     assert verzoeken[0][1]["body"]["colorId"] == "8" and "colorId" not in verzoeken[1][1]["body"]
     assert verzoeken[2][1]["methode"] == "PATCH" and verzoeken[2][1]["body"] == {"summary": "🚗 Nieuw", "colorId": "11"}
+
+
+def test_gesprekken_archiveren_en_verwijderen(klant):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM gesprekken WHERE persona IN ('clara', 'iris')")
+        oud = c.execute("INSERT INTO gesprekken (persona, titel, bijgewerkt) VALUES ('clara', 'Oud gesprek', now() - interval '1 day') RETURNING id").fetchone()["id"]
+        nieuw = c.execute("INSERT INTO gesprekken (persona, titel) VALUES ('clara', 'Nieuw gesprek') RETURNING id").fetchone()["id"]
+        c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'user', 'Vraag in het nieuwe gesprek')", (nieuw,))
+        s = _nu_dag(3, 9)
+        vid = c.execute("""INSERT INTO agenda_voorstellen (gesprek_id, titel, start, eind) VALUES (%s, 'Blok', %s, %s) RETURNING id""",
+                        (nieuw, s, s + dt.timedelta(hours=1))).fetchone()["id"]
+        iris = c.execute("INSERT INTO gesprekken (persona, titel) VALUES ('iris', 'Dagstart') RETURNING id").fetchone()["id"]
+    pagina = klant.get("/clara", headers=KOP).text
+    # Het gesprek staat rechtsboven, boven de dubbele boekingen.
+    assert pagina.index('id="gesprek"') < pagina.index("Dubbele boekingen") < pagina.index('id="uitnodigingen"') < pagina.index('id="vrij"')
+    assert "Vraag in het nieuwe gesprek" in pagina and "Eerdere gesprekken (1)" in pagina and "Oud gesprek" in pagina
+    # Archiveren: uit de lijst en niet meer het standaardgesprek; terug te halen.
+    assert klant.post(f"/gesprek/{nieuw}/archief", headers=KOP, data={"terug": "/clara"}).status_code == 403  # zonder herkomst
+    r = klant.post(f"/gesprek/{nieuw}/archief", headers=FORM, data={"terug": "/clara"}, follow_redirects=False)
+    assert r.headers["location"] == "/clara"
+    pagina = klant.get("/clara", headers=KOP).text
+    assert "Vraag in het nieuwe gesprek" not in pagina and "Archief (1)" in pagina
+    assert "gearchiveerd" in klant.get(f"/clara?g={nieuw}", headers=KOP).text
+    r = klant.post(f"/gesprek/{nieuw}/archief", headers=FORM, data={"terug": "/clara"}, follow_redirects=False)
+    assert r.headers["location"] == f"/clara?g={nieuw}"
+    # Verwijderen: gesprek en berichten weg, open voorstel vervalt. Een vreemd terugadres wordt genegeerd.
+    r = klant.post(f"/gesprek/{nieuw}/weg", headers=FORM, data={"terug": "https://kwaad.nl"}, follow_redirects=False)
+    assert r.headers["location"] == "/clara"
+    with db.pool.connection() as c:
+        assert not c.execute("SELECT 1 FROM gesprekken WHERE id = %s", (nieuw,)).fetchone()
+        assert not c.execute("SELECT 1 FROM gesprek_berichten WHERE gesprek_id = %s", (nieuw,)).fetchone()
+        assert c.execute("SELECT status FROM agenda_voorstellen WHERE id = %s", (vid,)).fetchone()["status"] == "afgewezen"
+    # Iris kan het ook.
+    assert "Dit gesprek archiveren" in klant.get("/iris", headers=KOP).text
+    klant.post(f"/gesprek/{iris}/archief", headers=FORM, data={"terug": "/iris"})
+    assert "Archief (1)" in klant.get("/iris", headers=KOP).text
+    klant.post(f"/gesprek/{iris}/weg", headers=FORM, data={"terug": "/iris"})
+    assert "Nog geen gesprekken" in klant.get("/iris", headers=KOP).text

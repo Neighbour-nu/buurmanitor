@@ -51,6 +51,8 @@ MIGRATIES = [
         tekst text NOT NULL,
         tijd timestamptz NOT NULL DEFAULT now())""",
     "CREATE INDEX IF NOT EXISTS gesprek_berichten_gesprek ON gesprek_berichten (gesprek_id, id)",
+    # Gesprekken kun je archiveren (uit de lijst, wel terug te halen) of verwijderen.
+    "ALTER TABLE gesprekken ADD COLUMN IF NOT EXISTS gearchiveerd boolean NOT NULL DEFAULT false",
     # Logboek: wat een persona deed of voorstelde, en wat Martijn besloot.
     """CREATE TABLE IF NOT EXISTS logboek (
         id serial PRIMARY KEY,

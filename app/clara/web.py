@@ -62,12 +62,16 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         komend = sync.afspraken(c, nu, nu + dt.timedelta(days=56))
         vrij = None
         if g is None:
-            gs = c.execute("SELECT * FROM gesprekken WHERE persona = 'clara' ORDER BY bijgewerkt DESC LIMIT 1").fetchone()
+            gs = c.execute("SELECT * FROM gesprekken WHERE persona = 'clara' AND NOT gearchiveerd ORDER BY bijgewerkt DESC LIMIT 1").fetchone()
         else:
             gs = c.execute("SELECT * FROM gesprekken WHERE id = %s AND persona = 'clara'", (g,)).fetchone() if g else None
         berichten = c.execute("SELECT * FROM gesprek_berichten WHERE gesprek_id = %s ORDER BY id", (gs["id"],)).fetchall() if gs else []
         voorstellen = c.execute("SELECT * FROM agenda_voorstellen WHERE gesprek_id = %s AND status = 'open' ORDER BY start",
                                 (gs["id"],)).fetchall() if gs else []
+        eerdere = c.execute("""SELECT id, titel, bijgewerkt FROM gesprekken WHERE persona = 'clara' AND NOT gearchiveerd
+                               AND id <> %s ORDER BY bijgewerkt DESC LIMIT 15""", (gs["id"] if gs else 0,)).fetchall()
+        archief = c.execute("""SELECT id, titel, bijgewerkt FROM gesprekken WHERE persona = 'clara' AND gearchiveerd
+                               ORDER BY bijgewerkt DESC LIMIT 30""").fetchall()
         verborgen = sync.verborgen_aantal(c, nu, nu + dt.timedelta(days=56))
         try:
             plan = sync.reisplan(c, van, van + dt.timedelta(days=7))
@@ -100,9 +104,10 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         conflict_ids=conflict_ids, krap_ids=krap_ids, uitnodigingen=analyse.uitnodigingen(komend, nu),
         koppelingen=koppelingen, doelen=_schrijfdoelen(koppelingen), vrij=vrij, duur=duur, dagen=dagen, tz=tz,
         DAGEN=DAGEN, gesprek=gs, berichten=berichten, voorstellen=voorstellen, melding=melding, fout=fout,
+        eerdere=eerdere, archief=archief,
         kluis_ok=kluis.actief(), sleutel_ok=bool(config.ANTHROPIC_API_KEY), inst=inst,
         domeinnaam=dict(DOMEINEN), verborgen=verborgen, plan=plan, per_afspraak=per_afspraak, open_reis=open_reis,
-        reis_actief=reis.actief(), is_reisblok=reis.is_reisblok, onbekend_ids=onbekend_ids))
+        reis_actief=reis.actief(), is_reisblok=reis.is_reisblok, onbekend_ids=onbekend_ids, reis_dienst=reis.dienst_naam()))
 
 
 def _reis_als_bezet(plan):
@@ -233,6 +238,7 @@ async def vraag(request: Request):
             gid = c.execute("INSERT INTO gesprekken (persona, titel) VALUES ('clara', %s) RETURNING id",
                             (" ".join(tekst.split())[:80],)).fetchone()["id"]
         c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'user', %s)", (gid, tekst))
+        c.execute("UPDATE gesprekken SET gearchiveerd = false WHERE id = %s", (gid,))
 
     def antwoorden():
         with db.pool.connection() as c:
