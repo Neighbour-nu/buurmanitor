@@ -21,8 +21,12 @@ DOMEINEN = config.DOMEINEN
 
 
 def _terug(pad, **melding):
+    """Terug naar een pagina, met een melding erbij. Het pad mag zelf al een vraag (?week=1) of anker (#gesprek) hebben."""
     from urllib.parse import urlencode  # pylint: disable=import-outside-toplevel
-    return RedirectResponse(pad + ("?" + urlencode(melding) if melding else ""), status_code=303)
+    pad, _, anker = pad.partition("#")
+    if melding:
+        pad += ("&" if "?" in pad else "?") + urlencode(melding)
+    return RedirectResponse(pad + (f"#{anker}" if anker else ""), status_code=303)
 
 
 def _week_start(week):

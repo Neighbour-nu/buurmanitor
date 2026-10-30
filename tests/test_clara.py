@@ -591,7 +591,8 @@ def test_reistijd_in_het_scherm_en_inplannen(klant, monkeypatch):
     pagina = klant.get("/clara?week=0", headers=KOP).text
     assert "Heen: 25 min" in pagina and "fietsen" in pagina and "Reistijd inplannen" in pagina and "automatisch (fiets)" in pagina
     r = klant.post(f"/clara/vervoer/{iid}", headers=FORM, data={"vervoer": "auto", "week": "0"}, follow_redirects=False)
-    assert "auto" in r.headers["location"]
+    assert "auto" in r.headers["location"] and r.headers["location"].count("?") == 1
+    assert klant.get(r.headers["location"], headers=KOP).status_code == 200
     pagina = klant.get("/clara", headers=KOP).text
     assert "rijden" in pagina and 'value="auto" selected' in pagina
 
@@ -602,7 +603,7 @@ def test_reistijd_in_het_scherm_en_inplannen(klant, monkeypatch):
         c.execute("UPDATE agenda_koppelingen SET geheim = %s WHERE id = %s", (kluis.sluit("ref"), k["id"]))
     r = klant.post("/clara/reistijd", headers=FORM, data={"week": "0", "sleutel": [f"{k['id']}:raad1:heen", f"{k['id']}:raad1:terug"]},
                    follow_redirects=False)
-    assert "2+reistijdblokken" in r.headers["location"], r.headers["location"]
+    assert r.headers["location"].startswith("/clara?week=0&melding=2+reistijdblokken") and r.headers["location"].count("?") == 1
     assert gemaakt[0][0] == "Reistijd naar Huis voor de Stad (rijden)" and gemaakt[0][2] == s and "[clara-reistijd:" in gemaakt[0][3]
     assert gemaakt[1][0].startswith("Terugreis naar huis") and gemaakt[1][1] == s + dt.timedelta(hours=3)
     # Komt het blok terug uit Google, dan staat de reis als ingepland.
@@ -662,3 +663,11 @@ def test_google_maps_met_ov_volgens_dienstregeling(klant, monkeypatch):
         aantal = len(verzoeken)
         assert reis.reistijd(c, THUIS, plek["punt"], "ov", tijd=nacht) == (120, True) and len(verzoeken) == aantal
         assert "Google Maps" in klant.get("/clara/koppelingen", headers=KOP).text
+
+
+def test_terugkeerlink_met_vraag_en_anker():
+    from app.clara.web import _terug  # pylint: disable=import-outside-toplevel
+    assert _terug("/clara?week=0", melding="2 blokken").headers["location"] == "/clara?week=0&melding=2+blokken"
+    assert _terug("/clara/koppelingen", fout="x").headers["location"] == "/clara/koppelingen?fout=x"
+    assert _terug("/clara?g=3#gesprek", melding="ok").headers["location"] == "/clara?g=3&melding=ok#gesprek"
+    assert _terug("/clara?g=3#gesprek").headers["location"] == "/clara?g=3#gesprek"
