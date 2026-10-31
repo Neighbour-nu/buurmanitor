@@ -256,3 +256,5 @@ html:not(.met-tabs) .tabs { display: none; }
 details.bijlage { margin: 6px 0; } details.bijlage summary { cursor: pointer; }
 form.voorstel textarea { width: 100%; margin: 6px 0; font: inherit; }
 form.voorstel input[type=text] { width: auto; min-width: 60%; }
+form.verplaats { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+form.verplaats select { width: auto; flex: 0 1 260px; font-size: 13px; padding: 2px 6px; }

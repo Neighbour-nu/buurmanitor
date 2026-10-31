@@ -206,7 +206,10 @@ def sorteren(c, k, nieuw):
         except claude.ClaudeFout as e:
             fout = str(e)
             break
+    regels = {r["van_adres"]: r["groep"] for r in c.execute("SELECT * FROM post_afzenderregels")} if nieuw else {}
     for b in nieuw:
+        if b["van_adres"] in regels:
+            c.execute("UPDATE post_berichten SET groep_handmatig = %s WHERE id = %s", (regels[b["van_adres"]], b["id"]))
         if b["id"] not in oordelen:
             oordelen[b["id"]], door[b["id"]] = op_regels(b), "regels"
         o = oordelen[b["id"]]
@@ -219,8 +222,11 @@ def sorteren(c, k, nieuw):
 def melden(c, k, nieuw, oordelen, nu=None):
     """Een melding voor nieuwe berichten die Claude 'hoog' vindt (alleen van het laatste etmaal, niet bij het eerste koppelen)."""
     nu = nu or dt.datetime.now(config.TZ)
+    regels = {r["van_adres"]: r["groep"] for r in c.execute("SELECT * FROM post_afzenderregels")} if nieuw else {}
     for b in nieuw:
         o = oordelen.get(b["id"]) or {}
+        if regels.get(b["van_adres"], "actie") != "actie":
+            continue
         if o.get("prioriteit") == "hoog" and o.get("categorie") in ("actie", "antwoord") and nu - b["ontvangen"] < dt.timedelta(days=1):
             meldingen.melden(c, "belangrijk", "bram", f"Mail van {b['van_naam']}: {b['onderwerp']}"[:200],
                              f"{o['regel']} Voorstel: {o['voorstel']}.", f"/bram#b{b['id']}",

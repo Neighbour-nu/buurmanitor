@@ -103,6 +103,9 @@ def test_groepen():
     assert web.groep(b | {"prioriteit": "hoog"}) == "actie"
     assert web.groep(b | {"categorie": "nieuwsbrief"}) == "weg"
     assert web.groep(b | {"categorie": "info", "actie": "archiveren"}) == "weg"
+    assert web.groep(b | {"categorie": "nieuwsbrief", "groep_handmatig": "actie"}) == "actie"  # zelf verplaatst gaat voor
+    assert web.groep(b | {"prioriteit": "hoog", "groep_handmatig": "weg"}) == "weg"
+    assert web.groep(b | {"groep_handmatig": "onzin"}) == "lezen"
 
 
 def test_koppeladressen_en_toestemming():
@@ -510,3 +513,53 @@ def test_verwijderen_en_uitschrijven(klant, monkeypatch):
     assert "2+berichten+verwijderd" in r.headers["location"] and weg == ["n5", "n6", "n1"]
     with db.pool.connection() as c:
         assert {r["extern_id"] for r in c.execute("SELECT extern_id FROM post_berichten WHERE status = 'weg'")} == {"n1", "n5", "n6"}
+
+
+def test_verplaatsen_en_afzenderregels(klant, monkeypatch):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    from app.clara import kluis  # pylint: disable=import-outside-toplevel
+    gmail = NepGmail()
+    gmail.installeer(monkeypatch)
+    monkeypatch.setattr(claude, "gesprek", lambda *a, **kw: pytest.fail("Claude staat uit"))
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM post_koppelingen")
+        c.execute("DELETE FROM post_afzenderregels")
+        c.execute("DELETE FROM meldingen WHERE bron = 'bram'")
+        kid = c.execute("INSERT INTO post_koppelingen (soort, naam, account, geheim, laatst) VALUES ('google', 'Neighbour', 'm@neighbour.nu', %s, now()) RETURNING id",
+                        (kluis.sluit("r"),)).fetchone()["id"]
+        ids = {}
+        for n, adres, cat in (("v1", "club@hcqz.nl", "nieuwsbrief"), ("v2", "club@hcqz.nl", "nieuwsbrief"), ("v3", "piet@x.nl", "antwoord")):
+            ids[n] = c.execute("""INSERT INTO post_berichten (koppeling_id, extern_id, van_naam, van_adres, onderwerp, ontvangen, categorie)
+                                  VALUES (%s, %s, %s, %s, %s, now(), %s) RETURNING id""", (kid, n, adres, adres, f"Onderwerp {n}", cat)).fetchone()["id"]
+
+    def groep_op_scherm(onderwerp):
+        p = klant.get("/bram", headers=KOP).text
+        return next(g for g in ("actie", "lezen", "weg") if onderwerp in p.split(f'id="{g}"')[1].split("</section>")[0])
+
+    assert groep_op_scherm("Onderwerp v1") == "weg" and groep_op_scherm("Onderwerp v3") == "actie"
+    assert "Altijd Actie nodig voor club@hcqz.nl" in klant.get("/bram", headers=KOP).text
+    # Eén bericht van Kan weg naar Actie nodig, en een ander de andere kant op.
+    r = klant.post(f"/bram/bericht/{ids['v1']}/verplaats", headers=FORM, data={"groep": "actie"}, follow_redirects=False)
+    assert r.headers["location"].endswith("#actie") and "Actie+nodig" in r.headers["location"]
+    klant.post(f"/bram/bericht/{ids['v3']}/verplaats", headers=FORM, data={"groep": "weg"})
+    assert groep_op_scherm("Onderwerp v1") == "actie" and groep_op_scherm("Onderwerp v2") == "weg" and groep_op_scherm("Onderwerp v3") == "weg"
+    assert klant.post(f"/bram/bericht/{ids['v1']}/verplaats", headers=FORM, data={"groep": "onzin"}).status_code == 400
+    assert klant.post(f"/bram/bericht/{ids['v1']}/verplaats", headers=KOP, data={"groep": "weg"}).status_code == 403
+    # Altijd voor deze afzender: ook de andere mail van dat adres, en nieuwe mail die binnenkomt.
+    r = klant.post(f"/bram/bericht/{ids['v2']}/verplaats", headers=FORM, data={"groep": "actie|altijd", "terug": "bericht"}, follow_redirects=False)
+    assert r.headers["location"].startswith(f"/bram/bericht/{ids['v2']}?melding=") and "voortaan" in r.headers["location"]
+    assert groep_op_scherm("Onderwerp v2") == "actie"
+    gmail.zet(gmail_ruw("v4", "HCQZ <club@hcqz.nl>", "Nieuwsbrief november", "Nieuws", labels=("INBOX", "UNREAD", "CATEGORY_PROMOTIONS")))
+    with db.pool.connection() as c:
+        sync.taak_post(c)
+        assert c.execute("SELECT groep_handmatig FROM post_berichten WHERE extern_id = 'v4'").fetchone()["groep_handmatig"] == "actie"
+    assert groep_op_scherm("Nieuwsbrief november") == "actie"
+    pagina = klant.get(f"/bram/bericht/{ids['v2']}", headers=KOP).text
+    assert "Staat bij <b>Actie nodig</b> (zelf verplaatst)" in pagina
+    # De regel staat bij de instellingen en kan weg.
+    assert "club@hcqz.nl</b> → Actie nodig" in klant.get("/bram/instellingen", headers=KOP).text
+    klant.post("/bram/afzenderregel/weg", headers=FORM, data={"van_adres": "club@hcqz.nl"})
+    with db.pool.connection() as c:
+        assert not c.execute("SELECT 1 FROM post_afzenderregels").fetchone()
+    vandaag = klant.get("/", headers=KOP).text  # v1 tot v3 staan niet in de nagebootste inbox en zijn dus weg
+    assert 'href="/bram#actie">1 bericht</a> vraagt om actie' in vandaag

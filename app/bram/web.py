@@ -24,6 +24,7 @@ DOMEINEN = config.DOMEINEN
 GROEPEN = (("actie", "Actie nodig", "Hier wordt iets van je gevraagd."),
            ("lezen", "Lezen", "Persoonlijk, inhoudelijk of ter info."),
            ("weg", "Kan weg", "Nieuwsbrieven en automatische berichten. Vink uit wat je wilt houden."))
+GROEP_NAMEN = {g[0]: g[1] for g in GROEPEN}
 
 
 def _terug(pad, **melding):
@@ -34,7 +35,9 @@ def _terug(pad, **melding):
 
 
 def groep(b):
-    """In welke groep van de postkamer een bericht staat. Pure functie."""
+    """In welke groep van de postkamer een bericht staat: zelf verplaatst gaat voor het oordeel van Bram. Pure functie."""
+    if b.get("groep_handmatig") in GROEP_NAMEN:
+        return b["groep_handmatig"]
     if b["categorie"] in ("actie", "antwoord") or b["prioriteit"] == "hoog":
         return "actie"
     if b["categorie"] in ("nieuwsbrief", "automatisch") or b["actie"] == "archiveren":
@@ -101,7 +104,7 @@ def bericht_scherm(request: Request, bid: int, melding: str = "", fout: str = ""
         except Exception as e:  # noqa: BLE001  (dan toont het scherm wat Bram al weet)
             volledig, lees_fout = None, str(e)
     return templates.TemplateResponse("bram_bericht.html", ctx(
-        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, lees_fout=lees_fout, berichten=berichten,
+        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, groep_nu=groep(b), groepen=GROEPEN, lees_fout=lees_fout, berichten=berichten,
         voorstellen=voorstellen, klaar=klaar, doelen=clara_web._schrijfdoelen(agendas),  # pylint: disable=protected-access
         eigen=clara_web._reisdoelen(agendas), melding=melding, fout=fout, tz=config.TZ,  # pylint: disable=protected-access
         DAGEN=DAGEN, CATEGORIEEN=sync.CATEGORIEEN, sleutel_ok=bool(config.ANTHROPIC_API_KEY),
@@ -187,6 +190,41 @@ async def voorstel(request: Request, vid: int):
     return _terug(terug, melding=uitslag)
 
 
+@router.post("/bram/bericht/{bid:int}/verplaats")
+async def verplaats(request: Request, bid: int):
+    """Een bericht naar een andere groep zetten (Actie nodig, Lezen, Kan weg); met 'altijd' ook voortaan voor die afzender."""
+    controleer_herkomst(request)
+    f = await request.form()
+    keuze = str(f.get("groep", ""))
+    naar, altijd = keuze.removesuffix("|altijd"), keuze.endswith("|altijd")
+    if naar not in GROEP_NAMEN:
+        raise HTTPException(400)
+    with db.pool.connection() as c:
+        b = _bericht(c, bid)
+        c.execute("UPDATE post_berichten SET groep_handmatig = %s WHERE id = %s", (naar, bid))
+        tekst = f"'{b['onderwerp'][:60]}' staat nu bij {GROEP_NAMEN[naar]}."
+        if altijd and b["van_adres"]:
+            c.execute("""INSERT INTO post_afzenderregels (van_adres, groep) VALUES (%s, %s)
+                         ON CONFLICT (van_adres) DO UPDATE SET groep = EXCLUDED.groep, aangemaakt = now()""", (b["van_adres"], naar))
+            n = c.execute("UPDATE post_berichten SET groep_handmatig = %s WHERE van_adres = %s AND status = 'open' RETURNING id",
+                          (naar, b["van_adres"])).fetchall()
+            tekst = f"Mail van {b['van_adres']} staat voortaan bij {GROEP_NAMEN[naar]} ({len(n)} nu)."
+    if f.get("terug") == "bericht":
+        return _terug(f"/bram/bericht/{bid}", melding=tekst)
+    terug = "/bram" + (f"?account={int(f.get('account') or 0)}" if f.get("account") not in (None, "", "0") else "")
+    return _terug(f"{terug}#{naar}", melding=tekst)
+
+
+@router.post("/bram/afzenderregel/weg")
+async def afzenderregel_weg(request: Request):
+    controleer_herkomst(request)
+    f = await request.form()
+    adres = str(f.get("van_adres", ""))
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM post_afzenderregels WHERE van_adres = %s", (adres,))
+    return _terug("/bram/instellingen#regels", melding=f"Regel voor {adres} weggehaald. Nieuwe mail van dit adres sorteert Bram weer zelf.")
+
+
 @router.post("/bram/bericht/{bid:int}/{actie}")
 async def bericht_actie(request: Request, bid: int, actie: str):
     """Archiveren, gelezen markeren of een label zetten, na Martijns klik."""
@@ -250,8 +288,9 @@ def instellingen(request: Request, melding: str = "", fout: str = ""):
         koppelingen = sync.koppelingen(c)
         aantal = {r["koppeling_id"]: r["n"] for r in c.execute(
             "SELECT koppeling_id, count(*) AS n FROM post_berichten WHERE status = 'open' GROUP BY koppeling_id")}
+        regels = c.execute("SELECT * FROM post_afzenderregels ORDER BY van_adres").fetchall()
     return templates.TemplateResponse("bram_instellingen.html", ctx(
-        request, "bram", koppelingen=koppelingen, aantal=aantal, melding=melding, fout=fout, kluis_ok=kluis.actief(),
+        request, "bram", koppelingen=koppelingen, aantal=aantal, regels=regels, groep_namen=GROEP_NAMEN, melding=melding, fout=fout, kluis_ok=kluis.actief(),
         google_ok=bool(config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET),
         ms_ok=bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET), sleutel_ok=bool(config.ANTHROPIC_API_KEY),
         domeinnaam=dict(DOMEINEN)))

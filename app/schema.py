@@ -261,6 +261,13 @@ MIGRATIES = [
     # Uitschrijven: wanneer Bram het deed, of de link als het alleen via de website van de afzender kan.
     "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS uitgeschreven timestamptz",
     "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS uitschrijf_link text NOT NULL DEFAULT ''",
+    # Zelf verplaatst (actie, lezen of weg) gaat voor het oordeel van Bram. Een afzenderregel doet dat voortaan
+    # vanzelf voor elke nieuwe mail van dat adres.
+    "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS groep_handmatig text NOT NULL DEFAULT ''",
+    """CREATE TABLE IF NOT EXISTS post_afzenderregels (
+        van_adres text PRIMARY KEY,
+        groep text NOT NULL CHECK (groep IN ('actie', 'lezen', 'weg')),
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
     """CREATE TABLE IF NOT EXISTS post_voorstellen (
         id serial PRIMARY KEY,
         gesprek_id int REFERENCES gesprekken(id) ON DELETE CASCADE,

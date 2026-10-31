@@ -27,6 +27,14 @@
 <div class="clara-raster">
   <section class="kaart">
     <h2>Het bericht</h2>
+    <form method="post" action="/bram/bericht/{{ b.id }}/verplaats" class="verplaats"><input type="hidden" name="terug" value="bericht">
+      <span class="noot">Staat bij <b>{{ (groepen | selectattr(0, 'equalto', groep_nu) | first)[1] }}</b>{% if b.groep_handmatig %} (zelf verplaatst){% endif %}.</span>
+      <select name="groep" onchange="if (this.value) this.form.submit()" aria-label="Verplaats dit bericht">
+        <option value="">Verplaats naar…</option>
+        {% for g, naam, _ in groepen if g != groep_nu %}<option value="{{ g }}">{{ naam }}</option>{% endfor %}
+        {% if b.van_adres %}{% for g, naam, _ in groepen %}<option value="{{ g }}|altijd">Altijd {{ naam }} voor {{ b.van_adres }}</option>{% endfor %}{% endif %}
+      </select><noscript><button class="knop klein">Verplaats</button></noscript>
+    </form>
     {% if b.regel %}<p class="bram-regel"><b>Bram:</b> {{ b.regel }}{% if b.voorstel %} <span class="bram-voorstel">→ {{ b.voorstel }}</span>{% endif %}</p>{% endif %}
     {% if volledig %}
       <p class="noot">Aan: {{ volledig.aan }}{% if volledig.cc %} · Cc: {{ volledig.cc }}{% endif %}</p>

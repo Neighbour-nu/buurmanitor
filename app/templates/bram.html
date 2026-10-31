@@ -4,7 +4,7 @@
   {%- set d = t.astimezone(tz) -%}
   {%- if d.date() == nu.date() %}{{ d.strftime('%H.%M') }}{% elif (nu.date() - d.date()).days < 7 %}{{ DAGEN[d.weekday()][:2] }} {{ d.strftime('%H.%M') }}{% else %}{{ d.strftime('%d-%m') }}{% endif -%}
 {%- endmacro %}
-{% macro bericht(b, met_vinkje=false) %}
+{% macro bericht(b, met_vinkje=false, huidig='') %}
   <div class="post {{ 'ongelezen' if not b.gelezen }} {{ b.domein }} {{ 'hoog' if b.prioriteit == 'hoog' }}" id="b{{ b.id }}">
     {% if met_vinkje %}<input type="checkbox" name="bericht" value="{{ b.id }}" form="kan-weg" checked aria-label="Archiveren: {{ b.onderwerp }}">{% endif %}
     <div class="post-inhoud">
@@ -29,6 +29,15 @@
         <select name="label" aria-label="Label voor {{ b.onderwerp }}">{% for w, n in labels[b.koppeling_id] %}<option value="{{ w }}">{{ n }}</option>{% endfor %}</select>
         <button class="knop klein" formaction="/bram/bericht/{{ b.id }}/label">{{ 'Label' if b.soort == 'google' else 'Categorie' }}</button>
         {% endif %}
+      </form>
+      <form method="post" action="/bram/bericht/{{ b.id }}/verplaats" class="verplaats">
+        <input type="hidden" name="account" value="{{ account }}">
+        <select name="groep" onchange="if (this.value) this.form.submit()" aria-label="Verplaats {{ b.onderwerp }}">
+          <option value="">Verplaats naar…</option>
+          {% for g, naam, _ in groepen if g != huidig %}<option value="{{ g }}">{{ naam }}</option>{% endfor %}
+          {% if b.van_adres %}{% for g, naam, _ in groepen %}<option value="{{ g }}|altijd">Altijd {{ naam }} voor {{ b.van_adres }}</option>{% endfor %}{% endif %}
+        </select><noscript><button class="knop klein">Verplaats</button></noscript>
+        {% if b.groep_handmatig %}<span class="noot">zelf verplaatst</span>{% endif %}
       </form>
     </div>
   </div>
@@ -62,7 +71,7 @@
           <button class="knop klein vol" type="submit" name="actie" value="archiveren">Aangevinkte archiveren</button>
           <button class="knop klein" type="submit" name="actie" value="verwijderen" onclick="return confirm('De aangevinkte berichten naar de prullenbak?')">Verwijderen</button></form>{% endif %}</h2>
       <p class="noot">{{ uitleg }}</p>
-      {% for b in lijst %}{{ bericht(b, sleutel == 'weg') }}
+      {% for b in lijst %}{{ bericht(b, sleutel == 'weg', sleutel) }}
       {% else %}<p class="noot">{% if sleutel == 'actie' %}Niets dat op jou wacht.{% elif sleutel == 'lezen' %}Niets te lezen.{% else %}Niets op te ruimen.{% endif %}</p>{% endfor %}
     </section>
   {% endfor %}

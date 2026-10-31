@@ -85,7 +85,7 @@ def bram_vandaag(c):
     """Wat Bram ziet: hoeveel berichten om actie vragen en hoeveel er weg kunnen."""
     if not bram_sync.koppelingen(c, alleen_actief=True):
         return None
-    rijen = c.execute("""SELECT b.categorie, b.prioriteit, b.actie FROM post_berichten b JOIN post_koppelingen k
+    rijen = c.execute("""SELECT b.categorie, b.prioriteit, b.actie, b.groep_handmatig FROM post_berichten b JOIN post_koppelingen k
                          ON k.id = b.koppeling_id WHERE b.status = 'open' AND k.actief""").fetchall()
     tel = {"actie": 0, "lezen": 0, "weg": 0}
     for r in rijen:

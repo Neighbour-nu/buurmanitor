@@ -66,6 +66,19 @@
   </section>
 </div>
 
+<section class="kaart" id="regels">
+  <h2>Afzenderregels</h2>
+  <p class="noot">Mail van deze adressen zet Bram altijd in dezelfde groep, wat hij er zelf ook van vindt. Je maakt een regel
+    met "Altijd …" in de keuzelijst Verplaats naar bij een bericht.</p>
+  {% for r in regels %}
+  <form method="post" action="/bram/afzenderregel/weg" class="knoppenrij">
+    <input type="hidden" name="van_adres" value="{{ r.van_adres }}">
+    <span><b>{{ r.van_adres }}</b> → {{ groep_namen[r.groep] }}</span>
+    <button class="knop klein" type="submit">Weghalen</button>
+  </form>
+  {% else %}<p class="noot">Nog geen regels.</p>{% endfor %}
+</section>
+
 <section class="kaart">
   <h2>Claude en je mail</h2>
   <p class="noot">Staat het vinkje aan, dan gaat de tekst van elk <b>nieuw</b> bericht (hooguit {{ 4000 }} tekens) één keer
