@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block titel %}Reistijd inplannen · Clara · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>Reistijd inplannen <span class="noot">Clara</span></h1>
+<p class="uitleg">Hier wil Clara reistijd in je agenda zetten. Vink aan wat er echt in moet; de rest blijft weg.
+  <a href="/clara?week={{ week }}">Terug naar de agenda</a></p>
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+<section class="kaart">
+  {% if not regels %}
+    <p class="noot">Er is {{ 'voor deze afspraak ' if alleen }}geen reistijd meer in te plannen: alles staat al in je agenda, of de afspraak is voorbij.</p>
+  {% elif not doelen %}
+    <p class="item">Om reistijd in te plannen is een Google- of Microsoft-agenda met schrijfrechten nodig.</p>
+  {% else %}
+  <form method="post" action="/clara/reistijd">
+    <input type="hidden" name="week" value="{{ week }}">
+    <table class="tabel reisoverzicht">
+      <tr><th><input type="checkbox" id="alles" checked aria-label="Alles aan of uit"></th><th>Wanneer</th><th>Reis</th><th>Voor</th><th>In agenda</th></tr>
+      {% for r in regels %}
+      {% set s = r.start.astimezone(tz) %}
+      <tr class="{{ 'past-niet' if not r.past }}">
+        <td><input type="checkbox" name="sleutel" value="{{ r.sleutel }}" {{ 'checked' if r.past }} aria-label="{{ r.richting }} {{ r.afspraak.titel }}"></td>
+        <td>{{ DAGEN[s.weekday()] }} {{ s.strftime('%d-%m') }}<br><span class="noot">{{ s.strftime('%H.%M') }}–{{ r.eind.astimezone(tz).strftime('%H.%M') }}</span></td>
+        <td>{{ ICOON[r.vervoer] }} {{ 'Heen naar ' ~ r.naar if r.richting == 'heen' else 'Terug naar huis' }}<br>
+          <span class="noot">{{ r.minuten }} min {{ VERVOER[r.vervoer] }}{% if r.geschat %} (schatting){% endif %}, vanaf {{ r.van }}{% if r.gekozen %}, zelf gekozen{% endif %}</span>
+          {% if not r.past %}<br><span class="label rood">past niet: {{ r.botst }} loopt dan nog</span>{% endif %}</td>
+        <td>{{ r.afspraak.titel }}</td>
+        <td class="noot">{{ r.doel }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div class="velden">
+      <label>Zet de reistijd in <select name="doel">
+        <option value="">de agenda die hierboven staat</option>
+        {% for w, label, d in doelen %}<option value="{{ w }}">{{ label }}</option>{% endfor %}</select></label>
+      <button class="knop vol" type="submit">Aangevinkte reistijd in agenda zetten</button>
+      <a class="knop" href="/clara?week={{ week }}">Niets doen</a>
+    </div>
+    <p class="noot">Reistijd die niet past (omdat er dan nog iets anders loopt) staat standaard uit.</p>
+  </form>
+  <script>
+  (function () {
+    const alles = document.getElementById("alles");
+    const vakjes = document.querySelectorAll('input[name="sleutel"]');
+    function stand() { const aan = [...vakjes].filter(v => v.checked).length; alles.checked = aan === vakjes.length; alles.indeterminate = aan > 0 && aan < vakjes.length; }
+    alles.addEventListener("change", function () { vakjes.forEach(v => { v.checked = alles.checked; }); });
+    vakjes.forEach(v => v.addEventListener("change", stand));
+    stand();
+  })();
+  </script>
+  {% endif %}
+</section>
+{% endblock %}

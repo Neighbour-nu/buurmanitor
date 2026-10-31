@@ -206,3 +206,5 @@ details.afspraak > .open { padding: 0 8px 6px 110px; font-size: 14px; }
 .dagkop .leeg-dag { font: 13px/1.5 Barlow, "Helvetica Neue", Arial, sans-serif; text-transform: none; letter-spacing: 0; color: var(--zacht); margin-left: 6px; }
 @media (max-width: 640px) { details.afspraak > .open { padding-left: 12px; } .afspraak .tijd { flex-basis: 78px; } }
 .reis > .knop { align-self: flex-start; }
+.reisoverzicht tr.past-niet td { background: #FFF6F6; }
+.reisoverzicht td:first-child, .reisoverzicht th:first-child { width: 28px; }

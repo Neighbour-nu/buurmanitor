@@ -9,7 +9,7 @@ import json
 import re
 import secrets
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from .. import personas
@@ -592,13 +592,15 @@ async def reistijd_inplannen(request: Request):
             doelen = _reisdoelen(sync.koppelingen(c))
             if not doelen:
                 raise bronnen.BronFout("Om reistijd in te plannen is een Google- of Microsoft-agenda met schrijfrechten nodig.")
+            vast = str(f.get("doel", ""))
+            vast = vast if vast in {w for w, _l, _d in doelen} else ""
             plan = sync.reisplan(c, van, van + dt.timedelta(days=DAGEN_IN_BEELD), alleen_cache=False)
             nu = dt.datetime.now(tz)
             klaar, gebruikt = 0, set()
             for r in plan["regels"]:
                 if r["sleutel"] not in gekozen or r["ingepland"] or not r.get("minuten") or r["start"] < nu:
                     continue
-                doel = _doel_voor(doelen, r["afspraak"].get("domein"))
+                doel = vast or _doel_voor(doelen, r["afspraak"].get("domein"))
                 _maak(c, doel, reis.blok_titel(r), r["start"], r["eind"], reis.blok_omschrijving(r), bijwerken=False,
                       kleur=str(sync.instellingen(c).get("reis_kleur", "8")))
                 gebruikt.add(int(doel.split("|")[0]))
@@ -886,6 +888,28 @@ async def reistijd_stop(request: Request, item_id: int):
             raise HTTPException(404)
         reis.reisinfo_opslaan(c, a, auto=False)
     return _terug(f"/clara?week={f.get('week') or 0}", melding=f"Clara plant de reistijd voor '{a['titel']}' niet meer zelf in.")
+
+
+@router.get("/clara/reistijd/overzicht", response_class=HTMLResponse)
+def reistijd_overzicht(request: Request, week: int = 0, sleutel: list[str] = Query(default=[])):
+    """Eerst laten zien waar Clara reistijd wil zetten; Martijn vinkt aan wat er echt in de agenda komt."""
+    tz = config.TZ
+    van = dt.datetime.combine(_week_start(week), dt.time(0), tzinfo=tz)
+    nu = dt.datetime.now(tz)
+    fout = ""
+    with db.pool.connection() as c:
+        doelen = _reisdoelen(sync.koppelingen(c))
+        try:
+            plan = sync.reisplan(c, van, van + dt.timedelta(days=DAGEN_IN_BEELD), alleen_cache=False)
+        except bronnen.BronFout as e:
+            plan, fout = {"regels": []}, str(e)
+    gekozen = set(sleutel)
+    namen = {w: label for w, label, _d in doelen}
+    regels = [dict(r, doel=namen.get(_doel_voor(doelen, r["afspraak"].get("domein")), "")) for r in plan.get("regels", [])
+              if r.get("minuten") and not r["ingepland"] and r["start"] > nu and (not gekozen or r["sleutel"] in gekozen)]
+    return templates.TemplateResponse("clara_reistijd_overzicht.html", ctx(
+        request, "clara", regels=regels, week=week, tz=tz, DAGEN=DAGEN, doelen=doelen, fout=fout or plan.get("fout", ""),
+        alleen=bool(gekozen), ICOON=reis.ICOON, VERVOER=reis.VERVOER))
 
 
 @router.post("/clara/vervoer/{item_id}")

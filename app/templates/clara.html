@@ -14,9 +14,7 @@
     <p class="motto">{{ p.motto }}</p>
   </div>
   <div class="knoppen">
-    {% if open_reis %}<form method="post" action="/clara/reistijd" class="inline"><input type="hidden" name="week" value="{{ week }}">
-      {% for r in open_reis %}<input type="hidden" name="sleutel" value="{{ r.sleutel }}">{% endfor %}
-      <button class="knop vol" type="submit" title="Zet alle berekende reistijd van deze week als blokken in je agenda">Reistijd inplannen ({{ open_reis | length }})</button></form>{% endif %}
+    {% if open_reis %}<a class="knop vol" href="/clara/reistijd/overzicht?week={{ week }}" title="Bekijk waar Clara reistijd wil zetten en kies wat er in je agenda komt">Reistijd inplannen ({{ open_reis | length }})</a>{% endif %}
     <form method="post" action="/clara/vernieuwen" class="inline"><button class="knop" type="submit">Nu bijwerken</button></form>
     <a class="knop" href="/clara/koppelingen">Koppelingen</a>
   </div>
@@ -95,7 +93,7 @@
                   {% set open_hier = reizen | selectattr('minuten') | rejectattr('ingepland') | list %}
                   {% if open_hier and doelen %}
                   {% for r in open_hier %}<input type="hidden" name="sleutel" value="{{ r.sleutel }}">{% endfor %}
-                  <button class="knop klein" formaction="/clara/reistijd">Reistijd inplannen</button>
+                  <button class="knop klein" formaction="/clara/reistijd/overzicht" formmethod="get">Reistijd inplannen</button>
                   {% endif %}
                   <a class="knop klein" href="/clara/reistijd/{{ a.id }}?week={{ week }}">{% if a.mee %}🚗 Brengen en ophalen{% elif a.reis_auto %}🔁 elke keer{% else %}Adres of reeks{% endif %}</a>
                 </form>

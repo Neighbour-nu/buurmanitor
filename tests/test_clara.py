@@ -601,8 +601,16 @@ def test_reistijd_in_het_scherm_en_inplannen(klant, monkeypatch):
     monkeypatch.setattr(bronnen, "google_maak", lambda tok, a, titel, st, e, o="", kleur=None: gemaakt.append((titel, st, e, o, kleur)) or "blok1")
     with db.pool.connection() as c:
         c.execute("UPDATE agenda_koppelingen SET geheim = %s WHERE id = %s", (kluis.sluit("ref"), k["id"]))
-    r = klant.post("/clara/reistijd", headers=FORM, data={"week": "0", "sleutel": [f"{k['id']}:raad1:heen", f"{k['id']}:raad1:terug"]},
-                   follow_redirects=False)
+    # Eerst het overzicht: waar komt reistijd, met vinkjes (de knop bij de afspraak toont alleen die afspraak).
+    r = klant.get("/clara/reistijd/overzicht?week=0", headers=KOP)
+    assert r.status_code == 200 and "Heen naar Huis voor de Stad" in r.text and "Terug naar huis" in r.text
+    assert f'name="sleutel" value="{k["id"]}:raad1:heen" checked' in r.text and "Raadsvergadering" in r.text and "M (Reis-test)" in r.text
+    assert 'name="doel"' in r.text and 'action="/clara/reistijd"' in r.text
+    r = klant.get(f"/clara/reistijd/overzicht?week=0&sleutel={k['id']}:raad1:terug", headers=KOP)
+    assert "Terug naar huis" in r.text and "Heen naar" not in r.text
+    assert 'formaction="/clara/reistijd/overzicht" formmethod="get"' in klant.get("/clara", headers=KOP).text
+    r = klant.post("/clara/reistijd", headers=FORM, data={"week": "0", "sleutel": [f"{k['id']}:raad1:heen", f"{k['id']}:raad1:terug"],
+                                                          "doel": "onzin|x"}, follow_redirects=False)
     assert r.headers["location"].startswith("/clara?week=0&melding=2+reistijdblokken") and r.headers["location"].count("?") == 1
     assert gemaakt[0][0] == "🚗 Reistijd naar Huis voor de Stad (rijden)" and gemaakt[0][2] == s and "[clara-reistijd:" in gemaakt[0][3]
     assert gemaakt[0][4] == "8"  # Grafiet, de standaardkleur voor reistijd
