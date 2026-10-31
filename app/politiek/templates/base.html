@@ -33,5 +33,15 @@
   <a href="/briefing">Briefing</a>
   <a href="{{ auth_url }}/logout">Uitloggen</a>
 </footer>
+<script>
+// Ctrl-Enter (of Cmd-Enter op een Mac) in een vraagveld verstuurt de vraag.
+document.addEventListener("keydown", function (e) {
+  const veld = e.target;
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && veld.tagName === "TEXTAREA" && veld.form && veld.name === "vraag") {
+    e.preventDefault();
+    if (veld.value.trim()) veld.form.requestSubmit ? veld.form.requestSubmit() : veld.form.submit();
+  }
+});
+</script>
 </body>
 </html>

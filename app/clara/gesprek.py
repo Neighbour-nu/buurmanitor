@@ -8,10 +8,11 @@ import re
 from .. import personas
 from ..kern import claude, config
 from ..kern.web import DAGEN, datum_lang
-from . import analyse, reis, sync
+from . import analyse, bronnen, reis, sync
 
 VOORSTEL = re.compile(r"<voorstel>\s*(\{.*?\})\s*</voorstel>", re.S)
 VERVOER_TAG = re.compile(r"<vervoer>\s*(\{.*?\})\s*</vervoer>", re.S)
+REEKS_TAG = re.compile(r"<reeks>\s*(\{.*?\})\s*</reeks>", re.S)
 UITLEG = """# Voorstellen doen
 Stel je een concreet tijdstip voor om iets in te plannen (een schrijfblok, voorbereiding, reistijd), zet dan per
 voorstel aan het eind van je antwoord precies één regel:
@@ -19,6 +20,22 @@ voorstel aan het eind van je antwoord precies één regel:
 "agenda" is de naam van een agenda uit de lijst hieronder waarin je kunt inplannen, bijvoorbeeld "Sanne" voor een
 afspraak voor Sanne (de dochter van Martijn). Laat "agenda" weg als het voor Martijn zelf is.
 Tijden in Nederlandse tijd. Martijn ziet het als knop en beslist zelf.
+
+# Herhalende afspraken
+Voor iets dat elke week terugkomt, zet je in het voorstel ook "herhaal": {"dagen": ["wo", "za"], "tot": "JJJJ-MM-DD"}.
+Dagen: ma, di, wo, do, vr, za, zo. "tot" is de laatste dag; laat het weg als er geen einddatum is. "start" en "eind"
+zijn de eerste keer. Alle dagen in één voorstel krijgen dezelfde tijden: maak dus een apart voorstel per groep dagen
+met andere tijden.
+Sanne wegbrengen en ophalen (bijvoorbeeld bij paardrijles) zet je als blokken in Martijns eigen agenda (laat "agenda"
+weg), zonder adres, met een titel als "🚗 Sanne naar paardrijles brengen" of "🚗 Sanne ophalen bij paardrijles": van
+vertrek tot hij weer thuis is (heen en terug). Wegbrengen eindigt dus een reistijd na het begin van de les, ophalen
+begint een reistijd voor het einde. Gebruik de reistijden vanaf huis die hieronder staan; staat er geen, zeg dan dat
+het een schatting is. Blijft Martijn de hele les, dan is het geen wegbrengen maar meegaan: leg dan vervoer vast.
+Een bestaande reeks van Clara (lijst hieronder, met [reeks N]) wijzig je met een nieuw voorstel met "vervangt": N; de
+oude reeks stopt dan vanaf de eerste keer van de nieuwe. Stoppen, één keer overslaan of helemaal verwijderen:
+<reeks>{"id": N, "actie": "stop|overslaan|verwijder", "datum": "JJJJ-MM-DD"}</reeks>
+Bij stop is datum de eerste dag zonder de afspraak; bij overslaan de dag die vervalt; verwijder heeft geen datum
+nodig. Ook dit ziet Martijn als knop.
 
 # Vervoer per afspraak
 Zegt Martijn uitdrukkelijk hoe hij naar een afspraak gaat (bijvoorbeeld "naar Utrecht ga ik met de trein"), leg dat
@@ -51,6 +68,30 @@ def _regel(a, tz):
         extra.append("Martijn gaat mee")
     return f"- {tijd} {a['titel']} [{sync.DOMEINEN.get(a.get('domein'), a.get('domein'))}, {a.get('agenda_naam') or a.get('koppeling')}]" + (
         f" ({'; '.join(extra)})" if extra else "")
+
+
+def _reistijd_anderen(c, lijst, inst):
+    """Reistijd vanaf huis naar plekken in agenda's die niet bezet zijn voor Martijn (voor wegbrengen en ophalen)."""
+    if not reis.actief() or not inst.get("vertrekpunt"):
+        return ""
+    plekken = []
+    for a in lijst:
+        if a.get("niet_voor_mij") and a.get("locatie") and not a.get("online") and a["locatie"] not in plekken:
+            plekken.append(a["locatie"])
+    regels = []
+    try:
+        thuis = reis.adres(c, inst["vertrekpunt"], alleen_cache=True)
+        for plek in plekken[:6] if thuis else []:
+            doel = reis.adres(c, plek, focus=thuis["punt"])
+            if not doel:
+                continue
+            tijden = {s: reis.route(c, thuis["punt"], doel["punt"], s) for s in ("auto", "fiets")}
+            delen = [f"{m} min {'met de auto' if s == 'auto' else 'op de fiets'}" for s, m in tijden.items() if m]
+            if delen:
+                regels.append(f"- {plek}: " + ", ".join(delen) + " (enkele reis)")
+    except bronnen.BronFout:
+        pass
+    return ("# Reistijd vanaf huis naar plekken in andere agenda's (berekend)\n" + "\n".join(regels)) if regels else ""
 
 
 def context(c, nu=None):
@@ -89,6 +130,18 @@ def context(c, nu=None):
         delen.append("# Krappe overgangen\n" + "\n".join(
             f"- {x['van']['eind'].astimezone(tz):%d-%m %H.%M}: {x['minuten']} min van {x['van']['locatie']} naar {x['naar']['locatie']}"
             for x in over))
+    reeksen = c.execute("""SELECT r.*, k.naam AS koppeling FROM agenda_reeksen r JOIN agenda_koppelingen k ON k.id = r.koppeling_id
+                           WHERE r.status = 'actief' ORDER BY r.titel""").fetchall()
+    if reeksen:
+        regels_r = []
+        for r in reeksen:
+            keren = c.execute("""SELECT start FROM agenda_items WHERE koppeling_id = %s AND reeks = %s AND start > %s
+                                 ORDER BY start LIMIT 6""", (r["koppeling_id"], r["extern_id"], nu)).fetchall()
+            regels_r.append(f"- [reeks {r['id']}] {r['titel']}, {bronnen.herhaal_tekst(r['herhaal'])}, "
+                            f"{r['start'].astimezone(tz):%H.%M}-{r['eind'].astimezone(tz):%H.%M}, in agenda {r['voor'] or r['koppeling']}"
+                            + ("; komende keren: " + ", ".join(f"{x['start'].astimezone(tz):%d-%m}" for x in keren) if keren else ""))
+        delen.append("# Herhalende afspraken die Clara maakte\n" + "\n".join(regels_r))
+    delen.append(_reistijd_anderen(c, lijst, inst))
     try:
         plan = sync.reisplan(c, nu, tot)
     except Exception:  # noqa: BLE001  (reistijd is een extra; het gesprek gaat altijd door)
@@ -123,10 +176,33 @@ def voorstellen_uit(tekst, tz=config.TZ):
         except (ValueError, KeyError, TypeError):
             continue
         if eind > start and (eind - start) <= dt.timedelta(hours=12):
+            try:
+                vervangt = int(v["vervangt"]) if v.get("vervangt") not in (None, "") else None
+            except (TypeError, ValueError):
+                vervangt = None
             uit.append({"titel": str(v.get("titel") or "Blok")[:200], "start": start, "eind": eind,
                         "domein": v.get("domein") if v.get("domein") in sync.DOMEINEN else "",
-                        "agenda": str(v.get("agenda") or "").strip()[:80]})
+                        "agenda": str(v.get("agenda") or "").strip()[:80],
+                        "herhaal": bronnen.herhaal_normaal(v.get("herhaal")), "vervangt": vervangt})
     return VOORSTEL.sub("", tekst).strip(), uit
+
+
+def reeksacties_uit(c, tekst, tz=config.TZ):
+    """Stop, overslaan of verwijderen voor een reeks van Clara: alleen als voorstel (Martijn klikt). Geeft (tekst, lijst)."""
+    uit = []
+    for m in REEKS_TAG.finditer(tekst):
+        try:
+            v = json.loads(m.group(1))
+            r = c.execute("SELECT * FROM agenda_reeksen WHERE id = %s AND status = 'actief'", (int(v["id"]),)).fetchone()
+            actie = str(v.get("actie", ""))
+            datum = dt.date.fromisoformat(str(v["datum"])[:10]) if v.get("datum") else None
+        except (ValueError, KeyError, TypeError):
+            continue
+        if not r or actie not in ("stop", "overslaan", "verwijder") or (actie != "verwijder" and not datum):
+            continue
+        moment = dt.datetime.combine(datum, dt.time(0), tzinfo=tz) if datum else r["start"]
+        uit.append({"soort": actie, "reeks_id": r["id"], "datum": datum, "titel": r["titel"], "start": moment, "eind": moment})
+    return REEKS_TAG.sub("", tekst).strip(), uit
 
 
 def vervoer_uit(c, tekst):
@@ -153,14 +229,24 @@ def antwoord(c, gesprek_id):
                            max_tokens=1500)
     tekst = tekst.replace(" — ", ", ").replace("—", ", ").replace(" – ", ", ")
     tekst, voorstellen = voorstellen_uit(tekst)
+    tekst, reeksacties = reeksacties_uit(c, tekst)
     tekst, vervoer = vervoer_uit(c, tekst)
     if vervoer:
         tekst = (tekst + "\n\n" + "\n".join(f"(Vastgelegd: {v})" for v in vervoer)).strip()
     if not tekst:
-        tekst = "Hier is mijn voorstel." if voorstellen else "(Geen antwoord ontvangen. Probeer het nog eens.)"
+        tekst = "Hier is mijn voorstel." if voorstellen or reeksacties else "(Geen antwoord ontvangen. Probeer het nog eens.)"
     c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)", (gesprek_id, tekst))
     for v in voorstellen:
-        c.execute("INSERT INTO agenda_voorstellen (gesprek_id, titel, start, eind, domein, agenda) VALUES (%s, %s, %s, %s, %s, %s)",
-                  (gesprek_id, v["titel"], v["start"], v["eind"], v["domein"], v.get("agenda", "")))
+        vervangt = v.get("vervangt")
+        if vervangt and not c.execute("SELECT 1 FROM agenda_reeksen WHERE id = %s AND status = 'actief'", (vervangt,)).fetchone():
+            vervangt = None
+        c.execute("""INSERT INTO agenda_voorstellen (gesprek_id, titel, start, eind, domein, agenda, herhaal, reeks_id)
+                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                  (gesprek_id, v["titel"], v["start"], v["eind"], v["domein"], v.get("agenda", ""),
+                   json.dumps(v["herhaal"]) if v.get("herhaal") else None, vervangt))
+    for v in reeksacties:
+        c.execute("""INSERT INTO agenda_voorstellen (gesprek_id, titel, start, eind, soort, reeks_id, datum)
+                     VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                  (gesprek_id, v["titel"], v["start"], v["eind"], v["soort"], v["reeks_id"], v["datum"]))
     c.execute("UPDATE gesprekken SET bijgewerkt = now() WHERE id = %s", (gesprek_id,))
     return tekst

@@ -73,6 +73,13 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         archief = c.execute("""SELECT id, titel, bijgewerkt FROM gesprekken WHERE persona = 'clara' AND gearchiveerd
                                ORDER BY bijgewerkt DESC LIMIT 30""").fetchall()
         verborgen = sync.verborgen_aantal(c, nu, nu + dt.timedelta(days=56))
+        reeksen = [dict(r) for r in c.execute("""SELECT r.*, k.naam AS koppeling FROM agenda_reeksen r
+                                                  JOIN agenda_koppelingen k ON k.id = r.koppeling_id
+                                                  WHERE r.status = 'actief' ORDER BY r.titel""").fetchall()]
+        for r in reeksen:
+            r["keren"] = [x["start"] for x in c.execute("""SELECT start FROM agenda_items WHERE koppeling_id = %s AND reeks = %s
+                                                          AND start > %s ORDER BY start LIMIT 10""",
+                                                       (r["koppeling_id"], r["extern_id"], nu)).fetchall()]
         try:
             plan = sync.reisplan(c, van, van + dt.timedelta(days=7))
         except bronnen.BronFout as e:
@@ -104,7 +111,7 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         conflict_ids=conflict_ids, krap_ids=krap_ids, uitnodigingen=analyse.uitnodigingen(komend, nu),
         koppelingen=koppelingen, doelen=_schrijfdoelen(koppelingen), vrij=vrij, duur=duur, dagen=dagen, tz=tz,
         DAGEN=DAGEN, gesprek=gs, berichten=berichten, voorstellen=voorstellen, melding=melding, fout=fout,
-        eerdere=eerdere, archief=archief,
+        eerdere=eerdere, archief=archief, reeksen=reeksen, herhaal_tekst=bronnen.herhaal_tekst,
         kluis_ok=kluis.actief(), sleutel_ok=bool(config.ANTHROPIC_API_KEY), inst=inst,
         domeinnaam=dict(DOMEINEN), verborgen=verborgen, plan=plan, per_afspraak=per_afspraak, open_reis=open_reis,
         reis_actief=reis.actief(), is_reisblok=reis.is_reisblok, onbekend_ids=onbekend_ids, reis_dienst=reis.dienst_naam()))
@@ -125,7 +132,7 @@ def vernieuwen(request: Request):
 
 # ---------------------------------------------------------------- iets in de agenda zetten (na een klik)
 
-def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True, kleur=None):
+def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True, kleur=None, herhaal=None):
     try:
         kid, agenda_id = doel.split("|", 1)
         k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (int(kid),)).fetchone()
@@ -135,9 +142,10 @@ def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True, kleur=No
         raise bronnen.BronFout("In deze agenda mag Clara niets zetten.")
     tok = sync.toegang(c, k)
     maak = bronnen.google_maak if k["soort"] == "google" else bronnen.ms_maak
-    extern = maak(tok, agenda_id, titel, start, eind, omschrijving, kleur=kleur)
+    extern = maak(tok, agenda_id, titel, start, eind, omschrijving, kleur=kleur, **({"herhaal": herhaal} if herhaal else {}))
     c.execute("INSERT INTO logboek (persona, actie, details) VALUES ('clara', 'afspraak gemaakt', %s)",
-              (json.dumps({"koppeling": k["naam"], "titel": titel, "start": start.isoformat(), "eind": eind.isoformat()}),))
+              (json.dumps({"koppeling": k["naam"], "titel": titel, "start": start.isoformat(), "eind": eind.isoformat(),
+                           "herhaal": herhaal}),))
     if bijwerken:
         sync.synchroniseer(c, k, forceer=True)
     return k["id"], extern
@@ -184,14 +192,117 @@ async def voorstel(request: Request, vid: int):
 
     def doe():
         with db.pool.connection() as c:
-            kid, extern = _maak(c, str(f.get("doel", "")), v["titel"], v["start"], v["eind"], "Voorstel van Clara (Buurmanitor).")
-            c.execute("UPDATE agenda_voorstellen SET status = 'ingepland', koppeling_id = %s, extern_id = %s WHERE id = %s",
-                      (kid, extern, vid))
+            if v["soort"] == "nieuw":
+                return _nieuw_uit_voorstel(c, v, str(f.get("doel", "")))
+            r = c.execute("SELECT * FROM agenda_reeksen WHERE id = %s AND status = 'actief'", (v["reeks_id"],)).fetchone()
+            if not r:
+                raise bronnen.BronFout("Deze herhalende afspraak bestaat niet meer.")
+            tekst = _reeks_actie(c, r, v["soort"], v["datum"])
+            c.execute("UPDATE agenda_voorstellen SET status = 'ingepland' WHERE id = %s", (vid,))
+            return tekst
     try:
-        await asyncio.to_thread(doe)
+        tekst = await asyncio.to_thread(doe)
     except (bronnen.BronFout, kluis.KluisFout) as e:
         return _terug(f"/clara?g={v['gesprek_id'] or 0}", fout=str(e))
-    return _terug(f"/clara?g={v['gesprek_id'] or 0}", melding=f"'{v['titel']}' staat in je agenda.")
+    return _terug(f"/clara?g={v['gesprek_id'] or 0}", melding=tekst)
+
+
+def _nieuw_uit_voorstel(c, v, doel):
+    """Een voorstel van Clara inplannen; met herhaling als reeks (die Clara daarna kan stoppen of overslaan)."""
+    h = bronnen.herhaal_normaal(v["herhaal"]) if v.get("herhaal") else None
+    start, eind = v["start"], v["eind"]
+    if h:
+        stap = bronnen.eerste_keer(start.astimezone(config.TZ), h)
+        start, eind = start + stap, eind + stap
+    kid, extern = _maak(c, doel, v["titel"], start, eind, "Voorstel van Clara (Buurmanitor).", bijwerken=False, herhaal=h)
+    k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (kid,)).fetchone()
+    c.execute("UPDATE agenda_voorstellen SET status = 'ingepland', koppeling_id = %s, extern_id = %s WHERE id = %s", (kid, extern, v["id"]))
+    tekst = f"'{v['titel']}' staat in je agenda"
+    if h:
+        voor = next((a["naam"] for a in (k["agendas"] or []) if f"{kid}|{a['id']}" == doel), k["naam"])
+        c.execute("""INSERT INTO agenda_reeksen (koppeling_id, agenda_id, extern_id, titel, start, eind, herhaal, voor)
+                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                  (kid, doel.split("|", 1)[1], extern, v["titel"], start, eind, json.dumps(h), voor))
+        tekst += f", {bronnen.herhaal_tekst(h)}, vanaf {start.astimezone(config.TZ):%d-%m}"
+        oud = c.execute("SELECT * FROM agenda_reeksen WHERE id = %s AND status = 'actief'", (v["reeks_id"],)).fetchone() if v.get("reeks_id") else None
+        if oud:
+            _reeks_actie(c, oud, "stop", start.astimezone(config.TZ).date(), bijwerken=oud["koppeling_id"] != kid)
+            tekst += "; de oude reeks stopt vanaf dan"
+    sync.synchroniseer(c, k, forceer=True)
+    return tekst + "."
+
+
+def _reeks_actie(c, r, actie, datum, bijwerken=True):
+    """Een reeks van Clara stoppen (vanaf datum), één keer overslaan (op datum) of helemaal verwijderen."""
+    tz = config.TZ
+    k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (r["koppeling_id"],)).fetchone()
+    if not k or not k["schrijven"]:
+        raise bronnen.BronFout("In deze agenda mag Clara niets (meer) wijzigen.")
+    tok = sync.toegang(c, k)
+    google = k["soort"] == "google"
+    weg = bronnen.google_verwijder if google else bronnen.ms_verwijder
+    eerste = r["start"].astimezone(tz).date()
+    if actie == "stop" and datum <= eerste:
+        actie = "verwijder"
+    if actie == "stop":
+        h = dict(r["herhaal"])
+        laatste = datum - dt.timedelta(days=1)
+        if not h.get("tot") or dt.date.fromisoformat(h["tot"]) > laatste:
+            h["tot"] = laatste.isoformat()
+        (bronnen.google_reeks if google else bronnen.ms_reeks)(tok, r["agenda_id"], r["extern_id"], h, r["start"])
+        c.execute("UPDATE agenda_reeksen SET herhaal = %s, status = CASE WHEN %s < now()::date THEN 'gestopt' ELSE status END WHERE id = %s",
+                  (json.dumps(h), laatste, r["id"]))
+        tekst = f"'{r['titel']}' stopt vanaf {DAGEN[datum.weekday()]} {datum:%d-%m}."
+    elif actie == "verwijder":
+        try:
+            weg(tok, r["agenda_id"], r["extern_id"])
+        except bronnen.NietGevonden:
+            pass
+        c.execute("UPDATE agenda_reeksen SET status = 'verwijderd' WHERE id = %s", (r["id"],))
+        tekst = f"De hele reeks '{r['titel']}' is uit je agenda gehaald."
+    elif actie == "overslaan":
+        i = c.execute("""SELECT * FROM agenda_items WHERE koppeling_id = %s AND reeks = %s
+                         AND (start AT TIME ZONE 'Europe/Amsterdam')::date = %s""", (k["id"], r["extern_id"], datum)).fetchone()
+        if not i:
+            raise bronnen.BronFout(f"Op {datum:%d-%m} staat geen '{r['titel']}' (Clara kijkt acht weken vooruit).")
+        try:
+            weg(tok, i["agenda_id"], i["extern_id"])
+        except bronnen.NietGevonden:
+            pass
+        tekst = f"'{r['titel']}' vervalt op {DAGEN[datum.weekday()]} {datum:%d-%m}; de rest van de reeks blijft staan."
+    else:
+        raise bronnen.BronFout("Onbekende actie.")
+    c.execute("INSERT INTO logboek (persona, actie, details) VALUES ('clara', %s, %s)",
+              (f"reeks {actie}", json.dumps({"reeks": r["id"], "titel": r["titel"], "datum": datum.isoformat() if datum else None})))
+    if bijwerken:
+        sync.synchroniseer(c, k, forceer=True)
+    return tekst
+
+
+@router.post("/clara/reeks/{rid}")
+async def reeks(request: Request, rid: int):
+    """Een herhalende afspraak van Clara stoppen, een keer overslaan of verwijderen (na Martijns klik)."""
+    controleer_herkomst(request)
+    f = await request.form()
+    actie = str(f.get("actie", ""))
+    try:
+        datum = dt.date.fromisoformat(str(f.get("datum", ""))[:10]) if f.get("datum") else None
+    except ValueError:
+        datum = None
+    if actie not in ("stop", "overslaan", "verwijder") or (actie != "verwijder" and not datum):
+        return _terug("/clara#reeksen", fout="Kies een datum.")
+
+    def doe():
+        with db.pool.connection() as c:
+            r = c.execute("SELECT * FROM agenda_reeksen WHERE id = %s AND status = 'actief'", (rid,)).fetchone()
+            if not r:
+                raise bronnen.BronFout("Deze herhalende afspraak bestaat niet meer.")
+            return _reeks_actie(c, r, actie, datum)
+    try:
+        tekst = await asyncio.to_thread(doe)
+    except (bronnen.BronFout, kluis.KluisFout) as e:
+        return _terug("/clara#reeksen", fout=str(e))
+    return _terug("/clara#reeksen", melding=tekst)
 
 
 @router.post("/clara/uitnodiging/{item_id}")

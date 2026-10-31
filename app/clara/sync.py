@@ -106,17 +106,17 @@ def ophalen(c, k, van, tot):
 def opslaan(c, kid, items, van, tot):
     for i in items:
         c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, domein, ical_uid, titel, locatie, start,
-                        eind, heledag, status, vrij, antwoord, organisator, online, link, geschat, bijgewerkt, omschrijving, kleur)
+                        eind, heledag, status, vrij, antwoord, organisator, online, link, geschat, bijgewerkt, omschrijving, kleur, reeks)
                      VALUES (%(k)s, %(agenda_id)s, %(extern_id)s, %(domein)s, %(ical_uid)s, %(titel)s, %(locatie)s, %(start)s,
                         %(eind)s, %(heledag)s, %(status)s, %(vrij)s, %(antwoord)s, %(organisator)s, %(online)s, %(link)s,
-                        %(geschat)s, now(), %(omschrijving)s, %(kleur)s)
+                        %(geschat)s, now(), %(omschrijving)s, %(kleur)s, %(reeks)s)
                      ON CONFLICT (koppeling_id, agenda_id, extern_id) DO UPDATE SET domein = EXCLUDED.domein,
                         ical_uid = EXCLUDED.ical_uid, titel = EXCLUDED.titel, locatie = EXCLUDED.locatie,
                         start = EXCLUDED.start, eind = EXCLUDED.eind, heledag = EXCLUDED.heledag, status = EXCLUDED.status,
                         vrij = EXCLUDED.vrij, antwoord = EXCLUDED.antwoord, organisator = EXCLUDED.organisator,
                         online = EXCLUDED.online, link = EXCLUDED.link, geschat = EXCLUDED.geschat, bijgewerkt = now(),
-                        omschrijving = EXCLUDED.omschrijving, kleur = EXCLUDED.kleur""",
-                  {"omschrijving": "", "kleur": "", **i, "k": kid})
+                        omschrijving = EXCLUDED.omschrijving, kleur = EXCLUDED.kleur, reeks = EXCLUDED.reeks""",
+                  {"omschrijving": "", "kleur": "", "reeks": "", **i, "k": kid})
     sleutels = [f"{i['agenda_id']}\x1f{i['extern_id']}" for i in items]
     weg = c.execute("""DELETE FROM agenda_items WHERE koppeling_id = %s AND start < %s AND eind > %s
                        AND NOT (agenda_id || chr(31) || extern_id = ANY(%s)) RETURNING id""",

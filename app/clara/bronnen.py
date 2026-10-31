@@ -56,7 +56,7 @@ def agendakleur(hexkleur):
 def item(**kw):
     basis = {"agenda_id": "", "extern_id": "", "ical_uid": "", "titel": "", "locatie": "", "heledag": False,
              "status": "bevestigd", "vrij": False, "antwoord": "eigen", "organisator": "", "online": False, "link": "",
-             "geschat": False, "omschrijving": "", "kleur": ""}
+             "geschat": False, "omschrijving": "", "kleur": "", "reeks": ""}
     basis.update(kw)
     basis["omschrijving"] = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", basis["omschrijving"] or "")).strip()[:1000]
     basis["titel"] = (basis["titel"] or "").strip()[:300] or "(zonder titel)"
@@ -186,7 +186,8 @@ def google_item(e, agenda_id, tz=config.TZ):
                 vrij=e.get("transparency") == "transparent", antwoord=antwoord,
                 organisator=(e.get("organizer") or {}).get("displayName") or (e.get("organizer") or {}).get("email", ""),
                 online=bool(e.get("hangoutLink") or e.get("conferenceData")), link=e.get("htmlLink", ""),
-                omschrijving=e.get("description", ""), kleur=GOOGLE_AFSPRAAKKLEUR.get(str(e.get("colorId", "")), ""))
+                omschrijving=e.get("description", ""), kleur=GOOGLE_AFSPRAAKKLEUR.get(str(e.get("colorId", "")), ""),
+                reeks=e.get("recurringEventId", ""))
 
 
 def google_items(toegang, agenda_id, van, tot):
@@ -226,12 +227,65 @@ GOOGLE_KLEUREN = {"1": "Lavendel", "2": "Salie", "3": "Druif", "4": "Flamingo", 
                   "7": "Pauw", "8": "Grafiet", "9": "Bosbes", "10": "Basilicum", "11": "Tomaat"}
 
 
-def google_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None):
+# ---------------------------------------------------------------- herhalende afspraken (wekelijks op vaste dagen)
+
+DAGCODES = {"ma": ("MO", "monday"), "di": ("TU", "tuesday"), "wo": ("WE", "wednesday"), "do": ("TH", "thursday"),
+            "vr": ("FR", "friday"), "za": ("SA", "saturday"), "zo": ("SU", "sunday")}
+DAGNAMEN = {"ma": "maandag", "di": "dinsdag", "wo": "woensdag", "do": "donderdag", "vr": "vrijdag", "za": "zaterdag", "zo": "zondag"}
+
+
+def herhaal_normaal(h):
+    """{'dagen': ['wo', 'za'], 'tot': 'JJJJ-MM-DD' of ''} of None als het geen bruikbare herhaling is."""
+    if not isinstance(h, dict):
+        return None
+    dagen = [d for d in DAGCODES if d in {str(x).strip().lower()[:2] for x in (h.get("dagen") or [])}]
+    if not dagen:
+        return None
+    tot = str(h.get("tot") or "").strip()[:10]
+    try:
+        tot = dt.date.fromisoformat(tot).isoformat() if tot else ""
+    except ValueError:
+        tot = ""
+    return {"dagen": dagen, "tot": tot}
+
+
+def eerste_keer(start, herhaal):
+    """De eerste dag op of na start die in de herhaling valt (een reeks begint altijd op een van zijn dagen)."""
+    nummers = {list(DAGCODES).index(d) for d in herhaal["dagen"]}
+    stap = next(n for n in range(7) if (start + dt.timedelta(days=n)).weekday() in nummers)
+    return dt.timedelta(days=stap)
+
+
+def herhaal_tekst(h):
+    if not h:
+        return ""
+    namen = [DAGNAMEN[d] for d in h["dagen"]]
+    dagen = namen[0] if len(namen) == 1 else ", ".join(namen[:-1]) + " en " + namen[-1]
+    return f"elke {dagen}" + (f" tot en met {dt.date.fromisoformat(h['tot']):%d-%m-%Y}" if h.get("tot") else "")
+
+
+def _rrule(h):
+    regel = "RRULE:FREQ=WEEKLY;WKST=MO;BYDAY=" + ",".join(DAGCODES[d][0] for d in h["dagen"])
+    if h.get("tot"):
+        einde = dt.datetime.combine(dt.date.fromisoformat(h["tot"]), dt.time(23, 59, 59), tzinfo=config.TZ).astimezone(UTC)
+        regel += f";UNTIL={einde:%Y%m%dT%H%M%SZ}"
+    return regel
+
+
+def _ms_herhaling(h, eerste):
+    bereik = {"type": "endDate", "endDate": h["tot"]} if h.get("tot") else {"type": "noEnd"}
+    return {"pattern": {"type": "weekly", "interval": 1, "daysOfWeek": [DAGCODES[d][1] for d in h["dagen"]], "firstDayOfWeek": "monday"},
+            "range": {**bereik, "startDate": eerste.astimezone(config.TZ).date().isoformat(), "recurrenceTimeZone": "W. Europe Standard Time"}}
+
+
+def google_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None, herhaal=None):
     body = {"summary": titel, "description": omschrijving,
             "start": {"dateTime": start.isoformat(), "timeZone": "Europe/Amsterdam"},
             "end": {"dateTime": eind.isoformat(), "timeZone": "Europe/Amsterdam"}}
     if kleur in GOOGLE_KLEUREN:
         body["colorId"] = kleur
+    if herhaal:
+        body["recurrence"] = [_rrule(herhaal)]
     j = _http(f"{GOOGLE_API}/calendars/{urllib.parse.quote(agenda_id, safe='')}/events",
               headers={"Authorization": f"Bearer {toegang}"}, soort="Google Agenda", body=body)
     return j.get("id", "")
@@ -261,6 +315,12 @@ def google_blok(toegang, agenda_id, titel, start, eind, voorlopig=False, extern_
     else:
         j = _http(pad, headers={"Authorization": f"Bearer {toegang}"}, body=body, soort="Google Agenda")
     return j.get("id") or extern_id or ""
+
+
+def google_reeks(toegang, agenda_id, extern_id, herhaal, eerste=None):  # noqa: ARG001
+    """De herhaling van een reeks van Clara aanpassen (bijvoorbeeld stoppen: een nieuwe einddatum)."""
+    _http(f"{GOOGLE_API}/calendars/{urllib.parse.quote(agenda_id, safe='')}/events/{urllib.parse.quote(extern_id, safe='')}",
+          headers={"Authorization": f"Bearer {toegang}"}, methode="PATCH", body={"recurrence": [_rrule(herhaal)]}, soort="Google Agenda")
 
 
 def google_verwijder(toegang, agenda_id, extern_id):
@@ -338,12 +398,12 @@ def ms_item(e, agenda_id, tz=config.TZ):
                     "voorlopig" if e.get("showAs") == "tentative" else "bevestigd"),
                 vrij=e.get("showAs") in ("free", "workingElsewhere"), antwoord=antwoord,
                 organisator=org.get("name") or org.get("address", ""), online=bool(e.get("isOnlineMeeting")),
-                link=e.get("webLink", ""), omschrijving=e.get("bodyPreview", ""))
+                link=e.get("webLink", ""), omschrijving=e.get("bodyPreview", ""), reeks=e.get("seriesMasterId") or "")
 
 
 def ms_items(toegang, agenda_id, van, tot):
     velden = ("id,iCalUId,subject,location,start,end,isAllDay,showAs,isCancelled,responseStatus,organizer,"
-              "isOrganizer,isOnlineMeeting,webLink,attendees,bodyPreview")
+              "isOrganizer,isOnlineMeeting,webLink,attendees,bodyPreview,seriesMasterId")
     url = (f"{GRAPH}/me/calendars/{urllib.parse.quote(agenda_id, safe='')}/calendarView?" + urllib.parse.urlencode({
         "startDateTime": van.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "endDateTime": tot.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "$top": "250", "$select": velden}))
@@ -362,13 +422,20 @@ def ms_antwoord(toegang, agenda_id, extern_id, antwoord):
           methode="POST", body={"sendResponse": True}, soort="Outlook")
 
 
-def ms_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None):  # noqa: ARG001 (Outlook: geen vaste kleuren per afspraak)
+def ms_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None, herhaal=None):  # noqa: ARG001 (Outlook: geen vaste kleuren)
+    body = {"subject": titel, "body": {"contentType": "text", "content": omschrijving}, "showAs": "busy",
+            "start": {"dateTime": start.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"},
+            "end": {"dateTime": eind.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"}}
+    if herhaal:
+        body["recurrence"] = _ms_herhaling(herhaal, start)
     j = _http(f"{GRAPH}/me/calendars/{urllib.parse.quote(agenda_id, safe='')}/events",
-              headers={"Authorization": f"Bearer {toegang}"}, soort="Outlook", body={
-                  "subject": titel, "body": {"contentType": "text", "content": omschrijving}, "showAs": "busy",
-                  "start": {"dateTime": start.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"},
-                  "end": {"dateTime": eind.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"}})
+              headers={"Authorization": f"Bearer {toegang}"}, soort="Outlook", body=body)
     return j.get("id", "")
+
+
+def ms_reeks(toegang, agenda_id, extern_id, herhaal, eerste=None):  # noqa: ARG001
+    _http(f"{GRAPH}/me/events/{urllib.parse.quote(extern_id, safe='')}", headers={"Authorization": f"Bearer {toegang}"},
+          methode="PATCH", body={"recurrence": _ms_herhaling(herhaal, eerste)}, soort="Outlook")
 
 
 def ms_blok(toegang, agenda_id, titel, start, eind, voorlopig=False, extern_id=None):

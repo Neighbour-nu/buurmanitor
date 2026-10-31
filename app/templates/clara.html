@@ -121,17 +121,27 @@
       </div>
       {% for v in voorstellen %}
         <form method="post" action="/clara/voorstel/{{ v.id }}" class="voorstel">
-          <b>Voorstel:</b> {{ v.titel }}, {{ DAGEN[v.start.astimezone(tz).weekday()] }} {{ v.start.astimezone(tz).strftime('%d-%m %H.%M') }}–{{ v.eind.astimezone(tz).strftime('%H.%M') }}
+          {% if v.soort == 'stop' %}<b>Voorstel:</b> '{{ v.titel }}' stoppen vanaf {{ DAGEN[v.datum.weekday()] }} {{ v.datum.strftime('%d-%m') }}
+          <button class="knop klein vol" name="actie" value="inplannen">Stoppen</button>
+          {% elif v.soort == 'overslaan' %}<b>Voorstel:</b> '{{ v.titel }}' overslaan op {{ DAGEN[v.datum.weekday()] }} {{ v.datum.strftime('%d-%m') }}
+          <button class="knop klein vol" name="actie" value="inplannen">Overslaan</button>
+          {% elif v.soort == 'verwijder' %}<b>Voorstel:</b> de hele reeks '{{ v.titel }}' verwijderen
+          <button class="knop klein vol" name="actie" value="inplannen">Verwijderen</button>
+          {% else %}
+          <b>Voorstel:</b> {{ v.titel }},
+          {% if v.herhaal %}{{ herhaal_tekst(v.herhaal) }}, {{ v.start.astimezone(tz).strftime('%H.%M') }}–{{ v.eind.astimezone(tz).strftime('%H.%M') }}, vanaf {{ v.start.astimezone(tz).strftime('%d-%m') }}{% if v.reeks_id %} <span class="noot">(vervangt een bestaande reeks)</span>{% endif %}
+          {% else %}{{ DAGEN[v.start.astimezone(tz).weekday()] }} {{ v.start.astimezone(tz).strftime('%d-%m %H.%M') }}–{{ v.eind.astimezone(tz).strftime('%H.%M') }}{% endif %}
           {% if v.agenda %}<span class="noot">voor {{ v.agenda }}</span>{% endif %}
           {% if doelen %}<select name="doel">{% set gekozen = namespace(klaar=false) %}{% for w, label, d in doelen %}{% set past = (v.agenda and label.lower().startswith(v.agenda.lower() ~ ' (')) or (not v.agenda and d == v.domein) %}<option value="{{ w }}" {% if past and not gekozen.klaar %}selected{% set gekozen.klaar = true %}{% endif %}>{{ label }}</option>{% endfor %}</select>
           <button class="knop klein vol" name="actie" value="inplannen">Zet in agenda</button>{% endif %}
+          {% endif %}
           <button class="knop klein" name="actie" value="weg">Niet doen</button>
         </form>
       {% endfor %}
       <form method="post" action="/clara/vraag">
         <input type="hidden" name="gesprek" value="{{ gesprek.id if gesprek else '' }}">
         <textarea name="vraag" required placeholder="Vraag Clara iets over je agenda"></textarea>
-        <p><button class="knop vol" type="submit">Stuur</button> <span class="noot">Clara zet alleen iets in je agenda als jij op de knop drukt.</span></p>
+        <p><button class="knop vol" type="submit">Stuur</button> <span class="noot">of Ctrl-Enter. Clara zet alleen iets in je agenda als jij op de knop drukt.</span></p>
       </form>
       {% if eerdere %}
       <details class="gesprekken"><summary>Eerdere gesprekken ({{ eerdere | length }})</summary>
@@ -212,6 +222,21 @@
         {% if vrij and not doelen %}<p class="noot">Om iets in te plannen is een Google- of Microsoft-agenda met schrijfrechten nodig.</p>{% endif %}
       {% endif %}
     </section>
+    {% if reeksen %}
+    <section class="kaart" id="reeksen">
+      <h2>Herhalende afspraken</h2>
+      <p class="noot">Reeksen die Clara voor je heeft ingepland. Je kunt het haar ook vragen, bijvoorbeeld "volgende week woensdag geen paardrijles".</p>
+      {% for r in reeksen %}
+      <div class="item"><b>{{ r.titel }}</b><br><span class="noot">{{ herhaal_tekst(r.herhaal) }}, {{ r.start.astimezone(tz).strftime('%H.%M') }}–{{ r.eind.astimezone(tz).strftime('%H.%M') }} · {{ r.voor or r.koppeling }}</span>
+        <form method="post" action="/clara/reeks/{{ r.id }}" class="knoppenrij">
+          {% if r.keren %}<select name="datum" aria-label="Datum voor {{ r.titel }}">{% for k in r.keren %}{% set d = k.astimezone(tz) %}<option value="{{ d.date().isoformat() }}">{{ DAGEN[d.weekday()] }} {{ d.strftime('%d-%m') }}</option>{% endfor %}</select>
+          <button class="knop klein" name="actie" value="overslaan">Deze keer overslaan</button>
+          <button class="knop klein" name="actie" value="stop">Stoppen vanaf deze datum</button>{% endif %}
+          <button class="knop klein" name="actie" value="verwijder">Hele reeks verwijderen</button>
+        </form></div>
+      {% endfor %}
+    </section>
+    {% endif %}
   </aside>
 </div>
 {% endblock %}

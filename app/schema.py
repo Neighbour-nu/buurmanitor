@@ -144,6 +144,27 @@ MIGRATIES = [
         aangemaakt timestamptz NOT NULL DEFAULT now())""",
     # Voorstel van Clara voor een bepaalde agenda (bijvoorbeeld die van Sanne).
     "ALTER TABLE agenda_voorstellen ADD COLUMN IF NOT EXISTS agenda text NOT NULL DEFAULT ''",
+    # Herhalende afspraken: bij welke reeks hoort een afspraak (Google recurringEventId, Outlook seriesMasterId).
+    "ALTER TABLE agenda_items ADD COLUMN IF NOT EXISTS reeks text NOT NULL DEFAULT ''",
+    # Reeksen die Clara (na een klik) maakte, zodat ze die later kan stoppen, een keer overslaan of verwijderen.
+    """CREATE TABLE IF NOT EXISTS agenda_reeksen (
+        id serial PRIMARY KEY,
+        koppeling_id int NOT NULL REFERENCES agenda_koppelingen(id) ON DELETE CASCADE,
+        agenda_id text NOT NULL,
+        extern_id text NOT NULL,
+        titel text NOT NULL,
+        start timestamptz NOT NULL,
+        eind timestamptz NOT NULL,
+        herhaal jsonb NOT NULL,
+        voor text NOT NULL DEFAULT '',
+        status text NOT NULL DEFAULT 'actief',
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    # Voorstellen: een nieuwe afspraak (eventueel herhalend, eventueel ter vervanging van een reeks), of een reeks
+    # stoppen, een keer overslaan of verwijderen.
+    "ALTER TABLE agenda_voorstellen ADD COLUMN IF NOT EXISTS soort text NOT NULL DEFAULT 'nieuw'",
+    "ALTER TABLE agenda_voorstellen ADD COLUMN IF NOT EXISTS herhaal jsonb",
+    "ALTER TABLE agenda_voorstellen ADD COLUMN IF NOT EXISTS reeks_id int",
+    "ALTER TABLE agenda_voorstellen ADD COLUMN IF NOT EXISTS datum date",
     # Beschikbaarheid delen: mag Clara in dit account blokken 'Bezet' zetten, en welke blokken staan er al.
     "ALTER TABLE agenda_koppelingen ADD COLUMN IF NOT EXISTS spiegel boolean NOT NULL DEFAULT true",
     """CREATE TABLE IF NOT EXISTS agenda_spiegel (

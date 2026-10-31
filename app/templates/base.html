@@ -32,6 +32,14 @@
   <a href="{{ auth_url }}/logout">Uitloggen</a>
 </footer>
 <script>
+// Ctrl-Enter (of Cmd-Enter op een Mac) in een vraagveld verstuurt de vraag.
+document.addEventListener("keydown", function (e) {
+  const veld = e.target;
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && veld.tagName === "TEXTAREA" && veld.form && veld.name === "vraag") {
+    e.preventDefault();
+    if (veld.value.trim()) veld.form.requestSubmit ? veld.form.requestSubmit() : veld.form.submit();
+  }
+});
 // Meldingen: elke 30 seconden kijken of er iets nieuws is. Urgent en belangrijk verschijnen als banner en,
 // als je dat toestaat, als systeemmelding op je scherm (ook als dit tabblad op de achtergrond staat).
 (function () {

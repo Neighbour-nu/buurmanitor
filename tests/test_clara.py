@@ -1082,3 +1082,123 @@ def test_mee_naar_afspraak_van_sanne(klant, monkeypatch):
         assert a["niet_voor_mij"] and not a["mee"]
         assert not spiegel._bronnen(c, morgen - dt.timedelta(hours=1), morgen + dt.timedelta(hours=2))  # pylint: disable=protected-access
         c.execute("DELETE FROM agenda_items")
+
+
+# ---------------------------------------------------------------- herhalende afspraken
+
+def test_herhaling_regels_en_verzoeken(monkeypatch):
+    h = bronnen.herhaal_normaal({"dagen": ["za", "Woensdag", "do", "xx"], "tot": "2027-06-30"})
+    assert h == {"dagen": ["wo", "do", "za"], "tot": "2027-06-30"}
+    assert bronnen.herhaal_normaal({"dagen": []}) is None and bronnen.herhaal_normaal("wo") is None
+    assert bronnen.herhaal_normaal({"dagen": ["wo"], "tot": "ooit"}) == {"dagen": ["wo"], "tot": ""}
+    assert bronnen.herhaal_tekst(h) == "elke woensdag, donderdag en zaterdag tot en met 30-06-2027"
+    maandag = dt.datetime(2026, 11, 2, 16, 0, tzinfo=TZ)
+    assert bronnen.eerste_keer(maandag, h) == dt.timedelta(days=2)
+    assert bronnen.eerste_keer(maandag, {"dagen": ["ma"], "tot": ""}) == dt.timedelta(0)
+    assert bronnen._rrule(h) == "RRULE:FREQ=WEEKLY;WKST=MO;BYDAY=WE,TH,SA;UNTIL=20270630T215959Z"  # zomertijd  # pylint: disable=protected-access
+    assert bronnen._rrule({"dagen": ["wo"], "tot": "2026-12-31"}).endswith("UNTIL=20261231T225959Z")  # pylint: disable=protected-access
+    verzoeken = []
+    monkeypatch.setattr(bronnen, "_http", lambda url, **kw: verzoeken.append((url, kw)) or {"id": "r1"})
+    woensdag = maandag + dt.timedelta(days=2)
+    assert bronnen.google_maak("tok", "primary", "🚗 Sanne brengen", woensdag, woensdag + dt.timedelta(minutes=30), herhaal=h) == "r1"
+    assert verzoeken[-1][1]["body"]["recurrence"] == [bronnen._rrule(h)]  # pylint: disable=protected-access
+    bronnen.google_reeks("tok", "primary", "r1", {"dagen": ["wo"], "tot": "2026-12-01"})
+    assert verzoeken[-1][1]["methode"] == "PATCH" and verzoeken[-1][1]["body"]["recurrence"][0].endswith("UNTIL=20261201T225959Z")
+    bronnen.ms_maak("tok", "cal", "Brengen", woensdag, woensdag + dt.timedelta(minutes=30), herhaal={"dagen": ["wo", "za"], "tot": ""})
+    r = verzoeken[-1][1]["body"]["recurrence"]
+    assert r["pattern"]["daysOfWeek"] == ["wednesday", "saturday"] and r["range"] == {
+        "type": "noEnd", "startDate": "2026-11-04", "recurrenceTimeZone": "W. Europe Standard Time"}
+    bronnen.ms_reeks("tok", "cal", "m1", {"dagen": ["wo"], "tot": "2026-12-01"}, woensdag)
+    assert verzoeken[-1][0].endswith("/me/events/m1") and verzoeken[-1][1]["body"]["recurrence"]["range"]["endDate"] == "2026-12-01"
+    # Bij het ophalen: bij welke reeks hoort een afspraak.
+    e = {"id": "r1_20261104T150000Z", "recurringEventId": "r1", "summary": "x", "start": {"dateTime": "2026-11-04T16:00:00+01:00"},
+         "end": {"dateTime": "2026-11-04T16:30:00+01:00"}}
+    assert bronnen.google_item(e, "primary")["reeks"] == "r1"
+
+
+def test_voorstel_met_herhaling_uit_antwoord():
+    tekst, v = gesprek.voorstellen_uit('Zo doen we het. <voorstel>{"titel": "🚗 Sanne naar paardrijles brengen", '
+                                       '"start": "2026-11-04T15:40", "eind": "2026-11-04T16:20", "domein": "prive", '
+                                       '"herhaal": {"dagen": ["wo"]}, "vervangt": "3"}</voorstel>')
+    assert tekst == "Zo doen we het." and v[0]["herhaal"] == {"dagen": ["wo"], "tot": ""} and v[0]["vervangt"] == 3
+    assert gesprek.voorstellen_uit('<voorstel>{"titel": "x", "start": "2026-11-04T15:40", "eind": "2026-11-04T16:20"}</voorstel>')[1][0]["herhaal"] is None
+    assert "<reeks>" in gesprek.UITLEG and "herhaal" in gesprek.UITLEG
+
+
+def test_reeks_inplannen_overslaan_stoppen_vervangen(klant, monkeypatch):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    from app.clara import sync  # pylint: disable=import-outside-toplevel
+    gemaakt, verwijderd, gewijzigd = [], [], []
+    monkeypatch.setattr(sync, "toegang", lambda c, k: "tok")
+    monkeypatch.setattr(sync, "synchroniseer", lambda c, k, forceer=False, nu=None: None)
+    monkeypatch.setattr(bronnen, "google_maak", lambda tok, a, titel, s, e, o="", kleur=None, herhaal=None:
+                        gemaakt.append((a, titel, s, herhaal)) or f"serie{len(gemaakt)}")
+    monkeypatch.setattr(bronnen, "google_verwijder", lambda tok, a, eid: verwijderd.append(eid))
+    monkeypatch.setattr(bronnen, "google_reeks", lambda tok, a, eid, h, eerste=None: gewijzigd.append((eid, h)))
+    maandag = _nu_dag((7 - dt.datetime.now(TZ).weekday()) % 7 or 7, 15, 40)  # een maandag in de toekomst
+    with db.pool.connection() as c:
+        g = c.execute("SELECT * FROM agenda_koppelingen WHERE soort = 'google'").fetchone()
+        c.execute("DELETE FROM agenda_reeksen")
+        c.execute("DELETE FROM agenda_items")
+        gid = c.execute("INSERT INTO gesprekken (persona, titel) VALUES ('clara', 'Paardrijles') RETURNING id").fetchone()["id"]
+        vid = c.execute("""INSERT INTO agenda_voorstellen (gesprek_id, titel, start, eind, domein, herhaal)
+                           VALUES (%s, '🚗 Sanne naar paardrijles brengen', %s, %s, 'prive', %s) RETURNING id""",
+                        (gid, maandag, maandag + dt.timedelta(minutes=40), json.dumps({"dagen": ["wo"], "tot": ""}))).fetchone()["id"]
+    pagina = klant.get(f"/clara?g={gid}", headers=KOP).text
+    assert "elke woensdag, 15.40–16.20" in pagina and "of Ctrl-Enter" in pagina and "metaKey" in pagina
+    r = klant.post(f"/clara/voorstel/{vid}", headers=FORM, data={"actie": "inplannen", "doel": f"{g['id']}|primary"}, follow_redirects=False)
+    assert "elke+woensdag" in r.headers["location"], r.headers["location"]
+    woensdag = maandag + dt.timedelta(days=2)
+    assert gemaakt == [("primary", "🚗 Sanne naar paardrijles brengen", woensdag, {"dagen": ["wo"], "tot": ""})]
+    with db.pool.connection() as c:
+        reeks = c.execute("SELECT * FROM agenda_reeksen").fetchone()
+        assert reeks["extern_id"] == "serie1" and reeks["start"] == woensdag and reeks["voor"] == "Martijn"
+        for n in range(3):  # zo komen de keren na het ophalen binnen
+            s = woensdag + dt.timedelta(days=7 * n)
+            c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind, reeks)
+                         VALUES (%s, 'primary', %s, '🚗 Sanne naar paardrijles brengen', %s, %s, 'serie1')""",
+                      (g["id"], f"serie1_{n}", s, s + dt.timedelta(minutes=40)))
+        assert f"[reeks {reeks['id']}] 🚗 Sanne naar paardrijles brengen, elke woensdag, 15.40-16.20, in agenda Martijn" in gesprek.context(c)
+    pagina = klant.get("/clara", headers=KOP).text
+    assert "Herhalende afspraken" in pagina and "Deze keer overslaan" in pagina
+
+    # Eén keer overslaan (direct in het scherm).
+    tweede = (woensdag + dt.timedelta(days=7)).date()
+    r = klant.post(f"/clara/reeks/{reeks['id']}", headers=FORM, data={"actie": "overslaan", "datum": tweede.isoformat()}, follow_redirects=False)
+    assert "vervalt" in r.headers["location"] and verwijderd == ["serie1_1"]
+    r = klant.post(f"/clara/reeks/{reeks['id']}", headers=FORM, data={"actie": "overslaan", "datum": "2030-01-01"}, follow_redirects=False)
+    assert "fout=" in r.headers["location"]
+
+    # Clara stelt voor te stoppen; Martijn klikt.
+    with db.pool.connection() as c:
+        tekst, acties = gesprek.reeksacties_uit(c, f'Goed. <reeks>{{"id": {reeks["id"]}, "actie": "stop", "datum": "{tweede.isoformat()}"}}</reeks>')
+        assert tekst == "Goed." and acties[0]["soort"] == "stop"
+        assert gesprek.reeksacties_uit(c, '<reeks>{"id": 99999, "actie": "stop", "datum": "2026-12-01"}</reeks>')[1] == []
+        vid = c.execute("""INSERT INTO agenda_voorstellen (gesprek_id, titel, start, eind, soort, reeks_id, datum)
+                           VALUES (%s, %s, %s, %s, 'stop', %s, %s) RETURNING id""",
+                        (gid, reeks["titel"], acties[0]["start"], acties[0]["eind"], reeks["id"], tweede)).fetchone()["id"]
+    assert "stoppen vanaf" in klant.get(f"/clara?g={gid}", headers=KOP).text
+    klant.post(f"/clara/voorstel/{vid}", headers=FORM, data={"actie": "inplannen"})
+    assert gewijzigd == [("serie1", {"dagen": ["wo"], "tot": (tweede - dt.timedelta(days=1)).isoformat()})]
+
+    # Andere tijd: nieuwe reeks vervangt de oude vanaf de eerste nieuwe keer.
+    with db.pool.connection() as c:
+        s = woensdag + dt.timedelta(days=14, minutes=-20)
+        c.execute("UPDATE agenda_reeksen SET herhaal = %s WHERE id = %s", (json.dumps({"dagen": ["wo"], "tot": ""}), reeks["id"]))
+        vid = c.execute("""INSERT INTO agenda_voorstellen (gesprek_id, titel, start, eind, domein, herhaal, reeks_id)
+                           VALUES (%s, '🚗 Sanne brengen', %s, %s, 'prive', %s, %s) RETURNING id""",
+                        (gid, s, s + dt.timedelta(minutes=40), json.dumps({"dagen": ["wo"], "tot": ""}), reeks["id"])).fetchone()["id"]
+    gewijzigd.clear()
+    r = klant.post(f"/clara/voorstel/{vid}", headers=FORM, data={"actie": "inplannen", "doel": f"{g['id']}|primary"}, follow_redirects=False)
+    assert "oude+reeks+stopt" in r.headers["location"]
+    assert gewijzigd == [("serie1", {"dagen": ["wo"], "tot": (s.date() - dt.timedelta(days=1)).isoformat()})]
+
+    # Hele reeks verwijderen.
+    with db.pool.connection() as c:
+        nieuw = c.execute("SELECT id FROM agenda_reeksen WHERE extern_id = 'serie2'").fetchone()["id"]
+    klant.post(f"/clara/reeks/{nieuw}", headers=FORM, data={"actie": "verwijder"})
+    assert verwijderd[-1] == "serie2"
+    with db.pool.connection() as c:
+        assert c.execute("SELECT status FROM agenda_reeksen WHERE id = %s", (nieuw,)).fetchone()["status"] == "verwijderd"
+        c.execute("DELETE FROM agenda_reeksen")
+        c.execute("DELETE FROM agenda_items")
