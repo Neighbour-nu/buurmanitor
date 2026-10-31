@@ -32,6 +32,37 @@
   <a href="{{ auth_url }}/logout">Uitloggen</a>
 </footer>
 <script>
+// Na Stuur (of Ctrl/Cmd-Enter): vraagveld op slot, knop uit en laten zien dat het antwoord eraan komt.
+(function () {
+  const stijl = document.createElement("style");
+  stijl.textContent = ".bezig-veld{opacity:.6;cursor:progress}" +
+    ".draaier{display:inline-block;width:.8em;height:.8em;border:2px solid currentColor;border-right-color:transparent;" +
+    "border-radius:50%;animation:draai .8s linear infinite;vertical-align:-1px;margin-right:4px}" +
+    "@keyframes draai{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.draaier{animation:none}}" +
+    ".bezig-melding{margin-left:8px}";
+  document.head.appendChild(stijl);
+  document.addEventListener("submit", function (e) {
+    const f = e.target, veld = f.querySelector('textarea[name="vraag"]');
+    if (!veld) return;
+    if (f.dataset.bezig) { e.preventDefault(); return; }  // niet twee keer versturen
+    if (!veld.value.trim()) return;
+    f.dataset.bezig = "1";
+    f.setAttribute("aria-busy", "true");
+    veld.readOnly = true;  // readOnly en niet disabled: anders wordt de vraag niet meegestuurd
+    veld.classList.add("bezig-veld");
+    const knop = e.submitter || f.querySelector('button[type="submit"], button:not([type])');
+    if (knop) {
+      setTimeout(function () { knop.disabled = true; }, 0);  // na het versturen, zodat de knop zelf nog meegaat
+      knop.innerHTML = '<span class="draaier" aria-hidden="true"></span>Bezig';
+    }
+    const m = document.createElement("span");
+    m.className = "bezig-melding noot"; m.setAttribute("role", "status");
+    m.textContent = "Even geduld, het antwoord komt eraan. Dit kan een halve minuut duren.";
+    (knop || veld).insertAdjacentElement("afterend", m);
+  }, true);
+  // Terug met de vorige-knop van de browser: formulier weer bruikbaar
+  window.addEventListener("pageshow", function (e) { if (e.persisted) location.reload(); });
+})();
 // Ctrl-Enter (of Cmd-Enter op een Mac) in een vraagveld verstuurt de vraag.
 document.addEventListener("keydown", function (e) {
   const veld = e.target;
