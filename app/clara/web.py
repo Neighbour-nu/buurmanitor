@@ -1014,7 +1014,8 @@ RAAD_MARKER = "[clara-raad:"
 
 
 def _raadsbronnen(c, ook_uit=False):
-    return [k for k in sync.koppelingen(c, alleen_actief=not ook_uit) if k["soort"] in ("raad", "ics")]
+    """Bronnen voor de pagina Raadsagenda: de raadsagenda altijd (ook als hij niet in de week staat), agendalinks als ze aan staan."""
+    return [k for k in sync.koppelingen(c) if k["soort"] == "raad" or (k["soort"] == "ics" and (k["actief"] or ook_uit))]
 
 
 @router.get("/clara/raadsagenda", response_class=HTMLResponse)

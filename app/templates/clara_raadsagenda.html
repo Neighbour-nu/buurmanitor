@@ -11,7 +11,7 @@
   <h2><span>Bronnen</span>
     <form method="post" action="/clara/raadsagenda/vernieuwen" class="inline"><button class="knop klein" type="submit">Nu ophalen</button></form></h2>
   {% for s in status %}
-  <p class="noot"><b>{{ s.k.naam }}</b> ({{ 'Notubiz' if s.k.soort == 'raad' else 'agendalink' }}){% if not s.k.actief %} · <span class="label">niet actief</span>{% endif %}
+  <p class="noot"><b>{{ s.k.naam }}</b> ({{ 'Notubiz' if s.k.soort == 'raad' else 'agendalink' }}){% if not s.k.actief %} · <span class="label">{{ 'niet in je week, wel hier te kiezen' if s.k.soort == 'raad' else 'niet actief' }}</span>{% endif %}
     · {{ s.komend }} komende vergadering{{ 'en' if s.komend != 1 }}{% if s.alles != s.komend %} ({{ s.alles }} in totaal, ook voorbije){% endif %}
     · {% if s.k.laatst %}opgehaald {{ geleden(s.k.laatst) }}{% else %}nog niet opgehaald{% endif %}
     {% if s.k.fout %}<br><span class="label rood">fout</span> {{ s.k.fout }}{% endif %}</p>

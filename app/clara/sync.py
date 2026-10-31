@@ -370,7 +370,8 @@ def reistijdreeksen_opruimen(c, nu=None):
 
 @planner.taak("agenda", elke=dt.timedelta(minutes=5))
 def taak_agenda(c, forceer=False):
-    uitslag = [u for k in koppelingen(c, alleen_actief=True) if (u := synchroniseer(c, k, forceer=forceer))]
+    # De raadsagenda wordt ook bijgewerkt als hij niet in de week staat: op de pagina Raadsagenda kies je eruit.
+    uitslag = [u for k in koppelingen(c) if (k["actief"] or k["soort"] == "raad") and (u := synchroniseer(c, k, forceer=forceer))]
     if koppelingen(c, alleen_actief=True):
         melden(c)
         r = reistijd_bijwerken(c)

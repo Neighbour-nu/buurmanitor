@@ -1746,3 +1746,25 @@ def test_raadsagenda_kiezen_en_overnemen(klant, monkeypatch):
         c.execute("UPDATE agenda_koppelingen SET schrijven = true WHERE soort = 'google'")
         c.execute("DELETE FROM agenda_items")
         c.execute("DELETE FROM agenda_overgenomen")
+
+
+
+def test_raadsagenda_te_kiezen_ook_als_hij_niet_in_de_week_staat(klant, monkeypatch):
+    from app.clara import sync  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    s = _nu_dag(4, 19, 30)
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM agenda_items")
+        r = c.execute("INSERT INTO agenda_koppelingen (soort, naam, domein, actief) VALUES ('raad', 'Raadsagenda Helmond', 'politiek', false) RETURNING id").fetchone()["id"]
+        c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind, geschat)
+                     VALUES (%s, '', 'n1', 'Commissie Ruimte', %s, %s, true)""", (r, s, s + dt.timedelta(hours=3)))
+        assert "Commissie Ruimte" not in [a["titel"] for a in sync.afspraken(c, s - dt.timedelta(hours=1), s + dt.timedelta(hours=4))]
+    pagina = klant.get("/clara/raadsagenda", headers=KOP).text
+    assert "Commissie Ruimte" in pagina and "niet in je week, wel hier te kiezen" in pagina
+    gehaald = []
+    monkeypatch.setattr(sync, "synchroniseer", lambda c, k, forceer=False, nu=None: gehaald.append(k["soort"]) or None)
+    with db.pool.connection() as c:
+        sync.taak_agenda(c)
+        assert "raad" in gehaald  # ook bijgewerkt als hij niet in de week staat
+        c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (r,))
+        c.execute("DELETE FROM agenda_items")
