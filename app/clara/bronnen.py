@@ -185,7 +185,9 @@ def google_item(e, agenda_id, tz=config.TZ):
                 status={"tentative": "voorlopig", "cancelled": "geannuleerd"}.get(e.get("status"), "bevestigd"),
                 vrij=e.get("transparency") == "transparent", antwoord=antwoord,
                 organisator=(e.get("organizer") or {}).get("displayName") or (e.get("organizer") or {}).get("email", ""),
-                online=bool(e.get("hangoutLink") or e.get("conferenceData")), link=e.get("htmlLink", ""),
+                # Een (vaak automatisch toegevoegde) Meet-link maakt een afspraak met een adres niet online.
+                online=bool(e.get("hangoutLink") or e.get("conferenceData")) and not (e.get("location") or "").strip(),
+                link=e.get("htmlLink", ""),
                 omschrijving=e.get("description", ""), kleur=GOOGLE_AFSPRAAKKLEUR.get(str(e.get("colorId", "")), ""),
                 reeks=e.get("recurringEventId", ""))
 
@@ -487,7 +489,7 @@ def ms_item(e, agenda_id, tz=config.TZ):
                 heledag=bool(e.get("isAllDay")), status="geannuleerd" if e.get("isCancelled") else (
                     "voorlopig" if e.get("showAs") == "tentative" else "bevestigd"),
                 vrij=e.get("showAs") in ("free", "workingElsewhere"), antwoord=antwoord,
-                organisator=org.get("name") or org.get("address", ""), online=bool(e.get("isOnlineMeeting")),
+                organisator=org.get("name") or org.get("address", ""), online=bool(e.get("isOnlineMeeting")) and not locatie.strip(),
                 link=e.get("webLink", ""), omschrijving=e.get("bodyPreview", ""), reeks=e.get("seriesMasterId") or "")
 
 

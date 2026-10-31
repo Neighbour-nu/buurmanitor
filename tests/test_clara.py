@@ -1564,3 +1564,16 @@ def test_van_meegaan_naar_brengen_en_ophalen(klant, monkeypatch):
         for t_ in ("agenda_items", "agenda_reisinfo", "agenda_vervoer", "agenda_reeksen"):
             c.execute(f"DELETE FROM {t_}")
         c.execute("DELETE FROM instellingen WHERE sleutel LIKE 'clara%%'")
+
+
+def test_meet_of_teams_link_met_adres_is_niet_online():
+    basis = {"id": "e", "summary": "Paardrijles", "start": {"dateTime": "2026-10-31T13:30:00+01:00"},
+             "end": {"dateTime": "2026-10-31T14:30:00+01:00"}, "hangoutLink": "https://meet.google.com/abc-defg-hij"}
+    assert not bronnen.google_item(dict(basis, location="Manege Hooidonk, Beekstraat 48, Nuenen"), "sanne")["online"]
+    assert bronnen.google_item(basis, "sanne")["online"]  # alleen een Meet-link: online
+    ms = {"id": "m", "subject": "Overleg", "start": {"dateTime": "2026-11-03T10:00:00", "timeZone": "Europe/Amsterdam"},
+          "end": {"dateTime": "2026-11-03T11:00:00", "timeZone": "Europe/Amsterdam"}, "isOnlineMeeting": True,
+          "responseStatus": {"response": "organizer"}, "isOrganizer": True}
+    assert not bronnen.ms_item(dict(ms, location={"displayName": "Huis voor de Stad"}), "cal")["online"]
+    assert bronnen.ms_item(dict(ms, location={"displayName": "Microsoft Teams-vergadering"}), "cal")["online"]
+    assert bronnen.ms_item(ms, "cal")["online"]
