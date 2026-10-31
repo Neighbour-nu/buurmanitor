@@ -28,7 +28,7 @@
         <div class="afspraak {{ a.domein }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %}><span class="tijd">{% if a.heledag %}hele dag{% else %}{{ a.start.astimezone(agenda.tz).strftime('%H.%M') }}{% endif %}</span>
           <span class="wat">{{ a.titel }}<br><span class="noot">{{ a.agenda_naam or a.koppeling }}{% if a.locatie %} · {{ a.locatie }}{% endif %}</span></span></div>
       {% else %}<p class="noot">Geen afspraken vandaag.</p>{% endfor %}
-      {% if agenda.conflicten %}<p class="item belangrijk"><a href="/clara">{{ agenda.conflicten | length }} dubbele boeking{{ 'en' if agenda.conflicten | length > 1 }}</a> in de komende week.</p>{% endif %}
+      {% if agenda.conflicten %}<p class="item belangrijk"><a href="/clara#overlap">{{ agenda.conflicten | length }} keer potentiële overlap</a> in de komende week.</p>{% endif %}
       {% if agenda.uitnodigingen %}<p class="noot"><a href="/clara#uitnodigingen">{{ agenda.uitnodigingen | length }} uitnodiging{{ 'en' if agenda.uitnodigingen | length > 1 }}</a> nog te beantwoorden.</p>{% endif %}
     {% endif %}
   </section>

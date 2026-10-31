@@ -45,7 +45,7 @@ def _agenda(c, nu):
     conf = analyse.conflicten(week)
     uit = ["Agenda vandaag (van Clara):"] + (regels or ["- geen afspraken"])
     if conf:
-        uit.append(f"Dubbele boekingen komende week: {len(conf)} (details bij Clara).")
+        uit.append(f"Potentiële overlap komende week: {len(conf)} keer (details bij Clara).")
     return "\n".join(uit)
 
 

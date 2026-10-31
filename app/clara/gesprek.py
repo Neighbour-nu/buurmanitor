@@ -131,7 +131,7 @@ def context(c, nu=None):
         delen.append(f"{DAGEN[dag.weekday()].capitalize()} {dag:%d-%m}:\n" + "\n".join(_regel(a, tz) for a in items))
     conf = analyse.conflicten(lijst)
     if conf:
-        delen.append("# Dubbele boekingen\n" + "\n".join(
+        delen.append("# Potentiële overlap (twee bezette afspraken tegelijk)\n" + "\n".join(
             f"- {x['van'].astimezone(tz):%d-%m %H.%M}: {x['a']['titel']} en {x['b']['titel']}" for x in conf))
     over = analyse.overgangen(lijst, inst["reistijd"])
     if over:

@@ -47,7 +47,7 @@
           <details class="afspraak {{ a.domein }} {{ 'reisblok' if is_reisblok(a) }} {{ 'conflict' if sleutel in conflict_ids }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }} {{ 'voorlopig' if a.status == 'voorlopig' or a.antwoord in ('voorlopig', 'geen') }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %} id="a{{ a.id }}">
             <summary><span class="tijd">{{ tijd(a) }}</span>
               <span class="wat"><span class="atitel">{{ a.titel }}</span>
-                {% if sleutel in conflict_ids %}<span class="label rood">dubbel</span>{% endif %}
+                {% if sleutel in conflict_ids %}<span class="label rood">overlap</span>{% endif %}
                 {% if sleutel in krap_ids %}<span class="label rood">krap</span>{% endif %}
                 {% if a.antwoord == 'geen' %}<span class="label">uitnodiging</span>{% endif %}
                 {% if a.antwoord == 'afgewezen' %}<span class="label">afgewezen</span>{% endif %}
@@ -129,6 +129,16 @@
         if (id && document.getElementById(id)) { document.getElementById(id).open = true; document.getElementById(id).scrollIntoView({block: "center"}); }
         sessionStorage.removeItem("clara_open");
       } catch (e) {}
+      // een link naar een afspraak (#a123, bijvoorbeeld vanuit Potentiële overlap) klapt die afspraak open
+      function openUitAdres() {
+        if (!/^#a\d+$/.test(location.hash)) return;
+        const d = document.getElementById(location.hash.slice(1));
+        if (!d || d.tagName !== "DETAILS") return;
+        d.open = true;
+        d.scrollIntoView({block: "center"});
+      }
+      window.addEventListener("hashchange", openUitAdres);
+      openUitAdres();
     })();
     </script>
   </section>
@@ -201,12 +211,13 @@
       {% endif %}
     </section>
 
-    <section class="kaart">
-      <h2>Dubbele boekingen <span class="klein">komende 8 weken</span></h2>
+    <section class="kaart" id="overlap">
+      <h2>Potentiële overlap <span class="klein">komende 8 weken</span></h2>
       {% for x in conflicten %}
-        <div class="item belangrijk"><b>{{ DAGEN[x.van.astimezone(tz).weekday()] }} {{ x.van.astimezone(tz).strftime('%d-%m %H.%M') }}</b><br>
-          {{ x.a.titel }} <span class="noot">({{ x.a.koppeling }})</span><br>{{ x.b.titel }} <span class="noot">({{ x.b.koppeling }})</span></div>
-      {% else %}<p class="noot">Geen dubbele boekingen.</p>{% endfor %}
+        <div class="item belangrijk overlap"><b>{{ DAGEN[x.van.astimezone(tz).weekday()] }} {{ x.van.astimezone(tz).strftime('%d-%m %H.%M') }}</b>
+          {% for a in (x.a, x.b) %}<br><a href="/clara?week={{ x.week }}#a{{ a.id }}" title="Open deze afspraak in de week om hem aan te passen">{{ a.titel }}</a> <span class="noot">({{ a.koppeling }})</span>{% endfor %}</div>
+      {% else %}<p class="noot">Geen potentiële overlap.</p>{% endfor %}
+      {% if conflicten %}<p class="noot">Klik op een afspraak om hem in de week te openen en aan te passen.</p>{% endif %}
       {% if overgangen %}
         <h2>Krappe overgangen</h2>
         {% for x in overgangen %}
@@ -260,21 +271,6 @@
         {% if vrij and not doelen %}<p class="noot">Om iets in te plannen is een Google- of Microsoft-agenda met schrijfrechten nodig.</p>{% endif %}
       {% endif %}
     </section>
-    {% if reeksen %}
-    <section class="kaart" id="reeksen">
-      <h2>Herhalende afspraken</h2>
-      <p class="noot">Reeksen die Clara voor je heeft ingepland. Je kunt het haar ook vragen, bijvoorbeeld "volgende week woensdag geen paardrijles".</p>
-      {% for r in reeksen %}
-      <div class="item"><b>{{ r.titel }}</b><br><span class="noot">{{ herhaal_tekst(r.herhaal) }}, {{ r.start.astimezone(tz).strftime('%H.%M') }}–{{ r.eind.astimezone(tz).strftime('%H.%M') }} · {{ r.voor or r.koppeling }}</span>
-        <form method="post" action="/clara/reeks/{{ r.id }}" class="knoppenrij">
-          {% if r.keren %}<select name="datum" aria-label="Datum voor {{ r.titel }}">{% for k in r.keren %}{% set d = k.astimezone(tz) %}<option value="{{ d.date().isoformat() }}">{{ DAGEN[d.weekday()] }} {{ d.strftime('%d-%m') }}</option>{% endfor %}</select>
-          <button class="knop klein" name="actie" value="overslaan">Deze keer overslaan</button>
-          <button class="knop klein" name="actie" value="stop">Stoppen vanaf deze datum</button>{% endif %}
-          <button class="knop klein" name="actie" value="verwijder">Hele reeks verwijderen</button>
-        </form></div>
-      {% endfor %}
-    </section>
-    {% endif %}
   </aside>
 </div>
 {% endblock %}

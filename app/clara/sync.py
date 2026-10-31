@@ -205,14 +205,14 @@ def verborgen_aantal(c, van, tot):
 
 
 def melden(c, nu=None):
-    """Meldingen voor dubbele boekingen (komende week) en nieuwe uitnodigingen."""
+    """Meldingen voor potentiële overlap (komende week) en nieuwe uitnodigingen."""
     nu = nu or dt.datetime.now(config.TZ)
     lijst = afspraken(c, nu, nu + dt.timedelta(days=7))
     for x in analyse.conflicten(lijst):
         a, b = x["a"], x["b"]
         ids = sorted([f"{a['koppeling_id']}:{a['extern_id']}", f"{b['koppeling_id']}:{b['extern_id']}"])
-        meldingen.melden(c, "belangrijk", "clara", f"Dubbele boeking op {x['van'].astimezone(config.TZ):%d-%m om %H.%M}",
-                         f"{a['titel']} ({a['koppeling']}) en {b['titel']} ({b['koppeling']})", "/clara",
+        meldingen.melden(c, "belangrijk", "clara", f"Potentiële overlap op {x['van'].astimezone(config.TZ):%d-%m om %H.%M}",
+                         f"{a['titel']} ({a['koppeling']}) en {b['titel']} ({b['koppeling']})", "/clara#overlap",
                          sleutel="clara-conflict-" + "-".join(ids)[:200] + f"-{x['van']:%Y%m%d%H%M}")
     gemeld = instellingen_lijst(c, "clara_uitnodigingen")
     nieuw = [u for u in analyse.uitnodigingen(afspraken(c, nu, venster(nu)[1]), nu)

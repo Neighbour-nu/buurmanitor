@@ -14,6 +14,7 @@
   <a href="#reistijd" role="tab">Reistijd</a>
   <a href="#beschikbaarheid" role="tab">Beschikbaarheid delen</a>
   <a href="#verbergen" role="tab">Verbergen</a>
+  <a href="#reeksen" role="tab">Herhalende afspraken</a>
   <a href="#werktijden" role="tab">Werktijden</a>
   <a href="#technisch" role="tab">Technisch</a>
 </nav>
@@ -177,7 +178,7 @@
 <div class="tabblad" id="verbergen" role="tabpanel">
 <section class="kaart">
   <h2>Verbergen</h2>
-  <p class="noot">Afspraken die Clara weglaat: niet in de week, niet bij dubbele boekingen of uitnodigingen, en ze houden
+  <p class="noot">Afspraken die Clara weglaat: niet in de week, niet bij potentiële overlap of uitnodigingen, en ze houden
     geen tijd bezet. In Google en Outlook blijven ze gewoon staan. Een regel past als de organisator het eerste stukje
     bevat en de titel of omschrijving het tweede (een leeg veld telt niet mee).</p>
   {% for r in regels %}
@@ -191,6 +192,23 @@
     <label>Titel of omschrijving bevat <input type="text" name="tekst" placeholder="bijvoorbeeld Bestuur"></label>
     <button class="knop" type="submit">Regel toevoegen</button>
   </form>
+</section>
+</div>
+
+<div class="tabblad" id="reeksen" role="tabpanel">
+<section class="kaart">
+  <h2>Herhalende afspraken</h2>
+  <p class="noot">Reeksen die Clara voor je heeft ingepland, zoals reistijd en ritten die elke keer terugkomen. Je kunt het
+    haar ook vragen in de <a href="/clara#gesprek">week</a>, bijvoorbeeld "volgende week woensdag geen paardrijles".</p>
+  {% for r in reeksen %}
+  <div class="item"><b>{{ r.titel }}</b><br><span class="noot">{{ herhaal_tekst(r.herhaal) }}, {{ r.start.astimezone(tz).strftime('%H.%M') }}–{{ r.eind.astimezone(tz).strftime('%H.%M') }} · {{ r.voor or r.koppeling }}</span>
+    <form method="post" action="/clara/reeks/{{ r.id }}" class="knoppenrij">
+      {% if r.keren %}<select name="datum" aria-label="Datum voor {{ r.titel }}">{% for k in r.keren %}{% set d = k.astimezone(tz) %}<option value="{{ d.date().isoformat() }}">{{ DAGEN[d.weekday()] }} {{ d.strftime('%d-%m') }}</option>{% endfor %}</select>
+      <button class="knop klein" name="actie" value="overslaan">Deze keer overslaan</button>
+      <button class="knop klein" name="actie" value="stop">Stoppen vanaf deze datum</button>{% endif %}
+      <button class="knop klein" name="actie" value="verwijder">Hele reeks verwijderen</button>
+    </form></div>
+  {% else %}<p class="noot">Clara heeft nog geen herhalende afspraken voor je ingepland.</p>{% endfor %}
 </section>
 </div>
 

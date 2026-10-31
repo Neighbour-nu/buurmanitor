@@ -91,13 +91,6 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
                                ORDER BY bijgewerkt DESC LIMIT 30""").fetchall()
         verborgen = sync.verborgen_aantal(c, nu, nu + dt.timedelta(days=56))
         gedekt = reis.gedekte_reeksen(c)
-        reeksen = [dict(r) for r in c.execute("""SELECT r.*, k.naam AS koppeling FROM agenda_reeksen r
-                                                  JOIN agenda_koppelingen k ON k.id = r.koppeling_id
-                                                  WHERE r.status = 'actief' ORDER BY r.titel""").fetchall()]
-        for r in reeksen:
-            r["keren"] = [x["start"] for x in c.execute("""SELECT start FROM agenda_items WHERE koppeling_id = %s AND reeks = %s
-                                                          AND start > %s ORDER BY start LIMIT 10""",
-                                                       (r["koppeling_id"], r["extern_id"], nu)).fetchall()]
         try:
             plan = sync.reisplan(c, van, van + dt.timedelta(days=DAGEN_IN_BEELD))
         except bronnen.BronFout as e:
@@ -118,6 +111,8 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
     thuis_ids = {(a["koppeling_id"], a["extern_id"]) for a in plan.get("thuis_afspraken", [])}
     thuis_ids |= {(a["koppeling_id"], a["extern_id"]) for a in lijst if reis.is_thuis_tekst(a, inst)}
     conf = analyse.conflicten(komend)
+    for x in conf:  # in welk venster van twee weken de overlap staat, zodat de link de afspraak in de week opent
+        x["week"] = (x["van"].astimezone(tz).date() - nu.date()).days // DAGEN_IN_BEELD
     in_conflict = {id(x["a"]) for x in conf} | {id(x["b"]) for x in conf}
     conflict_ids = {(a["koppeling_id"], a["extern_id"]) for a in komend if id(a) in in_conflict}
     if reis.actief() and inst.get("vertrekpunt") and not plan.get("fout"):
@@ -132,11 +127,23 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         conflict_ids=conflict_ids, krap_ids=krap_ids, uitnodigingen=analyse.uitnodigingen(komend, nu),
         koppelingen=koppelingen, doelen=_schrijfdoelen(koppelingen), vrij=vrij, duur=duur, dagen=dagen, tz=tz,
         DAGEN=DAGEN, gesprek=gs, berichten=berichten, voorstellen=voorstellen, melding=melding, fout=fout,
-        eerdere=eerdere, archief=archief, reeksen=reeksen, herhaal_tekst=bronnen.herhaal_tekst,
+        eerdere=eerdere, archief=archief, herhaal_tekst=bronnen.herhaal_tekst,
         kluis_ok=kluis.actief(), sleutel_ok=bool(config.ANTHROPIC_API_KEY), inst=inst,
         domeinnaam=dict(DOMEINEN), verborgen=verborgen, plan=plan, per_afspraak=per_afspraak, open_reis=open_reis,
         reis_actief=reis.actief(), is_reisblok=reis.is_reisblok, onbekend_ids=onbekend_ids, thuis_ids=thuis_ids, rit_ids=rit_ids,
         gedekt=gedekt, reis_dienst=reis.dienst_naam()))
+
+
+def _reeksen(c, nu):
+    """De herhalende afspraken die Clara heeft ingepland, met de komende keren (voor overslaan of stoppen)."""
+    reeksen = [dict(r) for r in c.execute("""SELECT r.*, k.naam AS koppeling FROM agenda_reeksen r
+                                              JOIN agenda_koppelingen k ON k.id = r.koppeling_id
+                                              WHERE r.status = 'actief' ORDER BY r.titel""").fetchall()]
+    for r in reeksen:
+        r["keren"] = [x["start"] for x in c.execute("""SELECT start FROM agenda_items WHERE koppeling_id = %s AND reeks = %s
+                                                      AND start > %s ORDER BY start LIMIT 10""",
+                                                   (r["koppeling_id"], r["extern_id"], nu)).fetchall()]
+    return reeksen
 
 
 def _reis_als_bezet(plan):
@@ -313,7 +320,7 @@ async def reeks(request: Request, rid: int):
     except ValueError:
         datum = None
     if actie not in ("stop", "overslaan", "verwijder") or (actie != "verwijder" and not datum):
-        return _terug("/clara#reeksen", fout="Kies een datum.")
+        return _terug("/clara/koppelingen#reeksen", fout="Kies een datum.")
 
     def doe():
         with db.pool.connection() as c:
@@ -324,8 +331,8 @@ async def reeks(request: Request, rid: int):
     try:
         tekst = await asyncio.to_thread(doe)
     except (bronnen.BronFout, kluis.KluisFout) as e:
-        return _terug("/clara#reeksen", fout=str(e))
-    return _terug("/clara#reeksen", melding=tekst)
+        return _terug("/clara/koppelingen#reeksen", fout=str(e))
+    return _terug("/clara/koppelingen#reeksen", melding=tekst)
 
 
 @router.post("/clara/uitnodiging/{item_id}")
@@ -407,6 +414,7 @@ def koppelingen_scherm(request: Request, melding: str = "", fout: str = ""):
                                 (reis.MARKER + "%",)).fetchone()["n"]
         aantallen = {r["koppeling_id"]: r["n"] for r in c.execute(
             "SELECT koppeling_id, count(*) AS n FROM agenda_items WHERE start > now() GROUP BY koppeling_id").fetchall()}
+        reeksen = _reeksen(c, dt.datetime.now(config.TZ))
     return templates.TemplateResponse("clara_koppelingen.html", ctx(
         request, "clara", koppelingen=lijst, aantallen=aantallen, inst=inst, melding=melding, fout=fout, regels=regels,
         reis_actief=reis.actief(), vertrekpunt_label=vertrekpunt_label, reis_dienst=reis.dienst_naam(),
@@ -415,7 +423,8 @@ def koppelingen_scherm(request: Request, melding: str = "", fout: str = ""):
         ms_ok=bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET), politiek_ok=config.POLITIEK_ACTIEF,
         beheerder_url=bronnen.ms_beheerder_url() if config.MS_CLIENT_ID else "", DAGEN=DAGEN,
         terug_google=bronnen.terugadres("google"), terug_ms=bronnen.terugadres("microsoft"),
-        terug_ms_beheerder=bronnen.terugadres("microsoft", "beheerder"), domeinnaam=dict(DOMEINEN)))
+        terug_ms_beheerder=bronnen.terugadres("microsoft", "beheerder"), domeinnaam=dict(DOMEINEN),
+        reeksen=reeksen, herhaal_tekst=bronnen.herhaal_tekst, tz=config.TZ))
 
 
 def _nieuwe_staat(c, soort, opties):
@@ -809,7 +818,7 @@ def _brengen_halen(c, a, modus, vervoer, elke, inst, doelen, thuis):
     h = _reeks_herhaling(c, a) if elke else None
     if h and c.execute("""SELECT 1 FROM agenda_reeksen WHERE soort = 'reistijd' AND status = 'actief' AND bron_koppeling = %s
                           AND bron_reeks = %s""", (a["koppeling_id"], a["reeks"])).fetchone():
-        return None, f"Voor '{a['titel']}' staan de ritten al als reeks in je agenda. Aanpassen kan bij Herhalende afspraken."
+        return None, f"Voor '{a['titel']}' staan de ritten al als reeks in je agenda. Aanpassen kan bij Instellingen, onder Herhalende afspraken."
     staat = {m.group(3) for i in c.execute("SELECT omschrijving FROM agenda_items WHERE omschrijving LIKE %s",
                                             (f"{reis.MARKER}{a['koppeling_id']}:%",)).fetchall()
              if (m := RIT.search(i["omschrijving"] or "")) and m.group(2) == a["extern_id"]}
@@ -875,7 +884,7 @@ def _reistijd_voor_reeks(c, a, regels, doelen, inst, nu):
     sync.synchroniseer(c, dk, forceer=True)
     return (f"Reistijd voor elke keer van '{a['titel']}' staat in je agenda ({bronnen.herhaal_tekst(h)}, vanaf "
             f"{a['start'].astimezone(config.TZ):%d-%m}): " + ", ".join(klaar) + ". Vervalt een keer, dan haalt Clara de reistijd "
-            "die dag ook weg. Je vindt de reistijdreeks bij Herhalende afspraken.")
+            "die dag ook weg. Je vindt de reistijdreeks bij Instellingen, onder Herhalende afspraken.")
 
 
 @router.post("/clara/reistijd/{item_id:int}/stop")

@@ -288,15 +288,19 @@ def test_google_koppelen_ophalen_en_inplannen(klant, monkeypatch):
         assert k["account"] == "martijn@neighbour.nu" and k["schrijven"] and k["schrijfagenda"] == "primary"
         assert "1//ref" not in k["geheim"] and kluis.open_(k["geheim"]) == "1//ref"
         assert c.execute("SELECT count(*) AS n FROM agenda_items WHERE koppeling_id = %s", (k["id"],)).fetchone()["n"] == 3
-        conflict = c.execute("SELECT * FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Dubbele boeking%%'").fetchall()
+        conflict = c.execute("SELECT * FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Potentiële overlap%%'").fetchall()
         uitn = c.execute("SELECT * FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Uitnodiging%%'").fetchall()
         assert len(conflict) == 1 and len(uitn) == 1
         item_id = c.execute("SELECT id FROM agenda_items WHERE extern_id = 'a3'").fetchone()["id"]
 
     pagina = klant.get("/clara", headers=KOP).text
-    assert "Overleg ZEROHERO" in pagina and "dubbel" in pagina and "Keepersavond" in pagina and "Accepteren" in pagina
+    assert "Overleg ZEROHERO" in pagina and "Potentiële overlap" in pagina and '>overlap<' in pagina and "Keepersavond" in pagina and "Accepteren" in pagina
+    # De afspraken bij Potentiële overlap zijn links naar de afspraak in de week, die daar openklapt.
+    overlap = pagina.split('id="overlap"')[1].split('id="uitnodigingen"')[0]
+    assert overlap.count('href="/clara?week=0#a') == 2
+    assert all(f'id="a{i}"' in pagina for i in __import__("re").findall(r'#a(\d+)"', overlap))
     vandaag = klant.get("/", headers=KOP).text
-    assert "dubbele boeking" in vandaag
+    assert "potentiële overlap" in vandaag and 'href="/clara#overlap"' in vandaag
 
     # Uitnodiging beantwoorden (na een klik)
     r = klant.post(f"/clara/uitnodiging/{item_id}", headers=FORM, data={"antwoord": "geaccepteerd"}, follow_redirects=False)
@@ -715,8 +719,8 @@ def test_gesprekken_archiveren_en_verwijderen(klant):
                         (nieuw, s, s + dt.timedelta(hours=1))).fetchone()["id"]
         iris = c.execute("INSERT INTO gesprekken (persona, titel) VALUES ('iris', 'Dagstart') RETURNING id").fetchone()["id"]
     pagina = klant.get("/clara", headers=KOP).text
-    # Het gesprek staat rechtsboven, boven de dubbele boekingen.
-    assert pagina.index('id="gesprek"') < pagina.index("Dubbele boekingen") < pagina.index('id="uitnodigingen"') < pagina.index('id="vrij"')
+    # Het gesprek staat rechtsboven, boven de potentiële overlap.
+    assert pagina.index('id="gesprek"') < pagina.index('id="overlap"') < pagina.index('id="uitnodigingen"') < pagina.index('id="vrij"')
     assert "Vraag in het nieuwe gesprek" in pagina and "Eerdere gesprekken (1)" in pagina and "Oud gesprek" in pagina
     # Archiveren: uit de lijst en niet meer het standaardgesprek; terug te halen.
     assert klant.post(f"/gesprek/{nieuw}/archief", headers=KOP, data={"terug": "/clara"}).status_code == 403  # zonder herkomst
@@ -817,7 +821,7 @@ def test_agenda_van_sanne_kleur_niet_bezet_en_inplannen(klant, monkeypatch):
         "aan_primary": "1", "aan_sanne": "1", "bezet_primary": "1", "bezet_sanne": "1"})
     assert "Zwemles" in klant.get("/clara", headers=KOP).text
     with db.pool.connection() as c:
-        assert c.execute("SELECT count(*) AS n FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Dubbele boeking%%'").fetchone()["n"] == 1
+        assert c.execute("SELECT count(*) AS n FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Potentiële overlap%%'").fetchone()["n"] == 1
         c.execute("DELETE FROM meldingen WHERE bron = 'clara'")
 
     # Sanne niet meer 'bezet voor mij': geen dubbele boeking, wel zichtbaar in haar eigen kleur.
@@ -825,7 +829,7 @@ def test_agenda_van_sanne_kleur_niet_bezet_en_inplannen(klant, monkeypatch):
         "naam": k["naam"], "domein": "prive", "actief": "1", "schrijfagenda": "primary",
         "aan_primary": "1", "aan_sanne": "1", "bezet_primary": "1"})
     with db.pool.connection() as c:
-        assert c.execute("SELECT count(*) AS n FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Dubbele boeking%%'").fetchone()["n"] == 0
+        assert c.execute("SELECT count(*) AS n FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Potentiële overlap%%'").fetchone()["n"] == 0
         k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (kid,)).fetchone()
         assert {a["id"]: a["bezet"] for a in k["agendas"]} == {"primary": True, "sanne": False}
         from app.clara import sync  # pylint: disable=import-outside-toplevel
@@ -838,7 +842,7 @@ def test_agenda_van_sanne_kleur_niet_bezet_en_inplannen(klant, monkeypatch):
         assert "kan inplannen: Martijn, Sanne" in ctx
     pagina = klant.get("/clara", headers=KOP).text
     assert "border-left-color: #795548" in pagina and "border-left-color: #D50000" in pagina and "(niet bezet voor jou)" in pagina
-    assert "dubbel" not in pagina.split('id="gesprek"')[0]
+    assert ">overlap<" not in pagina.split('id="gesprek"')[0]
     vandaag = klant.get("/", headers=KOP).text
     assert "Studiedag" in vandaag and "border-left-color: #795548" in vandaag
 
@@ -1167,13 +1171,16 @@ def test_reeks_inplannen_overslaan_stoppen_vervangen(klant, monkeypatch):
                          VALUES (%s, 'primary', %s, '🚗 Sanne naar paardrijles brengen', %s, %s, 'serie1')""",
                       (g["id"], f"serie1_{n}", s, s + dt.timedelta(minutes=40)))
         assert f"[reeks {reeks['id']}] 🚗 Sanne naar paardrijles brengen, elke woensdag, 15.40-16.20, in agenda Martijn" in gesprek.context(c)
-    pagina = klant.get("/clara", headers=KOP).text
-    assert "Herhalende afspraken" in pagina and "Deze keer overslaan" in pagina
+    # De reeksen staan bij de instellingen, niet meer in de week.
+    assert 'id="reeksen"' not in klant.get("/clara", headers=KOP).text
+    pagina = klant.get("/clara/koppelingen", headers=KOP).text
+    assert 'href="#reeksen"' in pagina and "Herhalende afspraken" in pagina and "Deze keer overslaan" in pagina
 
     # Eén keer overslaan (direct in het scherm).
     tweede = (woensdag + dt.timedelta(days=7)).date()
     r = klant.post(f"/clara/reeks/{reeks['id']}", headers=FORM, data={"actie": "overslaan", "datum": tweede.isoformat()}, follow_redirects=False)
     assert "vervalt" in r.headers["location"] and verwijderd == ["serie1_1"]
+    assert r.headers["location"].startswith("/clara/koppelingen?") and r.headers["location"].endswith("#reeksen")
     r = klant.post(f"/clara/reeks/{reeks['id']}", headers=FORM, data={"actie": "overslaan", "datum": "2030-01-01"}, follow_redirects=False)
     assert "fout=" in r.headers["location"]
 
@@ -1328,7 +1335,7 @@ def test_reistijd_per_afspraak_en_elke_keer(klant, monkeypatch):
         assert sync.reistijdreeksen_opruimen(c) is None and not weggehaald  # bron niet vers bijgewerkt: niets weg
         c.execute("UPDATE agenda_koppelingen SET laatst = now() WHERE id = %s", (kid,))
         assert "1 vervallen" in sync.reistijdreeksen_opruimen(c) and weggehaald == [f"{heen['extern_id']}_1"]
-    assert "Herhalende afspraken" in klant.get("/clara", headers=KOP).text
+    assert "Herhalende afspraken" in klant.get("/clara/koppelingen", headers=KOP).text
 
     # Een reeks die maandelijks herhaalt: dan steeds vier weken vooruit.
     with db.pool.connection() as c:
