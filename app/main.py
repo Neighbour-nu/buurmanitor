@@ -173,17 +173,40 @@ def iris_nieuw(request: Request):
 # ---------- Meldingen ----------
 
 @app.get("/meldingen", response_class=HTMLResponse)
-def meldingen_scherm(request: Request):
-    alle = q("SELECT * FROM meldingen ORDER BY id DESC LIMIT 100")
-    return templates.TemplateResponse("meldingen.html", ctx(request, "meldingen", alle=alle))
+def meldingen_scherm(request: Request, map: str = "open"):  # pylint: disable=redefined-builtin
+    mappen = {m[0]: m for m in meldingen.MAPPEN}
+    if map not in mappen:
+        map = "open"
+    with db.pool.connection() as c:
+        volgorde = "gelezen, id DESC" if map == "open" else "coalesce(afgehandeld, tijd) DESC, id DESC"
+        alle = c.execute(f"SELECT * FROM meldingen WHERE status = %s ORDER BY {volgorde} LIMIT 200", (map,)).fetchall()
+        aantallen = meldingen.aantallen(c)
+    return templates.TemplateResponse("meldingen.html", ctx(request, "meldingen", alle=alle, map=map, mappen=meldingen.MAPPEN,
+                                                            huidig=mappen[map], aantallen=aantallen))
+
+
+def _terug_meldingen(request):
+    terug = request.headers.get("referer") or "/meldingen"
+    return RedirectResponse(terug if web.herkomst_toegestaan(None, terug, config.TOEGESTANE_HOSTS) else "/", status_code=303)
 
 
 @app.post("/meldingen/{mid}/gelezen")
 def melding_gelezen(request: Request, mid: int):
     controleer_herkomst(request)
     uitvoeren("UPDATE meldingen SET gelezen = true WHERE id = %s", (mid,))
-    terug = request.headers.get("referer") or "/meldingen"
-    return RedirectResponse(terug if web.herkomst_toegestaan(None, terug, config.TOEGESTANE_HOSTS) else "/", status_code=303)
+    return _terug_meldingen(request)
+
+
+@app.post("/meldingen/{mid}/{actie}")
+def melding_afhandelen(request: Request, mid: int, actie: str):
+    """Afvinken (opgelost), archiveren, verwijderen (naar de prullenbak) of terugzetten naar Open."""
+    controleer_herkomst(request)
+    if actie not in meldingen.ACTIES:
+        raise HTTPException(404)
+    with db.pool.connection() as c:
+        if not meldingen.afhandelen(c, mid, actie):
+            raise HTTPException(404)
+    return _terug_meldingen(request)
 
 
 @app.post("/meldingen/alles-gelezen")

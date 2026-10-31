@@ -221,3 +221,12 @@ button.knop { font-family: var(--kop); }
 .tabs a:hover { color: var(--blauwdonker); }
 .tabs a.actief { color: var(--blauwdonker); border-bottom-color: var(--blauw); }
 html:not(.met-tabs) .tabs { display: none; }
+
+/* meldingen: mappen rechts */
+.mappen h2 { margin-bottom: 6px; }
+.mappen .map { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; margin: 4px 0;
+  border-left: 4px solid transparent; color: var(--inkt); text-decoration: none; border-radius: 0 4px 4px 0; }
+.mappen .map:hover { background: #F2F6FC; }
+.mappen .map.actief { border-left-color: var(--blauw); background: #EAF1FB; }
+.mappen .aantal { font-family: var(--kop); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.melding-acties { margin-top: 4px; }

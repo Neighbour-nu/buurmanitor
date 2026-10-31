@@ -28,6 +28,11 @@ MIGRATIES = [
         sleutel text UNIQUE,
         gelezen boolean NOT NULL DEFAULT false)""",
     "CREATE INDEX IF NOT EXISTS meldingen_open ON meldingen (gelezen, id DESC)",
+    # Wat Martijn met een melding deed: open (nog te doen), opgelost (afgevinkt), archief of verwijderd. Verwijderen
+    # bewaart de regel (in de prullenbak), zodat dezelfde melding met dezelfde sleutel niet opnieuw verschijnt.
+    "ALTER TABLE meldingen ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'open'",
+    "ALTER TABLE meldingen ADD COLUMN IF NOT EXISTS afgehandeld timestamptz",
+    "CREATE INDEX IF NOT EXISTS meldingen_status ON meldingen (status, id DESC)",
     # Verbruik van Claude, per aanroep.
     """CREATE TABLE IF NOT EXISTS claude_gebruik (
         id serial PRIMARY KEY,

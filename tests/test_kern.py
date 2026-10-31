@@ -160,6 +160,46 @@ def test_schermen_starten():
         assert "Hoi Iris" in pagina and "Claude-sleutel" in pagina
         # Formulier van een andere site: geweigerd.
         assert k.post("/meldingen/alles-gelezen", headers=KOP | {"Origin": "https://kwaadwillend.nl"}).status_code == 403
+        _meldingen_afvinken_archiveren_verwijderen(k)
+
+
+def _meldingen_afvinken_archiveren_verwijderen(k):
+    """Meldingen afvinken, archiveren, verwijderen en terugzetten (binnen dezelfde app als test_schermen_starten)."""
+    form = KOP | {"Origin": "https://buurmanitor.neighbour.nu", "Referer": "https://buurmanitor.neighbour.nu/meldingen"}
+    with _db() as c:
+        c.execute("DELETE FROM meldingen")
+        ids = [meldingen.melden(c, "belangrijk", "test", f"Melding {n}", sleutel=f"m{n}") for n in range(4)]
+    pagina = k.get("/meldingen", headers=KOP).text
+    assert all(f"Melding {n}" in pagina for n in range(4)) and "Gelezen" in pagina and "✓ Opgelost" in pagina
+    for m in ("Open", "Opgelost", "Archief", "Prullenbak"):
+        assert f"<b>{m}</b>" in pagina
+    assert 'href="/meldingen?map=opgelost"' in pagina and "4 nieuw" in pagina
+    # Afvinken, archiveren en verwijderen: weg uit Open, uit de banner en uit het dashboard.
+    for mid, actie in zip(ids, ("opgelost", "archief", "verwijder")):
+        r = k.post(f"/meldingen/{mid}/{actie}", headers=form, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].endswith("/meldingen")
+    with _db() as c:
+        assert [m["id"] for m in meldingen.open_meldingen(c)] == [ids[3]]
+        assert [m["id"] for m in meldingen.nieuw_sinds(c, 0)] == [ids[3]]
+        n = meldingen.aantallen(c)
+        assert (n["open"], n["opgelost"], n["archief"], n["verwijderd"], n["ongelezen"]) == (1, 1, 1, 1, 1)
+        # Verwijderd blijft bewaard: dezelfde sleutel komt niet opnieuw.
+        assert meldingen.melden(c, "belangrijk", "test", "Melding 2 opnieuw", sleutel="m2") is None
+    open_ = k.get("/meldingen", headers=KOP).text.split('id="lijst"')[1].split("<aside")[0]
+    assert "Melding 3" in open_ and "Melding 0" not in open_
+    for status, titel in (("opgelost", "Melding 0"), ("archief", "Melding 1"), ("verwijderd", "Melding 2")):
+        lijst = k.get(f"/meldingen?map={status}", headers=KOP).text.split('id="lijst"')[1].split("<aside")[0]
+        assert titel in lijst and "Melding 3" not in lijst, status
+    assert "Terugzetten" in k.get("/meldingen?map=verwijderd", headers=KOP).text
+    # Terugzetten: weer in Open (al gelezen), niet opnieuw in de banner.
+    assert k.post(f"/meldingen/{ids[2]}/terug", headers=form, follow_redirects=False).status_code == 303
+    with _db() as c:
+        assert meldingen.aantallen(c)["open"] == 2 and [m["id"] for m in meldingen.nieuw_sinds(c, 0)] == [ids[3]]
+    # Onbekende actie of melding, of een formulier van een andere site: geweigerd.
+    assert k.post(f"/meldingen/{ids[3]}/weg", headers=form).status_code == 404
+    assert k.post("/meldingen/999999/opgelost", headers=form).status_code == 404
+    assert k.post(f"/meldingen/{ids[3]}/opgelost", headers=KOP | {"Origin": "https://kwaadwillend.nl"}).status_code == 403
+    assert k.get("/meldingen?map=onzin", headers=KOP).status_code == 200
 
 
 if __name__ == "__main__":

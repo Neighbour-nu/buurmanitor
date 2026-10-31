@@ -1,17 +1,52 @@
 {% extends "base.html" %}
 {% block titel %}Meldingen · Buurmanitor{% endblock %}
 {% block inhoud %}
-<h1>Meldingen</h1>
-<p><button id="meldingen-aan" class="knop" hidden>Meldingen op dit apparaat aanzetten</button></p>
-<form method="post" action="/meldingen/alles-gelezen"><button class="knop" type="submit">Alles gelezen</button></form>
-<section class="kaart">
-{% for m in alle %}
-  <div class="item {{ m.niveau }} {{ 'gelezen' if m.gelezen }}">
-    <b>{{ m.titel }}</b> <span class="label">{{ m.niveau }}</span><br>
-    {% if m.tekst %}{{ m.tekst }}<br>{% endif %}
-    <span class="noot">{{ m.bron }} · {{ geleden(m.tijd) }}{% if m.link %} · <a href="{{ m.link }}">bekijk</a>{% endif %}</span>
-    {% if not m.gelezen %}<form method="post" action="/meldingen/{{ m.id }}/gelezen" class="inline"><button class="knop klein" type="submit">gelezen</button></form>{% endif %}
+<section class="kopregel">
+  <div><h1>Meldingen <span class="noot">{{ huidig[1] }}</span></h1></div>
+  <div class="knoppen">
+    <button id="meldingen-aan" class="knop" hidden>Meldingen op dit apparaat aanzetten</button>
+    {% if map == 'open' and aantallen.ongelezen %}<form method="post" action="/meldingen/alles-gelezen" class="inline"><button class="knop" type="submit">Alles gelezen</button></form>{% endif %}
   </div>
-{% else %}<p class="noot">Nog geen meldingen.</p>{% endfor %}
 </section>
+
+<div class="clara-raster meldingen-raster">
+  <section class="kaart" id="lijst">
+  {% for m in alle %}
+    <div class="item {{ m.niveau }} {{ 'gelezen' if m.gelezen and map == 'open' }}" id="m{{ m.id }}">
+      <b>{{ m.titel }}</b> <span class="label">{{ m.niveau }}</span>{% if map == 'open' and not m.gelezen %} <span class="label groen">nieuw</span>{% endif %}<br>
+      {% if m.tekst %}{{ m.tekst }}<br>{% endif %}
+      <span class="noot">{{ m.bron }} · {{ geleden(m.tijd) }}{% if m.afgehandeld and map != 'open' %} · {{ {'opgelost': 'afgevinkt', 'archief': 'gearchiveerd', 'verwijderd': 'verwijderd'}[map] }} {{ geleden(m.afgehandeld) }}{% endif %}{% if m.link %} · <a href="{{ m.link }}">bekijk</a>{% endif %}</span>
+      <form method="post" class="knoppenrij melding-acties">
+        {% if map == 'open' %}
+          {% if not m.gelezen %}<button class="knop klein" formaction="/meldingen/{{ m.id }}/gelezen">Gelezen</button>{% endif %}
+          <button class="knop klein vol" formaction="/meldingen/{{ m.id }}/opgelost" title="Afvinken: je hebt het opgelost">✓ Opgelost</button>
+          <button class="knop klein" formaction="/meldingen/{{ m.id }}/archief">Archiveren</button>
+          <button class="knop klein" formaction="/meldingen/{{ m.id }}/verwijder">Verwijderen</button>
+        {% elif map == 'verwijderd' %}
+          <button class="knop klein" formaction="/meldingen/{{ m.id }}/terug">Terugzetten</button>
+        {% else %}
+          <button class="knop klein" formaction="/meldingen/{{ m.id }}/terug">Terug naar Open</button>
+          {% if map == 'opgelost' %}<button class="knop klein" formaction="/meldingen/{{ m.id }}/archief">Archiveren</button>{% endif %}
+          <button class="knop klein" formaction="/meldingen/{{ m.id }}/verwijder">Verwijderen</button>
+        {% endif %}
+      </form>
+    </div>
+  {% else %}
+    <p class="noot">{% if map == 'open' %}Niets meer te doen.{% elif map == 'opgelost' %}Nog niets afgevinkt.{% elif map == 'archief' %}Het archief is leeg.{% else %}De prullenbak is leeg.{% endif %}</p>
+  {% endfor %}
+  {% if map == 'verwijderd' and alle %}<p class="noot">Verwijderde meldingen blijven hier staan, zodat dezelfde melding niet opnieuw verschijnt.</p>{% endif %}
+  </section>
+
+  <aside>
+    <nav class="kaart mappen" aria-label="Mappen">
+      <h2>Mappen</h2>
+      {% for status, naam, uitleg in mappen %}
+      <a href="/meldingen{{ '' if status == 'open' else '?map=' ~ status }}" class="map {{ 'actief' if status == map }}" {% if status == map %}aria-current="page"{% endif %}>
+        <span><b>{{ naam }}</b><br><span class="noot">{{ uitleg }}</span></span>
+        <span class="aantal">{{ aantallen[status] }}{% if status == 'open' and aantallen.ongelezen %} <span class="label groen">{{ aantallen.ongelezen }} nieuw</span>{% endif %}</span>
+      </a>
+      {% endfor %}
+    </nav>
+  </aside>
+</div>
 {% endblock %}

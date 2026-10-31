@@ -24,14 +24,41 @@ def melden(c, niveau, bron, titel, tekst="", link="", sleutel=None):
     return r["id"] if r else None
 
 
+# De mappen op het scherm Meldingen: (status, naam, uitleg).
+MAPPEN = (("open", "Open", "Nog te doen"), ("opgelost", "Opgelost", "Afgevinkt"),
+          ("archief", "Archief", "Bewaard, niet meer in beeld"), ("verwijderd", "Prullenbak", "Verwijderd"))
+# Wat je met een melding kunt doen, en de status die daarbij hoort.
+ACTIES = {"opgelost": "opgelost", "archief": "archief", "verwijder": "verwijderd", "terug": "open"}
+
+
+def afhandelen(c, mid, actie):
+    """Een melding afvinken, archiveren, verwijderen of terugzetten. Alles behalve terugzetten telt ook als gelezen,
+    zodat hij uit de banner en het dashboard verdwijnt."""
+    status = ACTIES[actie]
+    if status == "open":
+        return c.execute("UPDATE meldingen SET status = 'open', afgehandeld = NULL WHERE id = %s RETURNING id", (mid,)).fetchone()
+    return c.execute("UPDATE meldingen SET status = %s, gelezen = true, afgehandeld = now() WHERE id = %s RETURNING id",
+                     (status, mid)).fetchone()
+
+
+def aantallen(c):
+    """Per map het aantal meldingen, en bij Open ook hoeveel er nog ongelezen zijn."""
+    uit = {m[0]: 0 for m in MAPPEN} | {"ongelezen": 0}
+    for r in c.execute("SELECT status, count(*) AS n, count(*) FILTER (WHERE NOT gelezen) AS o FROM meldingen GROUP BY status"):
+        uit[r["status"]] = r["n"]
+        if r["status"] == "open":
+            uit["ongelezen"] = r["o"]
+    return uit
+
+
 def open_meldingen(c, limiet=20):
-    return c.execute("""SELECT * FROM meldingen WHERE NOT gelezen
+    return c.execute("""SELECT * FROM meldingen WHERE NOT gelezen AND status = 'open'
                         ORDER BY CASE niveau WHEN 'urgent' THEN 0 WHEN 'belangrijk' THEN 1 ELSE 2 END, id DESC
                         LIMIT %s""", (limiet,)).fetchall()
 
 
 def nieuw_sinds(c, na_id):
-    return c.execute("SELECT id, niveau, bron, titel, tekst, link FROM meldingen WHERE id > %s AND NOT gelezen "
+    return c.execute("SELECT id, niveau, bron, titel, tekst, link FROM meldingen WHERE id > %s AND NOT gelezen AND status = 'open' "
                      "AND niveau <> 'normaal' ORDER BY id", (na_id,)).fetchall()
 
 
