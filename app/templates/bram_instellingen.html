@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block titel %}Mail-instellingen · Bram · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>Mail-instellingen <span class="noot">Bram</span></h1>
+<p class="uitleg">Welke mailaccounts Bram leest, en of hij de inhoud door Claude mag laten lezen. Je mail blijft in Gmail en
+  Outlook; Bram bewaart alleen afzender, onderwerp, een kort fragment en zijn eigen oordeel. <a href="/bram">Terug naar de postkamer</a></p>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+{% if not kluis_ok %}<p class="item urgent">Er is nog geen kluissleutel voor de tokens. Draai op de server: <code>bash ~/buurmanitor/app/deploy/clara.sh</code></p>{% endif %}
+
+{% for k in koppelingen %}
+<section class="kaart koppeling">
+  <form method="post" action="/bram/koppeling/{{ k.id }}">
+    <h2><span>{{ k.naam }}</span>
+      <span class="klein">{{ 'Gmail' if k.soort == 'google' else 'Outlook (Microsoft 365)' }}</span></h2>
+    <p class="noot">{% if k.account %}{{ k.account }} · {% endif %}{% if k.laatst %}bijgewerkt {{ geleden(k.laatst) }}{% else %}nog niet bijgewerkt{% endif %}
+      · {{ aantal.get(k.id, 0) }} berichten in de inbox</p>
+    {% if k.fout %}<p class="item urgent">{{ k.fout }}</p>{% endif %}
+    <div class="velden">
+      <label>Naam <input type="text" name="naam" value="{{ k.naam }}"></label>
+      <label>Domein <select name="domein">{% for d, n in domeinen %}<option value="{{ d }}" {{ 'selected' if k.domein == d }}>{{ n }}</option>{% endfor %}</select></label>
+      <label class="vink"><input type="checkbox" name="actief" value="1" {{ 'checked' if k.actief }}> actief</label>
+      <label class="vink" title="De tekst van nieuwe berichten gaat één keer naar Claude (via je eigen Claude-sleutel) om ze te sorteren. Zonder vinkje sorteert Bram alleen op afzender en de kenmerken van Gmail of Outlook.">
+        <input type="checkbox" name="claude" value="1" {{ 'checked' if k.claude }}> Claude mag de inhoud lezen</label>
+    </div>
+    <p class="knoppenrij">
+      <button class="knop vol" name="actie" value="opslaan">Opslaan</button>
+      <button class="knop" name="actie" value="weg" onclick="return confirm('{{ k.naam }} ontkoppelen? Je mail zelf blijft staan.')">Ontkoppelen</button>
+    </p>
+  </form>
+</section>
+{% else %}
+<p class="item belangrijk">Nog geen mailaccounts. Koppel er hieronder een.</p>
+{% endfor %}
+
+<div class="raster">
+  <section class="kaart">
+    <h2>Gmail</h2>
+    <p class="noot">Voor neighbour.nu en zerohero.one. Bram vraagt toegang om mail te lezen, labels te zetten, als gelezen
+      te markeren en te archiveren. Versturen en definitief verwijderen kan hij niet. Dit staat los van de toegang die
+      Clara tot je agenda heeft.</p>
+    {% if google_ok %}
+    <form method="post" action="/bram/koppel/google" class="velden">
+      <label>Naam <input type="text" name="naam" placeholder="bijvoorbeeld Neighbour"></label>
+      <label>Domein <select name="domein">{% for d, n in domeinen %}<option value="{{ d }}" {{ 'selected' if d == 'prive' }}>{{ n }}</option>{% endfor %}</select></label>
+      <label class="vink"><input type="checkbox" name="claude" value="1"> Claude mag de inhoud lezen</label>
+      <button class="knop vol" type="submit">Gmail koppelen</button>
+    </form>
+    {% else %}<p class="item">De Google-app is nog niet ingesteld. Zie de README en draai <code>bash ~/buurmanitor/app/deploy/clara.sh</code>.</p>{% endif %}
+  </section>
+
+  <section class="kaart">
+    <h2>Outlook (Microsoft 365)</h2>
+    <p class="noot">Voor IV-professional, Upper Spire en de gemeenteraad. Bram vraagt toegang om mail te lezen, een
+      categorie te zetten, als gelezen te markeren en naar Archief te verplaatsen. Versturen kan hij niet. Bij
+      werkaccounts moet de beheerder van die organisatie de app vaak eerst goedkeuren (de link staat bij
+      <a href="/clara/koppelingen#toevoegen">Agenda-instellingen</a>).</p>
+    {% if ms_ok %}
+    <form method="post" action="/bram/koppel/microsoft" class="velden">
+      <label>Naam <input type="text" name="naam" placeholder="bijvoorbeeld Upper Spire"></label>
+      <label>Domein <select name="domein">{% for d, n in domeinen %}<option value="{{ d }}" {{ 'selected' if d == 'fbim' }}>{{ n }}</option>{% endfor %}</select></label>
+      <label class="vink"><input type="checkbox" name="claude" value="1"> Claude mag de inhoud lezen</label>
+      <button class="knop vol" type="submit">Outlook koppelen</button>
+    </form>
+    {% else %}<p class="item">De Microsoft-app is nog niet ingesteld. Zie de README en draai <code>bash ~/buurmanitor/app/deploy/clara.sh</code>.</p>{% endif %}
+  </section>
+</div>
+
+<section class="kaart">
+  <h2>Claude en je mail</h2>
+  <p class="noot">Staat het vinkje aan, dan gaat de tekst van elk <b>nieuw</b> bericht (hooguit {{ 4000 }} tekens) één keer
+    naar Claude, via je eigen Claude-sleutel, met het lichte model. Claude geeft één regel terug en een voorstel; de tekst
+    zelf bewaart Bram niet. Zonder vinkje herkent Bram nieuwsbrieven en automatische berichten aan de kenmerken van Gmail
+    en Outlook, en zet hij de rest onder Lezen. Het verbruik telt mee in het maandplafond.</p>
+  {% if not sleutel_ok %}<p class="item">Er is nog geen Claude-sleutel. Bram sorteert dan overal op regels.</p>{% endif %}
+</section>
+{% endblock %}

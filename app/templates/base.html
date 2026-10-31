@@ -19,6 +19,7 @@
     <a href="/" class="{{ 'actief' if scherm == 'vandaag' }}">Vandaag</a>
     <a href="/iris" class="{{ 'actief' if scherm == 'iris' }}">Iris</a>
     <a href="/clara" class="{{ 'actief' if scherm == 'clara' }}">Agenda</a>
+    <a href="/bram" class="{{ 'actief' if scherm == 'bram' }}">Post</a>
     <a href="/meldingen" class="{{ 'actief' if scherm == 'meldingen' }}">Meldingen<span id="teller" class="teller" hidden></span></a>
     <span class="scheiding" aria-hidden="true"></span>
     {% for w in werkruimtes %}<a href="{{ w.url }}">{{ w.naam }}</a>{% endfor %}

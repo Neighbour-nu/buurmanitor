@@ -1,0 +1,216 @@
+"""De schermen van Bram: de postkamer (/bram) en de mail-instellingen (/bram/instellingen).
+
+Bram doet niets in je mailbox uit zichzelf: archiveren, labelen en gelezen markeren gebeurt alleen na jouw klik.
+Koppelen loopt via dezelfde apps en hetzelfde terugkeeradres als Clara (/clara/koppel/.../terug); daar ziet de
+portal aan het koppelverzoek dat het voor Bram is.
+"""
+import asyncio
+import datetime as dt
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+from .. import personas
+from ..clara import kluis
+from ..clara.web import _nieuwe_staat  # koppelverzoeken delen de tabel oauth_staat met Clara
+from ..kern import config, db, planner
+from ..kern.web import DAGEN, controleer_herkomst, ctx, templates
+from . import bronnen, sync
+
+router = APIRouter()
+DOMEINEN = config.DOMEINEN
+GROEPEN = (("actie", "Actie nodig", "Hier wordt iets van je gevraagd."),
+           ("lezen", "Lezen", "Persoonlijk, inhoudelijk of ter info."),
+           ("weg", "Kan weg", "Nieuwsbrieven en automatische berichten. Vink uit wat je wilt houden."))
+
+
+def _terug(pad, **melding):
+    pad, _, anker = pad.partition("#")
+    if melding:
+        pad += ("&" if "?" in pad else "?") + urlencode(melding)
+    return RedirectResponse(pad + (f"#{anker}" if anker else ""), status_code=303)
+
+
+def groep(b):
+    """In welke groep van de postkamer een bericht staat. Pure functie."""
+    if b["categorie"] in ("actie", "antwoord") or b["prioriteit"] == "hoog":
+        return "actie"
+    if b["categorie"] in ("nieuwsbrief", "automatisch") or b["actie"] == "archiveren":
+        return "weg"
+    return "lezen"
+
+
+@router.get("/bram", response_class=HTMLResponse)
+def postkamer(request: Request, account: int = 0, melding: str = "", fout: str = ""):
+    with db.pool.connection() as c:
+        koppelingen = sync.koppelingen(c)
+        berichten = c.execute("""SELECT b.*, k.naam AS koppeling, k.domein, k.soort FROM post_berichten b
+                                 JOIN post_koppelingen k ON k.id = b.koppeling_id
+                                 WHERE b.status = 'open' AND k.actief AND (%s = 0 OR k.id = %s)
+                                 ORDER BY b.ontvangen DESC""", (account, account)).fetchall()
+        labels, label_fout = {}, {}
+        for k in koppelingen:
+            if k["actief"] and not k["fout"] and (not account or k["id"] == account):
+                try:
+                    labels[k["id"]] = sync.labels(c, k)
+                except Exception as e:  # noqa: BLE001  (zonder labels werkt de postkamer gewoon)
+                    label_fout[k["id"]] = str(e)
+        aantal = {r["koppeling_id"]: r["n"] for r in c.execute(
+            "SELECT koppeling_id, count(*) AS n FROM post_berichten WHERE status = 'open' GROUP BY koppeling_id")}
+    per_groep = {g[0]: [] for g in GROEPEN}
+    for b in berichten:
+        per_groep[groep(b)].append(b)
+    namen = {k["id"]: dict(labels.get(k["id"], [])) for k in koppelingen}
+    return templates.TemplateResponse("bram.html", ctx(
+        request, "bram", p=personas.get("bram"), koppelingen=koppelingen, groepen=GROEPEN, per_groep=per_groep,
+        labels=labels, label_namen=namen, account=account, aantal=aantal, melding=melding, fout=fout, tz=config.TZ,
+        DAGEN=DAGEN, CATEGORIEEN=sync.CATEGORIEEN, nu=dt.datetime.now(config.TZ), kluis_ok=kluis.actief(),
+        domeinnaam=dict(DOMEINEN)))
+
+
+@router.post("/bram/vernieuwen")
+async def vernieuwen(request: Request):
+    controleer_herkomst(request)
+    uitslag = await asyncio.to_thread(planner.draai, db.pool, "post", True)
+    return _terug("/bram", melding=(uitslag or "Bijgewerkt.")[:300])
+
+
+def _bericht(c, bid):
+    b = c.execute("SELECT * FROM post_berichten WHERE id = %s", (bid,)).fetchone()
+    if not b:
+        raise HTTPException(404)
+    return b
+
+
+@router.post("/bram/bericht/{bid:int}/{actie}")
+async def bericht_actie(request: Request, bid: int, actie: str):
+    """Archiveren, gelezen markeren of een label zetten, na Martijns klik."""
+    controleer_herkomst(request)
+    if actie not in ("archiveren", "gelezen", "label"):
+        raise HTTPException(404)
+    f = await request.form()
+    terug = "/bram" + (f"?account={int(f.get('account') or 0)}" if f.get("account") not in (None, "", "0") else "")
+
+    def doe():
+        with db.pool.connection() as c:
+            b = _bericht(c, bid)
+            return b, sync.uitvoeren(c, b, actie, str(f.get("label", "")))
+    try:
+        b, tekst = await asyncio.to_thread(doe)
+    except (bronnen.BronFout, kluis.KluisFout) as e:
+        return _terug(terug, fout=str(e)[:300])
+    anker = "" if actie == "archiveren" else f"#b{bid}"
+    return _terug(terug + anker, melding=f"'{b['onderwerp'][:60]}': {tekst}.")
+
+
+@router.post("/bram/archiveren")
+async def archiveren(request: Request):
+    """Meerdere berichten tegelijk archiveren (de aangevinkte uit Kan weg)."""
+    controleer_herkomst(request)
+    f = await request.form()
+    ids = [int(x) for x in f.getlist("bericht") if str(x).isdigit()]
+    terug = "/bram" + (f"?account={int(f.get('account') or 0)}" if f.get("account") not in (None, "", "0") else "")
+    if not ids:
+        return _terug(terug, fout="Niets aangevinkt; er is niets gearchiveerd.")
+
+    def doe():
+        gelukt, fouten = 0, []
+        with db.pool.connection() as c:
+            for bid in ids:
+                b = c.execute("SELECT * FROM post_berichten WHERE id = %s AND status = 'open'", (bid,)).fetchone()
+                if not b:
+                    continue
+                try:
+                    sync.uitvoeren(c, b, "archiveren")
+                    gelukt += 1
+                except (bronnen.BronFout, kluis.KluisFout) as e:
+                    fouten.append(f"{b['onderwerp'][:40]}: {e}")
+        return gelukt, fouten
+    gelukt, fouten = await asyncio.to_thread(doe)
+    tekst = f"{gelukt} bericht{'en' if gelukt != 1 else ''} gearchiveerd."
+    if fouten:
+        return _terug(terug, melding=tekst, fout="Niet gelukt: " + "; ".join(fouten[:3])[:300])
+    return _terug(terug, melding=tekst)
+
+
+# ---------------------------------------------------------------- instellingen
+
+@router.get("/bram/instellingen", response_class=HTMLResponse)
+def instellingen(request: Request, melding: str = "", fout: str = ""):
+    with db.pool.connection() as c:
+        koppelingen = sync.koppelingen(c)
+        aantal = {r["koppeling_id"]: r["n"] for r in c.execute(
+            "SELECT koppeling_id, count(*) AS n FROM post_berichten WHERE status = 'open' GROUP BY koppeling_id")}
+    return templates.TemplateResponse("bram_instellingen.html", ctx(
+        request, "bram", koppelingen=koppelingen, aantal=aantal, melding=melding, fout=fout, kluis_ok=kluis.actief(),
+        google_ok=bool(config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET),
+        ms_ok=bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET), sleutel_ok=bool(config.ANTHROPIC_API_KEY),
+        domeinnaam=dict(DOMEINEN)))
+
+
+@router.post("/bram/koppel/{soort}")
+async def koppel_start(request: Request, soort: str):
+    controleer_herkomst(request)
+    if soort not in ("google", "microsoft"):
+        raise HTTPException(404)
+    f = await request.form()
+    domein = str(f.get("domein", "prive"))
+    opties = {"voor": "bram", "domein": domein if domein in dict(DOMEINEN) else "prive",
+              "naam": str(f.get("naam", "")).strip()[:80], "claude": f.get("claude") == "1"}
+    if not kluis.actief():
+        return _terug("/bram/instellingen", fout="Er is nog geen kluissleutel. Draai op de server: bash ~/buurmanitor/app/deploy/clara.sh")
+    if soort == "google" and not (config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET):
+        return _terug("/bram/instellingen", fout="De Google-app is nog niet ingesteld (clara.sh).")
+    if soort == "microsoft" and not (config.MS_CLIENT_ID and config.MS_CLIENT_SECRET):
+        return _terug("/bram/instellingen", fout="De Microsoft-app is nog niet ingesteld (clara.sh).")
+    with db.pool.connection() as c:
+        staat = _nieuwe_staat(c, soort, opties)
+    return RedirectResponse(bronnen.google_url(staat) if soort == "google" else bronnen.ms_url(staat), status_code=303)
+
+
+async def koppeling_klaar(soort, code, opties):
+    """Het tweede deel van koppelen (vanuit /clara/koppel/{soort}/terug): token bewaren en de inbox voor het eerst ophalen."""
+    try:
+        gegevens = await asyncio.to_thread(bronnen.google_code if soort == "google" else bronnen.ms_code, code)
+    except bronnen.BronFout as e:
+        return _terug("/bram/instellingen", fout=str(e))
+    with db.pool.connection() as c:
+        bestaand = c.execute("SELECT * FROM post_koppelingen WHERE soort = %s AND lower(account) = lower(%s) AND account <> ''",
+                             (soort, gegevens["account"])).fetchone()
+        if bestaand:
+            c.execute("UPDATE post_koppelingen SET geheim = %s, tenant = %s, fout = NULL, actief = true WHERE id = %s",
+                      (kluis.sluit(gegevens["refresh"]), gegevens.get("tenant", ""), bestaand["id"]))
+            sync.vergeet_toegang(bestaand["id"])
+            kid = bestaand["id"]
+        else:
+            kid = c.execute("""INSERT INTO post_koppelingen (soort, naam, account, tenant, domein, geheim, claude)
+                               VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                            (soort, opties.get("naam") or gegevens["account"] or soort.capitalize(), gegevens["account"],
+                             gegevens.get("tenant", ""), opties.get("domein", "prive"), kluis.sluit(gegevens["refresh"]),
+                             bool(opties.get("claude")))).fetchone()["id"]
+
+    def eerste_keer():
+        with db.pool.connection() as c:
+            return sync.synchroniseer(c, c.execute("SELECT * FROM post_koppelingen WHERE id = %s", (kid,)).fetchone())
+    uitslag = await asyncio.to_thread(eerste_keer)
+    return _terug("/bram/instellingen", melding=f"{gegevens['account'] or soort} {'opnieuw gekoppeld' if bestaand else 'gekoppeld'}. {uitslag}")
+
+
+@router.post("/bram/koppeling/{kid:int}")
+async def koppeling_bijwerken(request: Request, kid: int):
+    controleer_herkomst(request)
+    f = await request.form()
+    with db.pool.connection() as c:
+        k = c.execute("SELECT * FROM post_koppelingen WHERE id = %s", (kid,)).fetchone()
+        if not k:
+            raise HTTPException(404)
+        if f.get("actie") == "weg":
+            c.execute("DELETE FROM post_koppelingen WHERE id = %s", (kid,))
+            sync.vergeet_toegang(kid)
+            return _terug("/bram/instellingen", melding=f"'{k['naam']}' ontkoppeld. Je mail in Gmail of Outlook blijft gewoon staan.")
+        domein = str(f.get("domein", k["domein"]))
+        c.execute("UPDATE post_koppelingen SET naam = %s, domein = %s, actief = %s, claude = %s WHERE id = %s",
+                  (str(f.get("naam", "")).strip()[:80] or k["naam"], domein if domein in dict(DOMEINEN) else k["domein"],
+                   f.get("actief") == "1", f.get("claude") == "1", kid))
+    return _terug("/bram/instellingen", melding="Opgeslagen.")

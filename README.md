@@ -4,7 +4,7 @@ De persoonlijke portal van Martijn Buurman: één login en één overzicht voor 
 Upper Spire, met een team van zes persona's (Iris, Clara, Bram, Noor, Vera en Jesse). Het ontwerp staat in het
 project Personal Assistant (ontwerp versie 0.6).
 
-## Stand: fase 3 (Clara, agendabeheer)
+## Stand: fase 4 (Bram, postkamer: eerste deel)
 
 - Inloggen via Caddy en Authelia (wachtwoord plus TOTP), met het proxygeheim en een exacte herkomstcontrole.
 - Vandaag: meldingen, de werkruimtes Politiek en ZEROHERO, het team en de server.
@@ -24,13 +24,18 @@ Het logo (twee buurhuizen) is eigen werk.
   blokken. Uitnodigingen beantwoorden en blokken inplannen kan, maar alleen na jouw klik. Praat met Clara over je agenda;
   stelt ze een tijdstip voor, dan verschijnt dat als knop.
 
-Volgende fases: Bram (4), Noor (5), Vera (6) en Jesse (7).
+- Bram (Post): de inbox van Gmail en Outlook in één postkamer, gesorteerd in Actie nodig, Lezen en Kan weg, met per
+  bericht één regel en een voorstel. Per account kies je of Claude de inhoud mag lezen; anders sorteert Bram op regels.
+  Archiveren, labelen en gelezen markeren alleen na jouw klik. Versturen kan Bram niet.
+
+Volgende fases: Bram verder (Teams, WhatsApp en Signal), Noor (5), Vera (6) en Jesse (7).
 
 ## Opbouw
 
 - `app/kern`: instellingen, database, toegang, planner, meldingen, Claude-client, gezondheid.
 - `app/kern/prefix.py`: draait een werkruimte-app onder een voorvoegsel (/politiek) zonder de code ervan te
   veranderen; links, formulieren en doorverwijzingen krijgen het voorvoegsel erbij.
+- `app/bram`: bronnen (Gmail en Outlook), ophalen en sorteren (planner-taak `post`, elke 5 minuten) en schermen.
 - `app/clara`: bronnen (Google, Microsoft 365, ICS, raadsagenda uit Notubiz), synchroniseren (planner-taak `agenda`,
   elke 5 minuten), analyse (pure functies), gesprek en schermen. Tokens en geheime agendalinks staan versleuteld in de
   database met `KLUIS_SLEUTEL` uit `.env`.
@@ -136,6 +141,27 @@ Clara koppelt met je eigen app bij Google en bij Microsoft. Die maak je één ke
 Bij andere organisaties (Upper Spire, gemeente Helmond) moet hun beheerder de app goedkeuren: Microsoft staat gebruikers
 standaard niet meer toe om zelf agendatoegang aan een app te geven. Op Agenda › Koppelingen staat een link voor die
 beheerder. Komt die toestemming er niet, gebruik dan een agendalink (ICS) of de raadsagenda uit Notubiz.
+
+## Bram: mail via dezelfde apps
+
+Bram gebruikt de apps die je voor Clara hebt gemaakt, met hetzelfde terugkeeradres. Hij vraagt wel een eigen
+toestemming voor mail en bewaart een eigen token; Clara krijgt geen toegang tot je mail. Eenmalig:
+
+**Google** (console.cloud.google.com, hetzelfde project):
+
+1. API's en services: zet de **Gmail API** aan.
+2. Google Auth Platform › Data access: voeg de scope `.../auth/gmail.modify` toe. Bij een Internal-app is geen
+   verificatie nodig; bij External zie je bij het koppelen een waarschuwing dat de app niet geverifieerd is.
+
+**Microsoft** (entra.microsoft.com, dezelfde app-registratie):
+
+1. API-machtigingen › Microsoft Graph › Gedelegeerd: voeg `Mail.ReadWrite` en `MailboxSettings.Read` toe.
+2. Klik in je eigen organisatie op **Beheerderstoestemming verlenen**. Bij andere organisaties moet hun beheerder de
+   app opnieuw goedkeuren (de link staat bij Agenda-instellingen › Agenda toevoegen).
+
+Koppel daarna de accounts bij Post › Instellingen. Bram bewaart alleen afzender, onderwerp, een kort fragment en zijn
+oordeel. Staat "Claude mag de inhoud lezen" aan, dan gaat de tekst van elk nieuw bericht (hooguit 4000 tekens) één keer
+naar Claude (licht model); het verbruik telt mee in het maandplafond.
 
 ## Overstap van Promonitor naar /politiek
 

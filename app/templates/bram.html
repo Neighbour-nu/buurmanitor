@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block titel %}Bram · Buurmanitor{% endblock %}
+{% macro wanneer(t) -%}
+  {%- set d = t.astimezone(tz) -%}
+  {%- if d.date() == nu.date() %}{{ d.strftime('%H.%M') }}{% elif (nu.date() - d.date()).days < 7 %}{{ DAGEN[d.weekday()][:2] }} {{ d.strftime('%H.%M') }}{% else %}{{ d.strftime('%d-%m') }}{% endif -%}
+{%- endmacro %}
+{% macro bericht(b, met_vinkje=false) %}
+  <div class="post {{ 'ongelezen' if not b.gelezen }} {{ b.domein }} {{ 'hoog' if b.prioriteit == 'hoog' }}" id="b{{ b.id }}">
+    {% if met_vinkje %}<input type="checkbox" name="bericht" value="{{ b.id }}" form="kan-weg" checked aria-label="Archiveren: {{ b.onderwerp }}">{% endif %}
+    <div class="post-inhoud">
+      <div class="post-kop"><b class="van" title="{{ b.van_adres }}">{{ b.van_naam }}</b>
+        <span class="noot">{{ wanneer(b.ontvangen) }} · {{ b.koppeling }}</span></div>
+      <div><a href="{{ b.link }}" target="_blank" rel="noopener" class="onderwerp">{{ b.onderwerp }}</a>
+        {% if b.prioriteit == 'hoog' %}<span class="label rood">hoog</span>{% endif %}
+        {% if b.categorie %}<span class="label">{{ CATEGORIEEN.get(b.categorie, b.categorie) }}</span>{% endif %}
+        {% for l in b.labels if label_namen.get(b.koppeling_id, {}).get(l) or b.soort == 'microsoft' %}<span class="label groen">{{ label_namen.get(b.koppeling_id, {}).get(l) or l }}</span>{% endfor %}</div>
+      <div class="bram-regel">{{ b.regel or b.fragment }}{% if b.voorstel %} <span class="bram-voorstel">→ {{ b.voorstel }}</span>{% endif %}
+        {% if b.beoordeeld_door == 'regels' %}<span class="noot" title="Gesorteerd op afzender en kenmerken, zonder de inhoud te lezen">(op regels)</span>{% endif %}</div>
+      <form method="post" class="knoppenrij post-acties">
+        <input type="hidden" name="account" value="{{ account }}">
+        <button class="knop klein {{ 'vol' if b.actie == 'archiveren' }}" formaction="/bram/bericht/{{ b.id }}/archiveren">Archiveren</button>
+        {% if not b.gelezen %}<button class="knop klein {{ 'vol' if b.actie == 'gelezen' }}" formaction="/bram/bericht/{{ b.id }}/gelezen">Gelezen</button>{% endif %}
+        {% if labels.get(b.koppeling_id) %}
+        <select name="label" aria-label="Label voor {{ b.onderwerp }}">{% for w, n in labels[b.koppeling_id] %}<option value="{{ w }}">{{ n }}</option>{% endfor %}</select>
+        <button class="knop klein" formaction="/bram/bericht/{{ b.id }}/label">{{ 'Label' if b.soort == 'google' else 'Categorie' }}</button>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+{% endmacro %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Bram <span class="noot">{{ p.rol }}</span></h1>
+    <p class="motto">{{ p.motto }}</p>
+  </div>
+  <div class="knoppen">
+    <form method="post" action="/bram/vernieuwen" class="inline"><button class="knop" type="submit">Nu bijwerken</button></form>
+    <a class="knop" href="/bram/instellingen">Instellingen</a>
+  </div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+{% if not koppelingen %}
+  <p class="item belangrijk">Er is nog geen mailaccount gekoppeld. Ga naar <a href="/bram/instellingen">Instellingen</a>.</p>
+{% endif %}
+{% for k in koppelingen if k.fout and k.actief %}<p class="item urgent"><b>{{ k.naam }}</b>: {{ k.fout }} <a href="/bram/instellingen">oplossen</a></p>{% endfor %}
+
+<div class="clara-raster">
+  <div>
+  {% for sleutel, naam, uitleg in groepen %}
+    {% set lijst = per_groep[sleutel] %}
+    <section class="kaart" id="{{ sleutel }}">
+      <h2><span>{{ naam }} <span class="klein">{{ lijst | length }}</span></span>
+        {% if sleutel == 'weg' and lijst %}<form method="post" action="/bram/archiveren" id="kan-weg" class="inline">
+          <input type="hidden" name="account" value="{{ account }}">
+          <button class="knop klein vol" type="submit">Aangevinkte archiveren</button></form>{% endif %}</h2>
+      <p class="noot">{{ uitleg }}</p>
+      {% for b in lijst %}{{ bericht(b, sleutel == 'weg') }}
+      {% else %}<p class="noot">{% if sleutel == 'actie' %}Niets dat op jou wacht.{% elif sleutel == 'lezen' %}Niets te lezen.{% else %}Niets op te ruimen.{% endif %}</p>{% endfor %}
+    </section>
+  {% endfor %}
+  </div>
+
+  <aside>
+    <nav class="kaart mappen" aria-label="Accounts">
+      <h2>Accounts</h2>
+      <a href="/bram" class="map {{ 'actief' if not account }}"><span><b>Alles</b></span><span class="aantal">{{ aantal.values() | sum }}</span></a>
+      {% for k in koppelingen if k.actief %}
+      <a href="/bram?account={{ k.id }}" class="map {{ 'actief' if account == k.id }}">
+        <span><b>{{ k.naam }}</b><br><span class="noot">{{ domeinnaam.get(k.domein, k.domein) }} · {{ 'met Claude' if k.claude else 'op regels' }} · {% if k.laatst %}{{ geleden(k.laatst) }}{% else %}nog niet opgehaald{% endif %}</span></span>
+        <span class="aantal">{{ aantal.get(k.id, 0) }}</span></a>
+      {% endfor %}
+    </nav>
+    <section class="kaart">
+      <h2>Zo werkt Bram</h2>
+      <p class="noot">Bram kijkt elke vijf minuten in je inbox (de laatste {{ 30 }} dagen) en zet bij elk nieuw bericht één
+        regel: wat het is, wat het vraagt en wat hij voorstelt. In je mailbox verandert hij niets zonder jouw klik.
+        Wat je in Gmail of Outlook zelf archiveert, verdwijnt hier vanzelf.</p>
+      <p class="noot">Teams, WhatsApp en Signal komen later.</p>
+    </section>
+  </aside>
+</div>
+{% endblock %}

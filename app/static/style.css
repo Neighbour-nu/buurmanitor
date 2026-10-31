@@ -230,3 +230,24 @@ html:not(.met-tabs) .tabs { display: none; }
 .mappen .map.actief { border-left-color: var(--blauw); background: #EAF1FB; }
 .mappen .aantal { font-family: var(--kop); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .melding-acties { margin-top: 4px; }
+
+/* Bram: de postkamer */
+.post { display: flex; gap: 10px; align-items: flex-start; border-left: 4px solid var(--lijn); padding: 8px 10px; margin: 6px 0;
+  background: var(--wit); border-radius: 0 4px 4px 0; scroll-margin-top: 80px; }
+.post input[type=checkbox] { margin-top: 4px; }
+.post-inhoud { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.post-kop { display: flex; justify-content: space-between; gap: 8px; }
+.post .van { font-weight: 500; }
+.post.ongelezen .van, .post.ongelezen .onderwerp { font-weight: 700; }
+.post .onderwerp { color: var(--inkt); text-decoration: none; }
+.post .onderwerp:hover { text-decoration: underline; }
+.post .label { margin-left: 4px; }
+.post.hoog { background: #FFF8F2; }
+.post.politiek { border-left-color: var(--politiek); } .post.prive { border-left-color: var(--prive); }
+.post.zerohero { border-left-color: var(--zerohero); } .post.fbim { border-left-color: var(--fbim); }
+.post.upperspire { border-left-color: var(--upperspire); }
+.bram-regel { margin-top: 2px; }
+.bram-regel .bram-voorstel { color: var(--blauwdonker); font-weight: 500; white-space: nowrap; }
+.post-acties { margin-top: 4px; }
+.post-acties select { flex: 0 1 180px; }
+.post:target { box-shadow: 0 0 0 2px var(--blauw); }

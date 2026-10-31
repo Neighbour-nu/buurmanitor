@@ -7,10 +7,11 @@ from .kern import claude, config, gezondheid, meldingen
 from .kern.web import datum_lang
 
 PLANNING = """Stand van de bouw:
-- Klaar: de kern van Buurmanitor, de werkruimtes Politiek (Promonitor) en ZEROHERO (de Doellijn), en Clara (agenda).
-- Volgende fases: Bram (mail, Teams, WhatsApp en Signal), Noor (taken), Vera (nieuws), Jesse (socials).
-Mail, taken, nieuws en socials kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt. Voor de agenda
-is Clara er; voor politiek en ZEROHERO de werkruimtes."""
+- Klaar: de kern van Buurmanitor, de werkruimtes Politiek (Promonitor) en ZEROHERO (de Doellijn), Clara (agenda) en
+  het eerste deel van Bram (mail uit Gmail en Outlook sorteren).
+- Volgende fases: Bram verder (Teams, WhatsApp en Signal), Noor (taken), Vera (nieuws), Jesse (socials).
+Teams, WhatsApp, Signal, taken, nieuws en socials kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt.
+Voor de agenda is Clara er, voor mail Bram, voor politiek en ZEROHERO de werkruimtes."""
 
 
 def context(c):
@@ -22,6 +23,9 @@ def context(c):
     agenda = _agenda(c, nu)
     if agenda:
         delen.append(agenda)
+    post = _post(c)
+    if post:
+        delen.append(post)
     g, s = gezondheid.geheugen(), gezondheid.schijf()
     if g and s:
         delen.append(f"Server: geheugen {g['procent']} procent in gebruik, schijf {s['procent']} procent vol.")
@@ -46,6 +50,19 @@ def _agenda(c, nu):
     uit = ["Agenda vandaag (van Clara):"] + (regels or ["- geen afspraken"])
     if conf:
         uit.append(f"Potentiële overlap komende week: {len(conf)} keer (details bij Clara).")
+    return "\n".join(uit)
+
+
+def _post(c):
+    """Wat Bram ziet, kort: de berichten die om actie vragen (één regel per bericht, zoals Bram ze samenvat)."""
+    from .bram import sync, web  # pylint: disable=import-outside-toplevel
+    if not sync.koppelingen(c, alleen_actief=True):
+        return "Post: nog geen mailaccounts gekoppeld bij Bram."
+    rijen = c.execute("""SELECT b.*, k.naam AS koppeling FROM post_berichten b JOIN post_koppelingen k ON k.id = b.koppeling_id
+                         WHERE b.status = 'open' AND k.actief ORDER BY b.ontvangen DESC""").fetchall()
+    actie = [r for r in rijen if web.groep(r) == "actie"]
+    uit = [f"Post (van Bram): {len(rijen)} berichten in de inboxen, {len(actie)} vragen om actie."]
+    uit += [f"- {r['van_naam']}: {r['regel'] or r['onderwerp']} ({r['koppeling']})" for r in actie[:10]]
     return "\n".join(uit)
 
 

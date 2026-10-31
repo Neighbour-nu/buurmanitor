@@ -37,7 +37,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 PLANNER_AAN = os.environ.get("BUURMANITOR_PLANNER", "1") != "0"
 # Hoe ver de bouw is: persona's met een fase tot en met deze zijn actief (Iris 0, Clara 3, ...).
-FASE = 3
+FASE = 4
 BACKUP_MAP = os.environ.get("BACKUP_MAP", "/backups")
 
 # Werkruimtes. Politiek draait onder /politiek zodra POLITIEK_DATABASE_URL is ingesteld (fase 1), ZEROHERO onder

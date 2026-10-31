@@ -521,16 +521,23 @@ def _bewaar_koppeling(c, soort, gegevens, opties):
 async def koppel_terug(soort: str, code: str = "", state: str = "", error: str = "", error_description: str = ""):
     if soort not in ("google", "microsoft"):
         raise HTTPException(404)
+    with db.pool.connection() as c:
+        opties = _neem_staat(c, state, soort)
+    # Bram (mail) koppelt via dezelfde apps en hetzelfde terugkeeradres; het koppelverzoek zegt voor wie het is.
+    voor_bram = bool(opties and opties.get("voor") == "bram")
+    scherm = "/bram/instellingen" if voor_bram else "/clara/koppelingen"
     if error:
         uitleg = error_description or error
         if "AADSTS65001" in uitleg or "AADSTS90094" in uitleg or "admin" in uitleg.lower():
             uitleg = ("Deze organisatie laat alleen apps toe die de beheerder heeft goedgekeurd. Stuur de beheerderslink "
-                      "(onderaan deze pagina) naar de ICT van die organisatie, of gebruik een agendalink (ICS).")
-        return _terug("/clara/koppelingen", fout=f"Koppelen is niet gelukt: {uitleg[:300]}")
-    with db.pool.connection() as c:
-        opties = _neem_staat(c, state, soort)
+                      "(bij Agenda-instellingen) naar de ICT van die organisatie"
+                      + ("." if voor_bram else ", of gebruik een agendalink (ICS)."))
+        return _terug(scherm, fout=f"Koppelen is niet gelukt: {uitleg[:300]}")
     if opties is None:
         return _terug("/clara/koppelingen", fout="Dit koppelverzoek is verlopen of onbekend. Probeer het opnieuw.")
+    if voor_bram:
+        from ..bram import web as bram_web  # pylint: disable=import-outside-toplevel
+        return await bram_web.koppeling_klaar(soort, code, opties)
     try:
         gegevens = await asyncio.to_thread(
             bronnen.google_code if soort == "google" else (lambda x: bronnen.ms_code(x, opties.get("lezen", False))), code)

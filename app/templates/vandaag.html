@@ -6,7 +6,7 @@
     <p class="iris-regel"><b>Iris:</b>
       {% if urgent %}{{ urgent | length }} urgente melding{{ 'en' if urgent | length > 1 }}. Begin daar.
       {% elif meldingen %}{{ meldingen | length }} open melding{{ 'en' if meldingen | length > 1 }}, niets urgents.
-      {% else %}geen open meldingen. De rest van het team komt er in de volgende fases bij.{% endif %}</p>
+      {% else %}geen open meldingen.{% endif %}</p>
   </div>
   <div class="chips">{% for k, naam in domeinen %}<span class="chip {{ k }}">{{ naam }}</span>{% endfor %}</div>
 </section>
@@ -30,6 +30,16 @@
       {% else %}<p class="noot">Geen afspraken vandaag.</p>{% endfor %}
       {% if agenda.conflicten %}<p class="item belangrijk"><a href="/clara#overlap">{{ agenda.conflicten | length }} keer potentiële overlap</a> in de komende week.</p>{% endif %}
       {% if agenda.uitnodigingen %}<p class="noot"><a href="/clara#uitnodigingen">{{ agenda.uitnodigingen | length }} uitnodiging{{ 'en' if agenda.uitnodigingen | length > 1 }}</a> nog te beantwoorden.</p>{% endif %}
+    {% endif %}
+  </section>
+
+  <section class="kaart">
+    <h2>Post <a class="klein" href="/bram">postkamer</a></h2>
+    {% if post is none %}<p class="noot">Nog geen mailaccounts gekoppeld. <a href="/bram/instellingen">Koppel ze bij Bram</a>.</p>
+    {% else %}
+      {% if post.actie %}<p class="item belangrijk"><a href="/bram#actie">{{ post.actie }} bericht{{ 'en' if post.actie != 1 }}</a> {{ 'vraagt' if post.actie == 1 else 'vragen' }} om actie.</p>
+      {% else %}<p class="noot">Niets dat op jou wacht.</p>{% endif %}
+      <p class="noot"><a href="/bram#lezen">{{ post.lezen }} om te lezen</a> · <a href="/bram#weg">{{ post.weg }} kan weg</a></p>
     {% endif %}
   </section>
 
