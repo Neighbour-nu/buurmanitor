@@ -48,8 +48,17 @@
               {% if sleutel in krap_ids %}<span class="label rood">krap</span>{% endif %}
               {% if a.antwoord == 'geen' %}<span class="label">uitnodiging</span>{% endif %}
               {% if a.antwoord == 'afgewezen' %}<span class="label">afgewezen</span>{% endif %}
-              <br><span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}</span>
+              <br><span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.mee %} (je gaat mee){% endif %}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}</span>
               {% if sleutel in onbekend_ids %}<div class="reis"><span class="noot">Reistijd onbekend: {{ reis_dienst }} vindt "{{ a.locatie }}" niet. Zet een volledig adres in de afspraak.</span></div>{% endif %}
+              {% if a.niet_voor_mij and a.locatie and not a.online and not a.heledag %}
+              <form method="post" action="/clara/vervoer/{{ a.id }}" class="vervoerkeuze">
+                <input type="hidden" name="week" value="{{ week }}">
+                <select name="vervoer" onchange="this.form.submit()" aria-label="Ga je mee naar {{ a.titel }}?">
+                  <option value="automatisch" selected>je gaat niet mee</option>
+                  {% for w, t in [('fiets', 'mee, op de fiets'), ('auto', 'mee, met de auto'), ('ov', 'mee, met het OV'), ('lopen', 'mee, lopend')] %}<option value="{{ w }}">{{ t }}</option>{% endfor %}
+                </select><noscript><button class="knop klein">Kies</button></noscript>
+              </form>
+              {% endif %}
               {% set reizen = per_afspraak.get(sleutel, []) %}
               {% if reizen %}
               <div class="reis">
@@ -66,7 +75,8 @@
                 <form method="post" action="/clara/vervoer/{{ a.id }}" class="vervoerkeuze">
                   <input type="hidden" name="week" value="{{ week }}">
                   <select name="vervoer" onchange="this.form.submit()" aria-label="Vervoer voor {{ a.titel }}">
-                    <option value="automatisch" {{ 'selected' if not reizen[0].gekozen }}>automatisch{% if not reizen[0].gekozen and reizen[0].vervoer != 'geen' %} ({{ reizen[0].vervoer }}){% endif %}</option>
+                    {% if a.mee %}<option value="automatisch">je gaat niet mee</option>
+                    {% else %}<option value="automatisch" {{ 'selected' if not reizen[0].gekozen }}>automatisch{% if not reizen[0].gekozen and reizen[0].vervoer != 'geen' %} ({{ reizen[0].vervoer }}){% endif %}</option>{% endif %}
                     {% for w, t in [('fiets', 'fiets'), ('auto', 'auto'), ('ov', 'openbaar vervoer'), ('lopen', 'lopen'), ('geen', 'geen reistijd')] %}
                     <option value="{{ w }}" {{ 'selected' if reizen[0].gekozen and reizen[0].vervoer == w }}>{{ t }}</option>{% endfor %}
                   </select><noscript><button class="knop klein">Kies</button></noscript>

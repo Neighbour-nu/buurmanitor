@@ -65,7 +65,9 @@ def _bronnen(c, van, tot):
     rijen = c.execute("""SELECT i.*, k.soort, k.agendas AS k_agendas FROM agenda_items i
                          JOIN agenda_koppelingen k ON k.id = i.koppeling_id
                          WHERE k.actief AND i.start < %s AND i.eind > %s ORDER BY i.start, k.id, i.id""", (tot, van)).fetchall()
+    from . import reis  # pylint: disable=import-outside-toplevel
     regels = sync.verbergregels(c)
+    gekozen = reis.keuzes(c)
     gezien, uit = set(), []
     for r in rijen:
         a = dict(r)
@@ -73,7 +75,7 @@ def _bronnen(c, van, tot):
             continue
         if a["soort"] in ("google", "microsoft"):
             ag = next((x for x in (a["k_agendas"] or []) if x["id"] == a["agenda_id"]), None)
-            if not ag or not ag.get("aan") or ag.get("bezet") is False:
+            if not ag or not ag.get("aan") or (ag.get("bezet") is False and not reis.gaat_mee(a, gekozen)):
                 continue
         if not analyse.bezet(a) or a.get("antwoord") == "geen" or analyse.verborgen(a, regels):
             continue

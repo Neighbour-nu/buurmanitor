@@ -171,6 +171,7 @@ def afspraken(c, van, tot, met_verborgen=False):
                          WHERE k.actief AND i.start < %s AND i.eind > %s ORDER BY i.start""", (tot, van)).fetchall()
     regels = verbergregels(c)
     agendas = {(k["id"], a["id"]): (a, len(k["agendas"] or [])) for k in koppelingen(c, alleen_actief=True) for a in (k["agendas"] or [])}
+    gekozen = reis.keuzes(c)
     lijst = []
     for r in rijen:
         a = dict(r)
@@ -183,6 +184,10 @@ def afspraken(c, van, tot, met_verborgen=False):
         a["kleur_toon"] = a.get("kleur") or (ag or {}).get("kleur") or ""
         # Agenda's die niet 'bezet voor mij' zijn (bijvoorbeeld die van Sanne): wel zien, niet als bezette tijd tellen.
         a["niet_voor_mij"] = bool(ag) and ag.get("bezet") is False
+        # ...tenzij Martijn vervoer koos: dan gaat hij mee (bijvoorbeeld Sanne naar de manege brengen) en telt het wel.
+        a["mee"] = a["niet_voor_mij"] and reis.gaat_mee(a, gekozen)
+        if a["mee"]:
+            a["niet_voor_mij"] = False
         if a["niet_voor_mij"]:
             a["vrij"] = True
         lijst.append(a)

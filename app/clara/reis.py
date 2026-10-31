@@ -86,6 +86,12 @@ def keuze_sleutel(a):
     return f"uid:{uid}" if uid else f"id:{a['koppeling_id']}:{a['extern_id']}"
 
 
+def gaat_mee(a, gekozen):
+    """Een afspraak uit een agenda die niet 'bezet voor mij' is (zoals die van Sanne) wordt toch Martijns afspraak
+    zodra hij er vervoer voor kiest: hij brengt haar of gaat mee. Kiest hij 'geen reistijd' of 'automatisch', dan niet."""
+    return gekozen.get(keuze_sleutel(a)) not in (None, "geen")
+
+
 def keuzes(c):
     return {r["sleutel"]: r["vervoer"] for r in c.execute("SELECT sleutel, vervoer FROM agenda_vervoer").fetchall()}
 

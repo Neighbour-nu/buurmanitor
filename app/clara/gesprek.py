@@ -25,7 +25,14 @@ Zegt Martijn uitdrukkelijk hoe hij naar een afspraak gaat (bijvoorbeeld "naar Ut
 dan vast met één regel per afspraak, met het id uit de reistijdlijst:
 <vervoer>{"id": 123, "vervoer": "fiets|auto|ov|lopen|geen|automatisch"}</vervoer>
 "geen" betekent geen reistijd (hij wordt opgehaald of is er al); "automatisch" zet de vaste regels terug. Bij een
-terugkerende afspraak geldt de keuze voor de hele reeks. Doe dit alleen als hij het zelf zegt, niet uit jezelf. Je accepteert, verplaatst of verwijdert zelf
+terugkerende afspraak geldt de keuze voor de hele reeks.
+Afspraken uit een agenda die niet bezet is voor Martijn (zoals die van Sanne) krijgen geen reistijd, tenzij hij
+meegaat. Zegt hij dat hij meegaat of haar brengt (bijvoorbeeld "naar de manege rijd ik met de auto"), leg dan het
+vervoer vast met het id dat bij die afspraak staat; vanaf dan telt de afspraak als de zijne. "automatisch" of "geen"
+betekent dat hij niet (meer) meegaat.
+De reistijden zelf rekent het systeem uit met de routedienst (Google Maps of OpenRouteService); jij hoeft en kunt dat
+niet zelf. Leg je een vervoerskeuze vast, zeg dan dat de nieuwe reistijd binnen een paar minuten in de week staat.
+Zeg niet dat je geen toegang hebt tot routes of het thuisadres: dat regelt het systeem. Doe dit alleen als hij het zelf zegt, niet uit jezelf. Je accepteert, verplaatst of verwijdert zelf
 nooit iets en zegt ook niet dat je dat gedaan hebt. Gebruik alleen tijden die in de vrije blokken passen, tenzij
 Martijn iets anders vraagt."""
 
@@ -37,7 +44,11 @@ def _regel(a, tz):
                          {"geen": "uitnodiging, nog niet beantwoord", "voorlopig": "voorlopig", "afgewezen": "afgewezen"}.get(a.get("antwoord"), ""),
                          "vrij" if a.get("vrij") else "") if x]
     if a.get("niet_voor_mij"):
-        extra = [x for x in extra if x != "vrij"] + ["niet bezet voor Martijn"]
+        extra = [x for x in extra if x != "vrij"] + ["niet bezet voor Martijn, hij gaat niet mee"]
+        if a.get("locatie") and not a.get("online") and not a.get("heledag") and a.get("id"):
+            extra.append(f"id {a['id']} voor vervoer als hij meegaat")
+    elif a.get("mee"):
+        extra.append("Martijn gaat mee")
     return f"- {tijd} {a['titel']} [{sync.DOMEINEN.get(a.get('domein'), a.get('domein'))}, {a.get('agenda_naam') or a.get('koppeling')}]" + (
         f" ({'; '.join(extra)})" if extra else "")
 

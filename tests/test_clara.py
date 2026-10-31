@@ -826,7 +826,7 @@ def test_agenda_van_sanne_kleur_niet_bezet_en_inplannen(klant, monkeypatch):
         assert lijst["Belafspraak"]["kleur_toon"] == "#4285F4" and lijst["Rood blok"]["kleur_toon"] == "#D50000"
         assert not analyse.conflicten(list(lijst.values()))
         ctx = gesprek.context(c)
-        assert "Zwemles [Privé, Sanne] (Zwembad De Wissen, Helmond; niet bezet voor Martijn)" in ctx
+        assert "Zwemles [Privé, Sanne] (Zwembad De Wissen, Helmond; niet bezet voor Martijn, hij gaat niet mee; id " in ctx
         assert "kan inplannen: Martijn, Sanne" in ctx
     pagina = klant.get("/clara", headers=KOP).text
     assert "border-left-color: #795548" in pagina and "border-left-color: #D50000" in pagina and "(niet bezet voor jou)" in pagina
@@ -1043,3 +1043,42 @@ def test_verkeerd_clientgeheim_duidelijk(monkeypatch):
         bronnen.ms_code("code", False)
     assert not isinstance(fout.value, bronnen.OpnieuwKoppelen)
     assert "AADSTS7000215" in str(fout.value) and "clientgeheim" in str(fout.value) and "clara.sh" in str(fout.value)
+
+
+def test_mee_naar_afspraak_van_sanne(klant, monkeypatch):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    from app.clara import reis, spiegel, sync  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(sync, "reistijd_bijwerken", lambda c: None)
+    morgen = _nu_dag(1, 13, 30)
+    with db.pool.connection() as c:
+        g = c.execute("SELECT * FROM agenda_koppelingen WHERE soort = 'google'").fetchone()
+        agendas = [{"id": "primary", "naam": "Martijn", "primair": True, "schrijven": True, "aan": True, "bezet": True, "kleur": ""},
+                   {"id": "sanne", "naam": "Sanne", "primair": False, "schrijven": True, "aan": True, "bezet": False, "kleur": "#795548"}]
+        c.execute("UPDATE agenda_koppelingen SET agendas = %s, fout = NULL WHERE id = %s", (json.dumps(agendas), g["id"]))
+        c.execute("DELETE FROM agenda_items")
+        c.execute("DELETE FROM agenda_vervoer")
+        iid = c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, ical_uid, titel, locatie, start, eind)
+                           VALUES (%s, 'sanne', 'pr1', 'paard@g', 'Paardrijles Sanne', 'Manege Hooidonk, Nuenen', %s, %s) RETURNING id""",
+                        (g["id"], morgen, morgen + dt.timedelta(hours=1))).fetchone()["id"]
+        a = sync.afspraken(c, morgen - dt.timedelta(hours=1), morgen + dt.timedelta(hours=2))[0]
+        assert a["niet_voor_mij"] and not a["mee"] and not reis.buiten_de_deur(a)
+        assert f"id {iid} voor vervoer als hij meegaat" in gesprek.context(c)
+    pagina = klant.get("/clara", headers=KOP).text
+    assert "je gaat niet mee" in pagina and "mee, met de auto" in pagina
+
+    r = klant.post(f"/clara/vervoer/{iid}", headers=FORM, data={"vervoer": "auto", "week": "0"}, follow_redirects=False)
+    assert r.status_code == 303
+    with db.pool.connection() as c:
+        a = sync.afspraken(c, morgen - dt.timedelta(hours=1), morgen + dt.timedelta(hours=2))[0]
+        assert a["mee"] and not a["niet_voor_mij"] and not a["vrij"] and reis.buiten_de_deur(a)
+        assert "Martijn gaat mee" in gesprek.context(c)
+        assert [b["titel"] for b in spiegel._bronnen(c, morgen - dt.timedelta(hours=1), morgen + dt.timedelta(hours=2))] == ["Paardrijles Sanne"]  # pylint: disable=protected-access
+    assert "(je gaat mee)" in klant.get("/clara", headers=KOP).text
+
+    # Niet meer mee: terug naar 'niet bezet voor jou'.
+    klant.post(f"/clara/vervoer/{iid}", headers=FORM, data={"vervoer": "automatisch"})
+    with db.pool.connection() as c:
+        a = sync.afspraken(c, morgen - dt.timedelta(hours=1), morgen + dt.timedelta(hours=2))[0]
+        assert a["niet_voor_mij"] and not a["mee"]
+        assert not spiegel._bronnen(c, morgen - dt.timedelta(hours=1), morgen + dt.timedelta(hours=2))  # pylint: disable=protected-access
+        c.execute("DELETE FROM agenda_items")
