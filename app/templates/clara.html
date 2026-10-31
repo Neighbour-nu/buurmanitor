@@ -33,22 +33,31 @@
   <section class="kaart">
     <h2>
       <span>{{ start.day }} {{ datum_lang(start).split(' ')[2] }} tot {{ alle_dagen[-1].day }} {{ datum_lang(alle_dagen[-1]).split(' ')[2] }}</span>
-      <span class="klein"><a href="/clara?week={{ week - 1 }}">vorige</a> · {% if week %}<a href="/clara">deze week</a> · {% endif %}<a href="/clara?week={{ week + 1 }}">volgende</a></span>
+      <span class="klein"><button type="button" class="knop klein" id="alles-open" aria-pressed="false">alles open</button>
+        <a href="/clara?week={{ week - 1 }}">vorige</a> · {% if week %}<a href="/clara">vandaag</a> · {% endif %}<a href="/clara?week={{ week + 1 }}">volgende</a></span>
     </h2>
     {% for dag in alle_dagen %}
       {% set items = dagen_lijst.get(dag, []) %}
       <div class="dag {{ 'vandaag' if dag == nu.date() }}">
-        <div class="dagkop">{{ DAGEN[dag.weekday()] }} {{ dag.day }}-{{ dag.month }}{% if dag == nu.date() %} <span class="label">vandaag</span>{% endif %}</div>
+        <div class="dagkop">{{ DAGEN[dag.weekday()] }} {{ dag.day }}-{{ dag.month }}{% if dag == nu.date() %} <span class="label">vandaag</span>{% endif %}{% if not items %} <span class="leeg-dag">geen afspraken</span>{% endif %}</div>
         {% for a in items %}
           {% set sleutel = (a.koppeling_id, a.extern_id) %}
-          <div class="afspraak {{ a.domein }} {{ 'reisblok' if is_reisblok(a) }} {{ 'conflict' if sleutel in conflict_ids }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }} {{ 'voorlopig' if a.status == 'voorlopig' or a.antwoord in ('voorlopig', 'geen') }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %}>
-            <span class="tijd">{{ tijd(a) }}</span>
-            <span class="wat">{% if a.link %}<a href="{{ a.link }}" target="_blank" rel="noopener">{{ a.titel }}</a>{% else %}{{ a.titel }}{% endif %}
-              {% if sleutel in conflict_ids %}<span class="label rood">dubbel</span>{% endif %}
-              {% if sleutel in krap_ids %}<span class="label rood">krap</span>{% endif %}
-              {% if a.antwoord == 'geen' %}<span class="label">uitnodiging</span>{% endif %}
-              {% if a.antwoord == 'afgewezen' %}<span class="label">afgewezen</span>{% endif %}
-              <br><span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.mee %} (je gaat mee){% endif %}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}</span>
+          {% set reizen = per_afspraak.get(sleutel, []) %}
+          {% set met_tijd = reizen | selectattr('minuten') | list %}
+          {% set nog_open = met_tijd | rejectattr('ingepland') | list %}
+          <details class="afspraak {{ a.domein }} {{ 'reisblok' if is_reisblok(a) }} {{ 'conflict' if sleutel in conflict_ids }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }} {{ 'voorlopig' if a.status == 'voorlopig' or a.antwoord in ('voorlopig', 'geen') }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %} id="a{{ a.id }}">
+            <summary><span class="tijd">{{ tijd(a) }}</span>
+              <span class="wat"><span class="atitel">{{ a.titel }}</span>
+                {% if sleutel in conflict_ids %}<span class="label rood">dubbel</span>{% endif %}
+                {% if sleutel in krap_ids %}<span class="label rood">krap</span>{% endif %}
+                {% if a.antwoord == 'geen' %}<span class="label">uitnodiging</span>{% endif %}
+                {% if a.antwoord == 'afgewezen' %}<span class="label">afgewezen</span>{% endif %}
+                {% if met_tijd %}<span class="label {{ 'groen' if not nog_open }}">{{ {'ov': '🚆', 'auto': '🚗', 'fiets': '🚲', 'lopen': '🚶'}[met_tijd[0].vervoer] }} {{ 'reistijd ingepland' if not nog_open else met_tijd[0].minuten ~ ' min' }}</span>{% endif %}
+                {% if a.niet_voor_mij and (sleutel in rit_ids or (a.reeks and (a.koppeling_id, a.reeks) in gedekt)) %}<span class="label groen">ritten ingepland</span>{% endif %}
+                {% if a.mee %}<span class="label">je gaat mee</span>{% endif %}
+              </span></summary>
+            <div class="open">
+              <span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.reeks %} · herhalend{% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}{% if a.link %} · <a href="{{ a.link }}" target="_blank" rel="noopener">openen in {{ 'Google Agenda' if a.soort == 'google' else 'Outlook' }}</a>{% endif %}</span>
               {% if sleutel in onbekend_ids %}<div class="reis"><span class="noot">Reistijd onbekend: {{ reis_dienst }} vindt "{{ a.reisadres or a.locatie }}" niet.</span> <a class="knop klein" href="/clara/reistijd/{{ a.id }}?week={{ week }}">Adres invullen</a></div>{% endif %}
               {% if a.niet_voor_mij and a.locatie and not a.online and not a.heledag %}
               <form method="post" action="/clara/vervoer/{{ a.id }}" class="vervoerkeuze">
@@ -63,7 +72,6 @@
                 {% endif %}
               </form>
               {% endif %}
-              {% set reizen = per_afspraak.get(sleutel, []) %}
               {% if reizen %}
               <div class="reis">
                 {% for r in reizen %}
@@ -96,12 +104,34 @@
                      and not a.online and sleutel not in thuis_ids
                      and a.antwoord != 'afgewezen' and not a.vrij and a.status != 'geannuleerd' %}
               <div class="reis"><a class="knop klein" href="/clara/reistijd/{{ a.id }}?week={{ week }}">＋ Reistijd</a></div>
-              {% endif %}</span>
-          </div>
-        {% else %}<p class="noot leeg-dag">Geen afspraken.</p>{% endfor %}
+              {% endif %}
+            </div>
+          </details>
+        {% endfor %}
       </div>
     {% endfor %}
-    <p class="noot">* einde geschat (de raadsagenda in Notubiz geeft alleen een begintijd).</p>
+    <p class="noot">Klik op een afspraak voor de details, reistijd en keuzes. * einde geschat (de raadsagenda in Notubiz geeft alleen een begintijd).</p>
+    <script>
+    (function () {
+      const knop = document.getElementById("alles-open");
+      if (!knop) return;
+      knop.addEventListener("click", function () {
+        const open = knop.getAttribute("aria-pressed") !== "true";
+        document.querySelectorAll("details.afspraak").forEach(function (d) { d.open = open; });
+        knop.setAttribute("aria-pressed", open ? "true" : "false");
+        knop.textContent = open ? "alles dicht" : "alles open";
+      });
+      // na een keuze (vervoer, reistijd) blijft de afspraak open waar je mee bezig was
+      document.querySelectorAll("details.afspraak form").forEach(function (f) {
+        f.addEventListener("submit", function () { try { sessionStorage.setItem("clara_open", f.closest("details").id); } catch (e) {} });
+      });
+      try {
+        const id = sessionStorage.getItem("clara_open");
+        if (id && document.getElementById(id)) { document.getElementById(id).open = true; document.getElementById(id).scrollIntoView({block: "center"}); }
+        sessionStorage.removeItem("clara_open");
+      } catch (e) {}
+    })();
+    </script>
   </section>
 
   <aside>

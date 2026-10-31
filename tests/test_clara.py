@@ -1073,7 +1073,7 @@ def test_mee_naar_afspraak_van_sanne(klant, monkeypatch):
         assert a["mee"] and not a["niet_voor_mij"] and not a["vrij"] and reis.buiten_de_deur(a)
         assert "Martijn gaat mee" in gesprek.context(c)
         assert [b["titel"] for b in spiegel._bronnen(c, morgen - dt.timedelta(hours=1), morgen + dt.timedelta(hours=2))] == ["Paardrijles Sanne"]  # pylint: disable=protected-access
-    assert "(je gaat mee)" in klant.get("/clara", headers=KOP).text
+    assert ">je gaat mee</span>" in klant.get("/clara", headers=KOP).text
 
     # Niet meer mee: terug naar 'niet bezet voor jou'.
     klant.post(f"/clara/vervoer/{iid}", headers=FORM, data={"vervoer": "automatisch"})
@@ -1489,3 +1489,20 @@ def test_brengen_en_ophalen_voor_afspraak_van_sanne(klant, monkeypatch):
         for t_ in ("agenda_items", "agenda_reisinfo", "agenda_vervoer", "agenda_reeksen"):
             c.execute(f"DELETE FROM {t_}")
         c.execute("DELETE FROM instellingen WHERE sleutel LIKE 'clara%%'")
+
+
+def test_agenda_compact_twee_weken(klant):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM agenda_items")
+        k = c.execute("SELECT id FROM agenda_koppelingen WHERE soort = 'google' LIMIT 1").fetchone()["id"]
+        s = _nu_dag(12, 10)
+        iid = c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, locatie, start, eind, link)
+                           VALUES (%s, 'primary', 'ver1', 'Afspraak over twaalf dagen', 'Ergens', %s, %s, 'https://calendar.google.com/x')
+                           RETURNING id""", (k, s, s + dt.timedelta(hours=1))).fetchone()["id"]
+    pagina = klant.get("/clara", headers=KOP).text
+    assert "Afspraak over twaalf dagen" in pagina and pagina.count('class="dagkop"') == 14
+    assert f'id="a{iid}">' in pagina and "<summary>" in pagina and "openen in Google Agenda" in pagina and "alles open" in pagina
+    assert "Afspraak over twaalf dagen" not in klant.get("/clara?week=1", headers=KOP).text
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM agenda_items")

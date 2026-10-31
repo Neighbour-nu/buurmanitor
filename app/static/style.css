@@ -192,3 +192,17 @@ h2 form.inline { margin: 0; }
 .kleurbol { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
 fieldset.keuzes { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; }
 fieldset.keuzes legend { padding: 0; margin-bottom: 4px; }
+
+/* compacte agenda: alleen tijd en titel, openklappen voor de rest */
+details.afspraak { display: block; padding: 0; }
+details.afspraak > summary { display: flex; gap: 10px; align-items: baseline; padding: 3px 8px; list-style: none; cursor: pointer; color: var(--inkt); }
+details.afspraak > summary::-webkit-details-marker { display: none; }
+details.afspraak > summary::after { content: "▸"; margin-left: auto; padding-left: 6px; color: var(--zacht); transition: transform .15s; }
+details.afspraak[open] > summary::after { transform: rotate(90deg); }
+details.afspraak > summary:hover .atitel { text-decoration: underline; text-decoration-color: var(--lijn); }
+details.afspraak .wat .label { margin-left: 4px; }
+details.afspraak > .open { padding: 0 8px 6px 110px; font-size: 14px; }
+.dag { padding: 5px 0 6px; }
+.dagkop .leeg-dag { font: 13px/1.5 Barlow, "Helvetica Neue", Arial, sans-serif; text-transform: none; letter-spacing: 0; color: var(--zacht); margin-left: 6px; }
+@media (max-width: 640px) { details.afspraak > .open { padding-left: 12px; } .afspraak .tijd { flex-basis: 78px; } }
+.reis > .knop { align-self: flex-start; }

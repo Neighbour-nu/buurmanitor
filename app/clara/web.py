@@ -30,9 +30,12 @@ def _terug(pad, **melding):
     return RedirectResponse(pad + (f"#{anker}" if anker else ""), status_code=303)
 
 
+DAGEN_IN_BEELD = 14  # de agenda toont twee weken, vanaf vandaag
+
+
 def _week_start(week):
     vandaag = dt.datetime.now(config.TZ).date()
-    return vandaag + dt.timedelta(days=7 * week) if week else vandaag
+    return vandaag + dt.timedelta(days=DAGEN_IN_BEELD * week) if week else vandaag
 
 
 def _reisdoelen(koppelingen):
@@ -72,7 +75,7 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
     with db.pool.connection() as c:
         koppelingen = sync.koppelingen(c)
         inst = sync.instellingen(c)
-        lijst = sync.afspraken(c, van, van + dt.timedelta(days=7))
+        lijst = sync.afspraken(c, van, van + dt.timedelta(days=DAGEN_IN_BEELD))
         komend = sync.afspraken(c, nu, nu + dt.timedelta(days=56))
         vrij = None
         if g is None:
@@ -96,7 +99,7 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
                                                           AND start > %s ORDER BY start LIMIT 10""",
                                                        (r["koppeling_id"], r["extern_id"], nu)).fetchall()]
         try:
-            plan = sync.reisplan(c, van, van + dt.timedelta(days=7))
+            plan = sync.reisplan(c, van, van + dt.timedelta(days=DAGEN_IN_BEELD))
         except bronnen.BronFout as e:
             plan = {"fout": str(e), "regels": []}
         reis_komend = sync.reisplan(c, nu, nu + dt.timedelta(days=dagen + 1)) if duur and reis.actief() else {"regels": []}
@@ -125,7 +128,7 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         krap_ids = {(x["naar"]["koppeling_id"], x["naar"]["extern_id"]) for x in over}
     return templates.TemplateResponse("clara.html", ctx(
         request, "clara", p=personas.get("clara"), nu=nu, week=week, start=start, dagen_lijst=analyse.per_dag(lijst, tz),
-        alle_dagen=[start + dt.timedelta(days=d) for d in range(7)], conflicten=conf, overgangen=over,
+        alle_dagen=[start + dt.timedelta(days=d) for d in range(DAGEN_IN_BEELD)], conflicten=conf, overgangen=over,
         conflict_ids=conflict_ids, krap_ids=krap_ids, uitnodigingen=analyse.uitnodigingen(komend, nu),
         koppelingen=koppelingen, doelen=_schrijfdoelen(koppelingen), vrij=vrij, duur=duur, dagen=dagen, tz=tz,
         DAGEN=DAGEN, gesprek=gs, berichten=berichten, voorstellen=voorstellen, melding=melding, fout=fout,
@@ -589,7 +592,7 @@ async def reistijd_inplannen(request: Request):
             doelen = _reisdoelen(sync.koppelingen(c))
             if not doelen:
                 raise bronnen.BronFout("Om reistijd in te plannen is een Google- of Microsoft-agenda met schrijfrechten nodig.")
-            plan = sync.reisplan(c, van, van + dt.timedelta(days=7), alleen_cache=False)
+            plan = sync.reisplan(c, van, van + dt.timedelta(days=DAGEN_IN_BEELD), alleen_cache=False)
             nu = dt.datetime.now(tz)
             klaar, gebruikt = 0, set()
             for r in plan["regels"]:
