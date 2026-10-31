@@ -10,7 +10,7 @@
     · {{ a.agenda_naam or a.koppeling }}{% if a.locatie %} · in de afspraak: {{ a.locatie }}{% endif %}{% if herhalend %} · herhalende afspraak{% endif %}</p>
   {% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
   {% if not reis_actief or not vertrekpunt %}
-    <p class="item">Stel eerst je vertrekpunt en de routedienst in bij <a href="/clara/koppelingen#reistijd">Koppelingen › Reistijd</a>.</p>
+    <p class="item">Stel eerst je vertrekpunt en de routedienst in bij <a href="/clara/koppelingen#reistijd">Agenda-instellingen › Reistijd</a>.</p>
   {% elif not doelen %}
     <p class="item">Om reistijd in te plannen is een Google- of Microsoft-agenda met schrijfrechten nodig.</p>
   {% else %}

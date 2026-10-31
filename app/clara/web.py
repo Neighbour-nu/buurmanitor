@@ -679,12 +679,12 @@ async def reistijd_toevoegen(request: Request, item_id: int):
                 raise HTTPException(404)
             inst = sync.instellingen(c)
             if not reis.actief() or not inst.get("vertrekpunt"):
-                return None, "Stel eerst je vertrekpunt en de routedienst in bij Koppelingen › Reistijd."
+                return None, "Stel eerst je vertrekpunt en de routedienst in bij Agenda-instellingen › Reistijd."
             if not adres:
                 return a, "Vul het adres in waar je naartoe gaat."
             thuis = reis.adres(c, inst["vertrekpunt"])
             if not thuis:
-                return a, "Je vertrekpunt is niet gevonden. Kijk het na bij Koppelingen › Reistijd."
+                return a, "Je vertrekpunt is niet gevonden. Kijk het na bij Agenda-instellingen › Reistijd."
             c.execute("DELETE FROM plekken WHERE sleutel = %s AND NOT gevonden", (reis._sleutel(adres),))  # pylint: disable=protected-access
             if not reis.adres(c, adres, focus=thuis["punt"]):
                 return a, f"Dit adres vindt {reis.dienst_naam()} niet. Probeer straat, huisnummer en plaats, of een bekende plek met plaatsnaam."
@@ -1151,17 +1151,17 @@ async def reistijd_instellingen(request: Request):
                      "reis_kleur": str(f.get("reis_kleur", "8")) if str(f.get("reis_kleur", "8")) in bronnen.GOOGLE_KLEUREN else "8"})
         sync.instellingen_opslaan(c, inst)
         if not inst["vertrekpunt"]:
-            return _terug("/clara/koppelingen", melding="Reistijd: vertrekpunt leeggemaakt.")
+            return _terug("/clara/koppelingen#reistijd", melding="Reistijd: vertrekpunt leeggemaakt.")
         if not reis.actief():
-            return _terug("/clara/koppelingen", fout="Opgeslagen, maar er is nog geen sleutel voor Google Maps of OpenRouteService (draai clara.sh).")
+            return _terug("/clara/koppelingen#reistijd", fout="Opgeslagen, maar er is nog geen sleutel voor Google Maps of OpenRouteService (draai clara.sh).")
         try:
             c.execute("DELETE FROM plekken WHERE sleutel = %s AND NOT gevonden", (reis._sleutel(inst["vertrekpunt"]),))  # pylint: disable=protected-access
             gevonden = await asyncio.to_thread(lambda: _adres_los(inst["vertrekpunt"]))
         except bronnen.BronFout as e:
-            return _terug("/clara/koppelingen", fout=f"Opgeslagen, maar het opzoeken lukte niet: {e}")
+            return _terug("/clara/koppelingen#reistijd", fout=f"Opgeslagen, maar het opzoeken lukte niet: {e}")
     if not gevonden:
-        return _terug("/clara/koppelingen", fout=f"Dit adres vond {reis.dienst_naam()} niet. Probeer straat, huisnummer, postcode en plaats.")
-    return _terug("/clara/koppelingen", melding=f"Vertrekpunt gevonden: {gevonden['label']}. Clara rekent de reistijd binnen vijf minuten uit.")
+        return _terug("/clara/koppelingen#reistijd", fout=f"Dit adres vond {reis.dienst_naam()} niet. Probeer straat, huisnummer, postcode en plaats.")
+    return _terug("/clara/koppelingen#reistijd", melding=f"Vertrekpunt gevonden: {gevonden['label']}. Clara rekent de reistijd binnen vijf minuten uit.")
 
 
 @router.post("/clara/spiegel")
@@ -1206,8 +1206,8 @@ async def reistijd_blokken_bijwerken(request: Request):
     try:
         n = await asyncio.to_thread(doe)
     except (bronnen.BronFout, kluis.KluisFout) as e:
-        return _terug("/clara/koppelingen", fout=str(e))
-    return _terug("/clara/koppelingen", melding=f"{n} reistijdblok{'ken' if n != 1 else ''} bijgewerkt (icoon en kleur)." if n
+        return _terug("/clara/koppelingen#reistijd", fout=str(e))
+    return _terug("/clara/koppelingen#reistijd", melding=f"{n} reistijdblok{'ken' if n != 1 else ''} bijgewerkt (icoon en kleur)." if n
                   else "Er stonden geen komende reistijdblokken van Clara in Google Agenda.")
 
 
@@ -1221,7 +1221,7 @@ async def verbergen(request: Request):
     """Een verbergregel toevoegen (vanaf een uitnodiging of met het formulier) of weghalen."""
     controleer_herkomst(request)
     f = await request.form()
-    terug = "/clara" if f.get("van") == "week" else "/clara/koppelingen"
+    terug = "/clara" if f.get("van") == "week" else "/clara/koppelingen#verbergen"
     with db.pool.connection() as c:
         regels = sync.verbergregels(c)
         if f.get("weg") is not None:
@@ -1260,4 +1260,4 @@ async def instellingen(request: Request):
              "avond": f.get("avond") == "1", "buffer": getal("buffer", 10, 0, 60), "reistijd": getal("reistijd", 30, 0, 180)}
     with db.pool.connection() as c:
         sync.instellingen_opslaan(c, {**sync.instellingen(c), **nieuw})
-    return _terug("/clara/koppelingen", melding="Instellingen opgeslagen.")
+    return _terug("/clara/koppelingen#werktijden", melding="Instellingen opgeslagen.")

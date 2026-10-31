@@ -213,3 +213,11 @@ details.afspraak > .open { padding: 0 8px 6px 110px; font-size: 14px; }
 button.knop { font-family: var(--kop); }
 .knoppen form.inline { margin: 0; display: flex; }
 .kopregel { margin-bottom: 14px; }
+
+/* tabbladen (Agenda-instellingen) */
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 2px solid var(--lijn); margin: 12px 0 14px; }
+.tabs a { font-family: var(--kop); font-weight: 600; text-transform: uppercase; font-size: 15px; letter-spacing: .02em;
+          padding: 7px 14px; color: var(--zacht); text-decoration: none; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.tabs a:hover { color: var(--blauwdonker); }
+.tabs a.actief { color: var(--blauwdonker); border-bottom-color: var(--blauw); }
+html:not(.met-tabs) .tabs { display: none; }

@@ -1,6 +1,6 @@
 """Reistijd: hoe lang Martijn onderweg is naar afspraken buiten de deur, en blokken om die tijd vrij te houden.
 
-- Vertrekpunt: het adres dat Martijn bij Koppelingen invult (staat in de database, niet in de code).
+- Vertrekpunt: het adres dat Martijn bij Agenda-instellingen invult (staat in de database, niet in de code).
 - Vervoer volgens zijn eigen regels: dichtbij (zoals het Huis voor de Stad) met de fiets; verder weg met de auto;
   midden in een grote stad met het openbaar vervoer.
 - Routedienst: Google Maps als er een sleutel is (Routes API en Geocoding API, met echte OV-reistijd voor het tijdstip
@@ -312,7 +312,7 @@ def plan(c, afspraken, inst, nu=None, alleen_cache=True):
     inst = {**STANDAARD, **(inst or {})}
     tz = config.TZ
     if not inst["vertrekpunt"]:
-        return {"fout": "Vul je vertrekpunt in bij Koppelingen › Reistijd.", "regels": []}
+        return {"fout": "Vul je vertrekpunt in bij Agenda-instellingen › Reistijd.", "regels": []}
     thuis = adres(c, inst["vertrekpunt"], alleen_cache=alleen_cache)
     if not thuis:
         return {"fout": "Het vertrekpunt is (nog) niet gevonden." if actief() else "Er is nog geen sleutel voor OpenRouteService (clara.sh).",

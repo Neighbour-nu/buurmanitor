@@ -111,7 +111,7 @@ def context(c, nu=None):
     kop = [f"Het is {datum_lang(nu.date())} {nu.year}, {nu:%H.%M} uur."]
     koppelingen = sync.koppelingen(c, alleen_actief=True)
     if not koppelingen:
-        return "\n".join(kop + ["Er zijn nog geen agenda's gekoppeld. Zeg dat, en verwijs naar Clara > Koppelingen."])
+        return "\n".join(kop + ["Er zijn nog geen agenda's gekoppeld. Zeg dat, en verwijs naar Clara > Agenda-instellingen."])
     kop.append("Gekoppelde agenda's: " + "; ".join(
         f"{k['naam']} ({k['soort']}{', ' + 'lezen en schrijven' if k['schrijven'] else ', alleen lezen'})"
         + (f" FOUT: {k['fout']}" if k["fout"] else "") for k in koppelingen))

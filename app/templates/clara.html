@@ -17,13 +17,13 @@
     {% if open_reis %}<a class="knop vol" href="/clara/reistijd/overzicht?week={{ week }}" title="Bekijk waar Clara reistijd wil zetten en kies wat er in je agenda komt">Reistijd inplannen ({{ open_reis | length }})</a>{% endif %}
     <form method="post" action="/clara/vernieuwen" class="inline"><button class="knop" type="submit">Nu bijwerken</button></form>
     <a class="knop" href="/clara/raadsagenda">Raadsagenda</a>
-    <a class="knop" href="/clara/koppelingen">Koppelingen</a>
+    <a class="knop" href="/clara/koppelingen">Instellingen</a>
   </div>
 </section>
 {% if melding %}<p class="item">{{ melding }}</p>{% endif %}
 {% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
 {% if not koppelingen %}
-  <p class="item belangrijk">Er zijn nog geen agenda's gekoppeld. Ga naar <a href="/clara/koppelingen">Koppelingen</a>.</p>
+  <p class="item belangrijk">Er zijn nog geen agenda's gekoppeld. Ga naar <a href="/clara/koppelingen">Agenda-instellingen</a>.</p>
 {% endif %}
 {% if reis_actief and plan.fout %}<p class="item">Reistijd: {{ plan.fout }} <a href="/clara/koppelingen#reistijd">instellen</a></p>{% endif %}
 {% for k in koppelingen if k.fout %}<p class="item urgent"><b>{{ k.naam }}</b>: {{ k.fout }} <a href="/clara/koppelingen">oplossen</a></p>{% endfor %}
@@ -256,7 +256,7 @@
               <button class="knop klein vol" type="submit">Zet in agenda</button></div>
             {% endif %}
           </form>
-        {% else %}<p class="noot">Geen vrij blok van deze lengte binnen je werktijden. Pas de werktijden aan bij Koppelingen.</p>{% endfor %}
+        {% else %}<p class="noot">Geen vrij blok van deze lengte binnen je werktijden. Pas de werktijden aan bij <a href="/clara/koppelingen#werktijden">Agenda-instellingen</a>.</p>{% endfor %}
         {% if vrij and not doelen %}<p class="noot">Om iets in te plannen is een Google- of Microsoft-agenda met schrijfrechten nodig.</p>{% endif %}
       {% endif %}
     </section>
