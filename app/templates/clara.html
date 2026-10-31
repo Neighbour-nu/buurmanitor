@@ -16,6 +16,7 @@
   <div class="knoppen">
     {% if open_reis %}<a class="knop vol" href="/clara/reistijd/overzicht?week={{ week }}" title="Bekijk waar Clara reistijd wil zetten en kies wat er in je agenda komt">Reistijd inplannen ({{ open_reis | length }})</a>{% endif %}
     <form method="post" action="/clara/vernieuwen" class="inline"><button class="knop" type="submit">Nu bijwerken</button></form>
+    <a class="knop" href="/clara/raadsagenda">Raadsagenda</a>
     <a class="knop" href="/clara/koppelingen">Koppelingen</a>
   </div>
 </section>

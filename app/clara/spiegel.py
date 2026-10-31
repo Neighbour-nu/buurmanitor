@@ -97,7 +97,9 @@ def _bronnen(c, van, tot):
         uit.append(a)
     # Een vergadering uit de openbare raadsagenda alleen als hij niet al (met een andere titel) in een eigen agenda staat.
     for a in raad:
-        if not any(b.get("domein") == "politiek" and abs((b["start"] - a["start"]).total_seconds()) <= 45 * 60 for b in uit):
+        t = " ".join((a.get("titel") or "").lower().split())
+        if not any((b.get("domein") == "politiek" and abs((b["start"] - a["start"]).total_seconds()) <= 45 * 60)
+                   or (b["start"] == a["start"] and " ".join((b.get("titel") or "").lower().split()) == t) for b in uit):
             uit.append(a)
     return sorted(uit, key=lambda x: x["start"])
 

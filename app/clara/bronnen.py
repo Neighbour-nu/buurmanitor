@@ -370,8 +370,8 @@ def ms_reeks_ophalen(toegang, agenda_id, reeks_id):  # noqa: ARG001
                  headers={"Authorization": f"Bearer {toegang}"}, soort="Outlook")
 
 
-def google_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None, herhaal=None):
-    body = {"summary": titel, "description": omschrijving,
+def google_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None, herhaal=None, locatie=""):
+    body = {"summary": titel, "description": omschrijving, **({"location": locatie} if locatie else {}),
             "start": {"dateTime": start.isoformat(), "timeZone": "Europe/Amsterdam"},
             "end": {"dateTime": eind.isoformat(), "timeZone": "Europe/Amsterdam"}}
     if kleur in GOOGLE_KLEUREN:
@@ -381,6 +381,15 @@ def google_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=N
     j = _http(f"{GOOGLE_API}/calendars/{urllib.parse.quote(agenda_id, safe='')}/events",
               headers={"Authorization": f"Bearer {toegang}"}, soort="Google Agenda", body=body)
     return j.get("id", "")
+
+
+def google_bijwerken(toegang, agenda_id, extern_id, titel, start, eind, locatie=""):
+    """Titel, tijd en plek van een afspraak die Clara (na een klik) overnam bijwerken."""
+    _http(f"{GOOGLE_API}/calendars/{urllib.parse.quote(agenda_id, safe='')}/events/{urllib.parse.quote(extern_id, safe='')}",
+          headers={"Authorization": f"Bearer {toegang}"}, methode="PATCH", soort="Google Agenda", body={
+              "summary": titel, "location": locatie,
+              "start": {"dateTime": start.isoformat(), "timeZone": "Europe/Amsterdam"},
+              "end": {"dateTime": eind.isoformat(), "timeZone": "Europe/Amsterdam"}})
 
 
 def google_wijzig(toegang, agenda_id, extern_id, titel=None, kleur=None):
@@ -516,8 +525,9 @@ def ms_antwoord(toegang, agenda_id, extern_id, antwoord):
           methode="POST", body={"sendResponse": True}, soort="Outlook")
 
 
-def ms_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None, herhaal=None):  # noqa: ARG001 (Outlook: geen vaste kleuren)
+def ms_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None, herhaal=None, locatie=""):  # noqa: ARG001 (Outlook: geen vaste kleuren)
     body = {"subject": titel, "body": {"contentType": "text", "content": omschrijving}, "showAs": "busy",
+            **({"location": {"displayName": locatie}} if locatie else {}),
             "start": {"dateTime": start.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"},
             "end": {"dateTime": eind.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"}}
     if herhaal:
@@ -525,6 +535,14 @@ def ms_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None,
     j = _http(f"{GRAPH}/me/calendars/{urllib.parse.quote(agenda_id, safe='')}/events",
               headers={"Authorization": f"Bearer {toegang}"}, soort="Outlook", body=body)
     return j.get("id", "")
+
+
+def ms_bijwerken(toegang, agenda_id, extern_id, titel, start, eind, locatie=""):  # noqa: ARG001
+    _http(f"{GRAPH}/me/events/{urllib.parse.quote(extern_id, safe='')}", headers={"Authorization": f"Bearer {toegang}"},
+          methode="PATCH", soort="Outlook", body={
+              "subject": titel, "location": {"displayName": locatie},
+              "start": {"dateTime": start.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"},
+              "end": {"dateTime": eind.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"}})
 
 
 def ms_reeks(toegang, agenda_id, extern_id, herhaal, eerste=None):  # noqa: ARG001

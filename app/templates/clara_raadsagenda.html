@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block titel %}Raadsagenda · Clara · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>Raadsagenda <span class="noot">Clara</span></h1>
+<p class="uitleg">Vergaderingen uit de raadsagenda{% if bronnen | selectattr('soort', 'equalto', 'ics') | list %} en je agendalinks (zoals Bundeling){% endif %}.
+  Vink aan wat je in je eigen agenda wilt. <a href="/clara">Terug naar de agenda</a></p>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+<section class="kaart">
+  {% if not bronnen %}
+    <p class="item">Er is nog geen raadsagenda gekoppeld. Koppel de raadsagenda (Notubiz){% if not politiek_ok %} of een agendalink{% endif %} bij
+      <a href="/clara/koppelingen">Koppelingen</a>. Voor Bundeling: kopieer in Bundeling de agendalink (iCal of 'agenda abonneren') en voeg hem toe
+      als agendalink met de naam Bundeling.</p>
+  {% elif not items %}
+    <p class="noot">Er staan de komende acht weken geen vergaderingen in de raadsagenda.</p>
+  {% elif not doelen %}
+    <p class="item">Om vergaderingen over te nemen is een eigen Google- of Microsoft-agenda met schrijfrechten nodig.</p>
+  {% else %}
+  <form method="post" action="/clara/raadsagenda">
+    <table class="tabel reisoverzicht">
+      <tr><th></th><th>Wanneer</th><th>Vergadering</th><th>Bron</th></tr>
+      {% for i in items %}
+      {% set s = i.start.astimezone(tz) %}
+      <tr>
+        <td>{% if i.over %}<span class="label groen" title="staat in je agenda">✓</span>{% else %}<input type="checkbox" name="item" value="{{ i.id }}" aria-label="{{ i.titel }} overnemen">{% endif %}</td>
+        <td>{{ DAGEN[s.weekday()] }} {{ s.strftime('%d-%m') }}<br><span class="noot">{% if i.heledag %}hele dag{% else %}{{ s.strftime('%H.%M') }}–{{ i.eind.astimezone(tz).strftime('%H.%M') }}{% if i.geschat %}*{% endif %}{% endif %}</span></td>
+        <td>{% if i.link %}<a href="{{ i.link }}" target="_blank" rel="noopener">{{ i.titel }}</a>{% else %}{{ i.titel }}{% endif %}
+          {% if i.locatie %}<br><span class="noot">{{ i.locatie }}</span>{% endif %}
+          {% if i.over %}<br><span class="label groen">overgenomen</span>{% elif i.al %}<br><span class="label">staat al in je agenda</span>{% endif %}</td>
+        <td class="noot">{{ i.bron }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div class="velden">
+      <label>Zet ze in <select name="doel">{% for w, label, d in doelen %}<option value="{{ w }}" {{ 'selected' if w == standaard }}>{{ label }}</option>{% endfor %}</select></label>
+      <button class="knop vol" type="submit">Aangevinkte vergaderingen overnemen</button>
+    </div>
+    <p class="noot">* Notubiz geeft alleen een begintijd; het einde is geschat (commissie drie uur, raad vier uur). Verandert de tijd
+      of plek in de raadsagenda, dan past Clara je afspraak aan. Valt een vergadering weg, dan krijg je een melding.</p>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

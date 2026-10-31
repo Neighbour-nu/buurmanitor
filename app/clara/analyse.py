@@ -59,6 +59,8 @@ def samenvoegen(afspraken):
         tweede = ("titel", titel, a["start"], a["eind"]) if titel and titel != "(zonder titel)" and a.get("soort") != "raad" else None
         eerder = gezien.get((sleutel, a["start"])) if sleutel else None
         eerder = eerder or (gezien.get(tweede) if tweede else None)
+        if eerder is None and titel and a.get("soort") == "raad":  # overgenomen vergadering: zelfde titel en begin
+            eerder = gezien.get(("ts", titel, a["start"]))
         if eerder is not None:
             ook(eerder, a)
             continue
@@ -67,6 +69,7 @@ def samenvoegen(afspraken):
             gezien[(sleutel, a["start"])] = a
         if tweede:
             gezien[tweede] = a
+            gezien.setdefault(("ts", titel, a["start"]), a)
         uit.append(a)
     andere = [a for a in uit if a.get("soort") != "raad" and bezet(a)]
     return [a for a in uit if a.get("soort") != "raad" or not any(

@@ -1674,3 +1674,75 @@ def test_raadsagenda_alleen_als_bron_bij_beschikbaarheid(klant, monkeypatch):
         c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (r,))
         c.execute("DELETE FROM agenda_items")
         c.execute("DELETE FROM instellingen WHERE sleutel LIKE 'clara%%'")
+
+
+def test_raadsagenda_kiezen_en_overnemen(klant, monkeypatch):
+    from app.clara import sync  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(sync, "toegang", lambda c, k: "tok")
+    monkeypatch.setattr(sync, "synchroniseer", lambda c, k, forceer=False, nu=None: None)
+    gemaakt, bijgewerkt = [], []
+
+    def maak(tok, agenda_id, titel, s, e, o="", kleur=None, herhaal=None, locatie=""):
+        gemaakt.append((agenda_id, titel, s, e, o, locatie))
+        return f"kopie{len(gemaakt)}"
+    monkeypatch.setattr(bronnen, "google_maak", maak)
+    monkeypatch.setattr(bronnen, "google_bijwerken", lambda tok, a, eid, titel, s, e, locatie="": bijgewerkt.append((eid, titel, s, locatie)))
+    s = _nu_dag(4, 19, 30)
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM agenda_items")
+        c.execute("DELETE FROM agenda_overgenomen")
+        c.execute("DELETE FROM meldingen WHERE bron = 'clara'")
+        c.execute("UPDATE agenda_koppelingen SET schrijven = false")
+        ag = [{"id": "primary", "naam": "Martijn", "primair": True, "schrijven": True, "aan": True, "bezet": True, "domein": "politiek"}]
+        g = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, domein, schrijven, agendas, schrijfagenda) VALUES
+                         ('google', 'Privé4', 'prive', true, %s, 'primary') RETURNING id""", (json.dumps(ag),)).fetchone()["id"]
+        r = c.execute("INSERT INTO agenda_koppelingen (soort, naam, domein, laatst) VALUES ('raad', 'Raadsagenda Helmond', 'politiek', now()) RETURNING id").fetchone()["id"]
+        b = c.execute("INSERT INTO agenda_koppelingen (soort, naam, domein, laatst) VALUES ('ics', 'Bundeling', 'politiek', now()) RETURNING id").fetchone()["id"]
+
+        def item(kid, eid, titel, start, **kw):
+            return c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, locatie, start, eind, geschat, link, domein)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'politiek') RETURNING id""",
+                             (kid, kw.get("agenda", ""), eid, titel, kw.get("locatie", "Raadzaal, Huis voor de Stad"), start,
+                              start + dt.timedelta(hours=3), kw.get("geschat", True), kw.get("link", "https://helmond.notubiz.nl/vergadering/1"))).fetchone()["id"]
+        commissie = item(r, "n1", "Commissie Ruimte", s)
+        raad = item(r, "n2", "Raadsvergadering", s + dt.timedelta(days=2))
+        al = item(r, "n3", "Commissie Samenleving", s + dt.timedelta(days=3))
+        item(g, "eigen", "Commissie Samenleving", s + dt.timedelta(days=3), agenda="primary", geschat=False)
+        fractie = item(b, "b1", "Fractievergadering PRO", s - dt.timedelta(days=1), geschat=False, link="", locatie="")
+    pagina = klant.get("/clara", headers=KOP).text
+    assert 'href="/clara/raadsagenda">Raadsagenda' in pagina
+    r_ = klant.get("/clara/raadsagenda", headers=KOP)
+    assert r_.status_code == 200 and "Commissie Ruimte" in r_.text and "Fractievergadering PRO" in r_.text and "Bundeling" in r_.text
+    assert f'name="item" value="{commissie}"' in r_.text and "staat al in je agenda" in r_.text and "Martijn (Privé4)" in r_.text
+    assert klant.post("/clara/raadsagenda", headers=KOP, data={"item": str(commissie)}).status_code == 403
+    r_ = klant.post("/clara/raadsagenda", headers=FORM, follow_redirects=False,
+                    data={"item": [str(commissie), str(fractie)], "doel": f"{g}|primary"})
+    assert "2+vergaderingen+in+je+agenda" in r_.headers["location"], r_.headers["location"]
+    titels = {x[1]: x for x in gemaakt}
+    assert set(titels) == {"Commissie Ruimte", "Fractievergadering PRO"} and all(x[0] == "primary" for x in gemaakt)
+    assert titels["Commissie Ruimte"][5] == "Raadzaal, Huis voor de Stad" and "geschat" in titels["Commissie Ruimte"][4]
+    assert f"[clara-raad:{r}:n1]" in titels["Commissie Ruimte"][4] and "notubiz" in titels["Commissie Ruimte"][4]
+    # Nog een keer: niet dubbel.
+    klant.post("/clara/raadsagenda", headers=FORM, data={"item": str(commissie), "doel": f"{g}|primary"})
+    assert len(gemaakt) == 2
+    assert "overgenomen" in klant.get("/clara/raadsagenda", headers=KOP).text
+    with db.pool.connection() as c:
+        # De kopie staat na het ophalen in je agenda: in de week maar één keer.
+        c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind, domein)
+                     VALUES (%s, 'primary', 'kopie1', 'Commissie Ruimte', %s, %s, 'politiek')""", (g, s, s + dt.timedelta(hours=3)))
+        titels_week = [a["titel"] for a in sync.afspraken(c, s - dt.timedelta(hours=1), s + dt.timedelta(hours=4))]
+        assert titels_week.count("Commissie Ruimte") == 1
+        # Tijd verandert in de raadsagenda: de kopie gaat mee.
+        c.execute("UPDATE agenda_items SET start = start + interval '30 minutes', eind = eind + interval '30 minutes' WHERE extern_id = 'n1'")
+        assert "1 bijgewerkt" in sync.overgenomen_bijwerken(c)
+        assert bijgewerkt[0][0] in ("kopie1", "kopie2") and bijgewerkt[0][2] == s + dt.timedelta(minutes=30)
+        assert sync.overgenomen_bijwerken(c) is None
+        # Vervalt de vergadering: melding, niets verwijderd.
+        c.execute("DELETE FROM agenda_items WHERE extern_id = 'b1'")
+        assert "1 vervallen" in sync.overgenomen_bijwerken(c)
+        assert c.execute("SELECT count(*) AS n FROM meldingen WHERE titel LIKE 'Vergadering vervallen%%'").fetchone()["n"] == 1
+        c.execute("DELETE FROM agenda_koppelingen WHERE id IN (%s, %s, %s)", (g, r, b))
+        c.execute("UPDATE agenda_koppelingen SET schrijven = true WHERE soort = 'google'")
+        c.execute("DELETE FROM agenda_items")
+        c.execute("DELETE FROM agenda_overgenomen")

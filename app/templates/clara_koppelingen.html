@@ -82,7 +82,8 @@
     <h2>Agendalink (ICS)</h2>
     <p class="noot">Alleen lezen. Werkt als een organisatie geen app toelaat: in Outlook via Instellingen › Agenda › Gedeelde agenda's ›
       Een agenda publiceren (kies 'Kan alle details zien' of 'Kan zien wanneer ik bezet ben') en kopieer de ICS-link.
-      De link is geheim en staat versleuteld opgeslagen.</p>
+      De link is geheim en staat versleuteld opgeslagen. Ook voor Bundeling: kopieer daar de agendalink (iCal of 'agenda
+      abonneren'); bij <a href="/clara/raadsagenda">Raadsagenda</a> kies je daarna welke vergaderingen in je agenda komen.</p>
     <form method="post" action="/clara/koppel/ics" class="velden">
       <label>Naam <input type="text" name="naam" placeholder="bijvoorbeeld Gemeenteraad"></label>
       <label>Domein <select name="domein">{% for d, n in domeinen %}<option value="{{ d }}" {{ 'selected' if d == 'politiek' }}>{{ n }}</option>{% endfor %}</select></label>
@@ -95,7 +96,8 @@
   <section class="kaart">
     <h2>Raadsagenda Helmond</h2>
     <p class="noot">De openbare vergaderingen uit Notubiz (dezelfde bron als Politiek). Geen account nodig. Staat dezelfde
-      vergadering ook in je gemeenteraad-agenda, dan toont Clara hem één keer.</p>
+      vergadering ook in je gemeenteraad-agenda, dan toont Clara hem één keer. Bij <a href="/clara/raadsagenda">Raadsagenda</a>
+      kies je welke vergaderingen in je eigen agenda komen.</p>
     <form method="post" action="/clara/koppel/raad"><input type="hidden" name="domein" value="politiek">
       <button class="knop vol" type="submit">Raadsagenda koppelen</button></form>
   </section>

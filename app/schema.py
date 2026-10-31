@@ -177,6 +177,21 @@ MIGRATIES = [
     "ALTER TABLE agenda_voorstellen ADD COLUMN IF NOT EXISTS herhaal jsonb",
     "ALTER TABLE agenda_voorstellen ADD COLUMN IF NOT EXISTS reeks_id int",
     "ALTER TABLE agenda_voorstellen ADD COLUMN IF NOT EXISTS datum date",
+    # Vergaderingen uit de raadsagenda (Notubiz, of een agendalink zoals Bundeling) die Martijn in zijn agenda overnam.
+    """CREATE TABLE IF NOT EXISTS agenda_overgenomen (
+        id serial PRIMARY KEY,
+        bron_koppeling int NOT NULL,
+        bron_extern text NOT NULL,
+        doel_koppeling int NOT NULL REFERENCES agenda_koppelingen(id) ON DELETE CASCADE,
+        doel_agenda text NOT NULL,
+        extern_id text NOT NULL,
+        titel text NOT NULL,
+        start timestamptz NOT NULL,
+        eind timestamptz NOT NULL,
+        locatie text NOT NULL DEFAULT '',
+        status text NOT NULL DEFAULT 'actief',
+        aangemaakt timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (bron_koppeling, bron_extern, doel_koppeling))""",
     # Beschikbaarheid delen: mag Clara in dit account blokken 'Bezet' zetten, en welke blokken staan er al.
     "ALTER TABLE agenda_koppelingen ADD COLUMN IF NOT EXISTS spiegel boolean NOT NULL DEFAULT true",
     """CREATE TABLE IF NOT EXISTS agenda_spiegel (

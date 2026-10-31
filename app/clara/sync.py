@@ -294,6 +294,46 @@ def reistijd_automatisch(c, nu=None):
     return f"reistijd automatisch: {gemaakt} blokken" if gemaakt else None
 
 
+def overgenomen_bijwerken(c, nu=None):
+    """Vergaderingen die Martijn uit de raadsagenda overnam: verandert de tijd, titel of plek, dan past Clara zijn
+    afspraak aan. Verdwijnt de vergadering uit de raadsagenda, dan meldt ze dat (ze verwijdert zelf niets)."""
+    nu = nu or dt.datetime.now(config.TZ)
+    rijen = c.execute("""SELECT o.*, b.laatst AS bron_laatst, b.fout AS bron_fout FROM agenda_overgenomen o
+                         JOIN agenda_koppelingen b ON b.id = o.bron_koppeling
+                         WHERE o.status = 'actief' AND o.eind > %s""", (nu,)).fetchall()
+    gewijzigd, vervallen, gebruikt = 0, 0, set()
+    for o in rijen:
+        i = c.execute("SELECT * FROM agenda_items WHERE koppeling_id = %s AND extern_id = %s", (o["bron_koppeling"], o["bron_extern"])).fetchone()
+        if not i or i["status"] == "geannuleerd":
+            if o["bron_fout"] or not o["bron_laatst"] or o["bron_laatst"] < nu - dt.timedelta(hours=2):
+                continue  # bron niet vers bijgewerkt: niets concluderen
+            c.execute("UPDATE agenda_overgenomen SET status = 'vervallen' WHERE id = %s", (o["id"],))
+            meldingen.melden(c, "belangrijk", "clara", f"Vergadering vervallen: {o['titel']}",
+                             f"{o['start'].astimezone(config.TZ):%d-%m om %H.%M} staat niet meer in de raadsagenda. Je afspraak staat nog "
+                             "in je agenda; verwijder hem daar als hij echt niet doorgaat.", "/clara", sleutel=f"clara-raad-vervallen-{o['id']}")
+            vervallen += 1
+            continue
+        if (i["titel"], i["start"], i["eind"], i["locatie"] or "") == (o["titel"], o["start"], o["eind"], o["locatie"]):
+            continue
+        k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (o["doel_koppeling"],)).fetchone()
+        try:
+            (bronnen.google_bijwerken if k["soort"] == "google" else bronnen.ms_bijwerken)(
+                toegang(c, k), o["doel_agenda"], o["extern_id"], i["titel"], i["start"], i["eind"], i["locatie"] or "")
+        except bronnen.NietGevonden:  # met de hand verwijderd: dan laat Clara het zo
+            c.execute("UPDATE agenda_overgenomen SET status = 'verwijderd' WHERE id = %s", (o["id"],))
+            continue
+        except (bronnen.BronFout, kluis.KluisFout) as e:
+            return f"raadsagenda: {e}"
+        c.execute("UPDATE agenda_overgenomen SET titel = %s, start = %s, eind = %s, locatie = %s WHERE id = %s",
+                  (i["titel"], i["start"], i["eind"], i["locatie"] or "", o["id"]))
+        gebruikt.add(k["id"])
+        gewijzigd += 1
+    for kid in gebruikt:
+        synchroniseer(c, c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (kid,)).fetchone(), forceer=True)
+    delen = [x for x in (f"{gewijzigd} bijgewerkt" if gewijzigd else "", f"{vervallen} vervallen" if vervallen else "") if x]
+    return ("raadsagenda: " + ", ".join(delen)) if delen else None
+
+
 def reistijdreeksen_opruimen(c, nu=None):
     """Valt een keer van de oorspronkelijke reeks weg (afgezegd, vakantie), dan haalt Clara de reistijd op die dag ook
     weg. Alleen als de bron goed is bijgewerkt, zodat een storing nooit reistijd laat verdwijnen."""
@@ -340,6 +380,9 @@ def taak_agenda(c, forceer=False):
         if r:
             uitslag.append(r)
         r = reistijdreeksen_opruimen(c)
+        if r:
+            uitslag.append(r)
+        r = overgenomen_bijwerken(c)
         if r:
             uitslag.append(r)
         r = spiegel.bijwerken(c)

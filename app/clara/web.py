@@ -154,7 +154,7 @@ def vernieuwen(request: Request):
 
 # ---------------------------------------------------------------- iets in de agenda zetten (na een klik)
 
-def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True, kleur=None, herhaal=None):
+def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True, kleur=None, herhaal=None, locatie=""):
     try:
         kid, agenda_id = doel.split("|", 1)
         k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (int(kid),)).fetchone()
@@ -164,7 +164,8 @@ def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True, kleur=No
         raise bronnen.BronFout("In deze agenda mag Clara niets zetten.")
     tok = sync.toegang(c, k)
     maak = bronnen.google_maak if k["soort"] == "google" else bronnen.ms_maak
-    extern = maak(tok, agenda_id, titel, start, eind, omschrijving, kleur=kleur, **({"herhaal": herhaal} if herhaal else {}))
+    extern = maak(tok, agenda_id, titel, start, eind, omschrijving, kleur=kleur, **({"herhaal": herhaal} if herhaal else {}),
+                  **({"locatie": locatie} if locatie else {}))
     c.execute("INSERT INTO logboek (persona, actie, details) VALUES ('clara', 'afspraak gemaakt', %s)",
               (json.dumps({"koppeling": k["naam"], "titel": titel, "start": start.isoformat(), "eind": eind.isoformat(),
                            "herhaal": herhaal}),))
@@ -1007,6 +1008,89 @@ async def verwijderen(request: Request, item_id: int):
     except (bronnen.BronFout, kluis.KluisFout) as e:
         return _terug(f"/clara?week={week}", fout=str(e))
     return _terug(f"/clara?week={week}", melding=tekst)
+
+
+RAAD_MARKER = "[clara-raad:"
+
+
+def _raadsbronnen(c):
+    return [k for k in sync.koppelingen(c, alleen_actief=True) if k["soort"] in ("raad", "ics")]
+
+
+@router.get("/clara/raadsagenda", response_class=HTMLResponse)
+def raadsagenda(request: Request, melding: str = "", fout: str = ""):
+    """Vergaderingen uit de raadsagenda (Notubiz) en agendalinks (zoals Bundeling): kies wat in je agenda komt."""
+    tz = config.TZ
+    nu = dt.datetime.now(tz)
+    with db.pool.connection() as c:
+        bronnen_ = _raadsbronnen(c)
+        namen = {k["id"]: k["naam"] for k in bronnen_}
+        items = [dict(r) for r in c.execute("""SELECT * FROM agenda_items WHERE koppeling_id = ANY(%s) AND eind > %s
+                                                AND status <> 'geannuleerd' ORDER BY start, koppeling_id""",
+                                             ([k["id"] for k in bronnen_] or [0], nu)).fetchall()]
+        over = {(r["bron_koppeling"], r["bron_extern"]): r for r in c.execute(
+            "SELECT * FROM agenda_overgenomen WHERE status = 'actief'").fetchall()}
+        eigen = [dict(r) for r in c.execute("""SELECT i.titel, i.start, i.eind, i.domein FROM agenda_items i
+                                                JOIN agenda_koppelingen k ON k.id = i.koppeling_id
+                                                WHERE k.actief AND k.soort IN ('google', 'microsoft') AND i.eind > %s""", (nu,)).fetchall()]
+        doelen = _reisdoelen(sync.koppelingen(c))
+    for i in items:
+        i["bron"] = namen.get(i["koppeling_id"], "")
+        i["over"] = over.get((i["koppeling_id"], i["extern_id"]))
+        t = " ".join((i["titel"] or "").lower().split())
+        i["al"] = not i["over"] and any(
+            (e["start"] == i["start"] and " ".join((e["titel"] or "").lower().split()) == t)
+            or (e.get("domein") == "politiek" and abs((e["start"] - i["start"]).total_seconds()) <= 45 * 60) for e in eigen)
+    standaard = next((w for w, _l, d in doelen if d == "politiek"), doelen[0][0] if doelen else "")
+    return templates.TemplateResponse("clara_raadsagenda.html", ctx(
+        request, "clara", items=items, bronnen=bronnen_, doelen=doelen, standaard=standaard, tz=tz, DAGEN=DAGEN,
+        melding=melding, fout=fout, politiek_ok=config.POLITIEK_ACTIEF))
+
+
+@router.post("/clara/raadsagenda")
+async def raadsagenda_overnemen(request: Request):
+    """Na de klik: de aangevinkte vergaderingen als afspraak in de gekozen agenda zetten."""
+    controleer_herkomst(request)
+    f = await request.form()
+    gekozen = [int(x) for x in f.getlist("item") if str(x).isdigit()]
+    doel = str(f.get("doel", ""))
+    if not gekozen:
+        return _terug("/clara/raadsagenda", fout="Niets aangevinkt.")
+
+    def doe():
+        with db.pool.connection() as c:
+            doelen = {w for w, _l, _d in _reisdoelen(sync.koppelingen(c))}
+            if doel not in doelen:
+                raise bronnen.BronFout("Kies een agenda om de vergaderingen in te zetten.")
+            bron_ids = [k["id"] for k in _raadsbronnen(c)]
+            klaar, kid = [], int(doel.split("|")[0])
+            for i in c.execute("SELECT * FROM agenda_items WHERE id = ANY(%s) AND koppeling_id = ANY(%s)", (gekozen, bron_ids or [0])).fetchall():
+                if c.execute("""SELECT 1 FROM agenda_overgenomen WHERE bron_koppeling = %s AND bron_extern = %s AND doel_koppeling = %s
+                                AND status = 'actief'""", (i["koppeling_id"], i["extern_id"], kid)).fetchone():
+                    continue
+                oms = (f"{RAAD_MARKER}{i['koppeling_id']}:{i['extern_id']}] Overgenomen uit de raadsagenda door Clara (Buurmanitor)."
+                       + (" Het einde is geschat (Notubiz geeft alleen een begintijd)." if i["geschat"] else "")
+                       + (f" Stukken: {i['link']}" if i["link"] else ""))
+                _, extern = _maak(c, doel, i["titel"], i["start"], i["eind"], oms, bijwerken=False, locatie=i["locatie"] or "")
+                c.execute("""INSERT INTO agenda_overgenomen (bron_koppeling, bron_extern, doel_koppeling, doel_agenda, extern_id, titel,
+                                                             start, eind, locatie)
+                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             ON CONFLICT (bron_koppeling, bron_extern, doel_koppeling) DO UPDATE SET extern_id = EXCLUDED.extern_id,
+                               doel_agenda = EXCLUDED.doel_agenda, titel = EXCLUDED.titel, start = EXCLUDED.start, eind = EXCLUDED.eind,
+                               locatie = EXCLUDED.locatie, status = 'actief'""",
+                          (i["koppeling_id"], i["extern_id"], kid, doel.split("|", 1)[1], extern, i["titel"], i["start"], i["eind"], i["locatie"] or ""))
+                klaar.append(i["titel"])
+            if klaar:
+                sync.synchroniseer(c, c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (kid,)).fetchone(), forceer=True)
+            return klaar
+    try:
+        klaar = await asyncio.to_thread(doe)
+    except (bronnen.BronFout, kluis.KluisFout) as e:
+        return _terug("/clara/raadsagenda", fout=str(e))
+    if not klaar:
+        return _terug("/clara/raadsagenda", melding="Die vergaderingen stonden al in je agenda.")
+    return _terug("/clara/raadsagenda", melding=f"{len(klaar)} vergadering{'en' if len(klaar) != 1 else ''} in je agenda gezet. "
+                  "Verandert de tijd of plek in de raadsagenda, dan past Clara je afspraak aan.")
 
 
 @router.get("/clara/reistijd/overzicht", response_class=HTMLResponse)
