@@ -890,6 +890,125 @@ async def reistijd_stop(request: Request, item_id: int):
     return _terug(f"/clara?week={f.get('week') or 0}", melding=f"Clara plant de reistijd voor '{a['titel']}' niet meer zelf in.")
 
 
+def _kopieen(c, a):
+    """Dezelfde afspraak in alle gekoppelde agenda's (zelfde iCalUID en begin, of zelfde titel en tijd)."""
+    uid = (a.get("ical_uid") or "").strip().lower()
+    titel = " ".join((a.get("titel") or "").lower().split())
+    rijen = c.execute("""SELECT i.*, k.naam AS koppeling, k.soort, k.schrijven, k.agendas AS k_agendas, k.fout
+                         FROM agenda_items i JOIN agenda_koppelingen k ON k.id = i.koppeling_id
+                         WHERE k.actief AND i.start = %s""", (a["start"],)).fetchall()
+    uit = []
+    for r in rijen:
+        r = dict(r)
+        if (spiegel.is_spiegel(r) or reis.is_reisblok(r)) and r["id"] != a.get("id"):
+            continue
+        zelfde = (uid and (r.get("ical_uid") or "").strip().lower() == uid) or (
+            " ".join((r.get("titel") or "").lower().split()) == titel and r["eind"] == a["eind"])
+        if not zelfde and r["id"] != a.get("id"):
+            continue
+        ag = next((x for x in (r["k_agendas"] or []) if x["id"] == r["agenda_id"]), {})
+        r["agenda_naam"] = ag.get("naam") or r["koppeling"]
+        r["kan"] = r["soort"] in ("google", "microsoft") and r["schrijven"] and not r["fout"] and ag.get("schrijven", True) is not False
+        r["organisator_ik"] = r.get("antwoord") == "organisator"
+        uit.append(r)
+    return uit
+
+
+def _bijbehorende_reistijd(c, kopieen, hele_reeks):
+    """Reistijd en ritten van Clara bij deze afspraak (losse blokken, en bij de hele reeks ook de reistijdreeksen)."""
+    blokken, reeksen = [], []
+    for k in kopieen:
+        blokken += c.execute("""SELECT i.*, kk.soort FROM agenda_items i JOIN agenda_koppelingen kk ON kk.id = i.koppeling_id
+                                WHERE i.omschrijving LIKE %s AND i.reeks = ''""",
+                             (f"{reis.MARKER}{k['koppeling_id']}:{k['extern_id']}:%",)).fetchall()
+        if hele_reeks and k.get("reeks"):
+            reeksen += c.execute("""SELECT * FROM agenda_reeksen WHERE soort = 'reistijd' AND status = 'actief'
+                                    AND bron_koppeling = %s AND bron_reeks = %s""", (k["koppeling_id"], k["reeks"])).fetchall()
+    return blokken, reeksen
+
+
+@router.get("/clara/verwijder/{item_id:int}", response_class=HTMLResponse)
+def verwijder_vragen(request: Request, item_id: int, week: int = 0):
+    """Eerst laten zien wat er weggaat: in welke agenda's, deze keer of de hele reeks, afzegging, reistijd."""
+    with db.pool.connection() as c:
+        a = _item_met_info(c, item_id)
+        if not a:
+            raise HTTPException(404)
+        kopieen = _kopieen(c, a)
+        blokken, reeksen = _bijbehorende_reistijd(c, kopieen, True)
+        return templates.TemplateResponse("clara_verwijder.html", ctx(
+            request, "clara", a=a, kopieen=kopieen, week=week, tz=config.TZ, DAGEN=DAGEN, herhalend=_herhalend(c, a),
+            organisator=any(k["organisator_ik"] for k in kopieen if k["kan"]), reistijd=bool(blokken or reeksen)))
+
+
+@router.post("/clara/verwijder/{item_id:int}")
+async def verwijderen(request: Request, item_id: int):
+    """Na de bevestiging: de afspraak uit de aangevinkte agenda's halen (deze keer of de hele reeks)."""
+    controleer_herkomst(request)
+    f = await request.form()
+    week = str(f.get("week") or 0)
+    gekozen = {int(x) for x in f.getlist("kopie") if str(x).isdigit()}
+    hele_reeks = f.get("bereik") == "reeks"
+    melden = f.get("melden") == "1"
+    met_reistijd = f.get("reistijd") == "1"
+    if not gekozen:
+        return _terug(f"/clara?week={week}", fout="Niets aangevinkt; er is niets verwijderd.")
+
+    def doe():
+        with db.pool.connection() as c:
+            a = _item_met_info(c, item_id)
+            if not a:
+                raise bronnen.BronFout("Deze afspraak bestaat niet meer.")
+            kopieen = [k for k in _kopieen(c, a) if k["id"] in gekozen and k["kan"]]
+            if not kopieen:
+                raise bronnen.BronFout("In de aangevinkte agenda's mag Clara niets verwijderen.")
+            blokken, reeksen = _bijbehorende_reistijd(c, kopieen, hele_reeks) if met_reistijd else ([], [])
+            weg, gebruikt = [], set()
+            for k in kopieen:
+                kk = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (k["koppeling_id"],)).fetchone()
+                tok = sync.toegang(c, kk)
+                doel = k["reeks"] if hele_reeks and k.get("reeks") else k["extern_id"]
+                try:
+                    (bronnen.google_verwijder if kk["soort"] == "google" else bronnen.ms_verwijder)(
+                        tok, k["agenda_id"], doel, melden=melden and k["organisator_ik"])
+                except bronnen.NietGevonden:
+                    pass
+                if hele_reeks and k.get("reeks"):
+                    c.execute("UPDATE agenda_reeksen SET status = 'verwijderd' WHERE koppeling_id = %s AND extern_id = %s",
+                              (kk["id"], k["reeks"]))
+                weg.append(k["agenda_naam"])
+                gebruikt.add(kk["id"])
+            for b in blokken:
+                kk = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (b["koppeling_id"],)).fetchone()
+                try:
+                    (bronnen.google_verwijder if kk["soort"] == "google" else bronnen.ms_verwijder)(sync.toegang(c, kk), b["agenda_id"], b["extern_id"])
+                except bronnen.NietGevonden:
+                    pass
+                gebruikt.add(kk["id"])
+            for r in reeksen:
+                kk = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (r["koppeling_id"],)).fetchone()
+                try:
+                    (bronnen.google_verwijder if kk["soort"] == "google" else bronnen.ms_verwijder)(sync.toegang(c, kk), r["agenda_id"], r["extern_id"])
+                except bronnen.NietGevonden:
+                    pass
+                c.execute("UPDATE agenda_reeksen SET status = 'verwijderd' WHERE id = %s", (r["id"],))
+                gebruikt.add(kk["id"])
+            c.execute("INSERT INTO logboek (persona, actie, details) VALUES ('clara', 'afspraak verwijderd', %s)",
+                      (json.dumps({"titel": a["titel"], "start": a["start"].isoformat(), "agendas": weg, "hele_reeks": hele_reeks,
+                                   "afzegging": melden, "reistijd": len(blokken) + len(reeksen)}),))
+            for kid in gebruikt:
+                sync.synchroniseer(c, c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (kid,)).fetchone(), forceer=True)
+            tekst = (f"'{a['titel']}' {'(de hele reeks) ' if hele_reeks else ''}is verwijderd uit " + ", ".join(weg) + ".")
+            if blokken or reeksen:
+                tekst += " De reistijd erbij is ook weg."
+            return tekst
+    try:
+        tekst = await asyncio.to_thread(doe)
+    except (bronnen.BronFout, kluis.KluisFout) as e:
+        return _terug(f"/clara?week={week}", fout=str(e))
+    return _terug(f"/clara?week={week}", melding=tekst)
+
+
 @router.get("/clara/reistijd/overzicht", response_class=HTMLResponse)
 def reistijd_overzicht(request: Request, week: int = 0, sleutel: list[str] = Query(default=[])):
     """Eerst laten zien waar Clara reistijd wil zetten; Martijn vinkt aan wat er echt in de agenda komt."""
@@ -969,7 +1088,8 @@ async def spiegel_instellingen(request: Request):
     with db.pool.connection() as c:
         inst = sync.instellingen(c)
         aan = f.get("spiegel_aan") == "1"
-        inst.update({"spiegel_aan": aan, "spiegel_titel": "titel" if f.get("spiegel_titel") == "titel" else "bezet"})
+        inst.update({"spiegel_aan": aan, "spiegel_titel": "titel" if f.get("spiegel_titel") == "titel" else "bezet",
+                     "spiegel_raad": f.get("raad_mee") == "1"})
         sync.instellingen_opslaan(c, inst)
         for k in sync.koppelingen(c):
             if spiegel.rol(k)[0] or f.get(f"toon_{k['id']}"):

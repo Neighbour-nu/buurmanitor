@@ -21,7 +21,7 @@ from . import analyse, bronnen, kluis
 
 MARKER = "[clara-spiegel]"
 OMSCHRIJVING = MARKER + " Doorgezet door Buurmanitor: op dit moment ben ik bezet."
-STANDAARD = {"spiegel_aan": False, "spiegel_titel": "bezet"}
+STANDAARD = {"spiegel_aan": False, "spiegel_titel": "bezet", "spiegel_raad": False}
 MAX_PER_RONDE = 150  # wijzigingen per ronde (elke vijf minuten); de eerste keer gaat het dus in een paar rondes
 
 
@@ -37,13 +37,16 @@ def _van_andere_dienst(a):
 def rol(k):
     """Kan Clara in dit account blokken zetten? Geeft (ja/nee, uitleg)."""
     if k["soort"] == "ics":
-        return False, "agendalink: alleen lezen, Clara kan hier niet in schrijven"
+        return False, "agendalink: alleen lezen. De afspraken hieruit gaan wel naar je andere agenda's."
+    if k["soort"] == "raad":
+        return False, "openbare raadsagenda: alleen lezen. Vink aan om de vergaderingen in je andere agenda's te zetten."
     if k["soort"] not in ("google", "microsoft"):
         return False, ""
     if not k["actief"]:
         return False, "niet actief"
     if not k["schrijven"]:
-        return False, "gekoppeld met alleen lezen: koppel opnieuw met lezen en schrijven"
+        return False, ("gekoppeld met alleen lezen: de afspraken hieruit gaan wel naar je andere agenda's; om hier zelf "
+                       "blokken te krijgen, koppel opnieuw met lezen en schrijven")
     if k["fout"]:
         return False, k["fout"]
     if not k["schrijfagenda"]:
@@ -68,10 +71,15 @@ def _bronnen(c, van, tot):
     from . import reis  # pylint: disable=import-outside-toplevel
     regels = sync.verbergregels(c)
     gekozen = reis.keuzes(c)
-    gezien, uit = set(), []
+    raad_mee = bool(sync.instellingen(c).get("spiegel_raad"))
+    gezien, uit, raad = set(), [], []
     for r in rijen:
         a = dict(r)
-        if a["soort"] == "raad" or is_spiegel(a) or _van_andere_dienst(a):
+        if is_spiegel(a) or _van_andere_dienst(a):
+            continue
+        if a["soort"] == "raad":
+            if raad_mee:
+                raad.append(a)
             continue
         if a["soort"] in ("google", "microsoft"):
             ag = next((x for x in (a["k_agendas"] or []) if x["id"] == a["agenda_id"]), None)
@@ -87,7 +95,11 @@ def _bronnen(c, van, tot):
             gezien.add((uid, a["start"]))
         gezien.add(titel)
         uit.append(a)
-    return uit
+    # Een vergadering uit de openbare raadsagenda alleen als hij niet al (met een andere titel) in een eigen agenda staat.
+    for a in raad:
+        if not any(b.get("domein") == "politiek" and abs((b["start"] - a["start"]).total_seconds()) <= 45 * 60 for b in uit):
+            uit.append(a)
+    return sorted(uit, key=lambda x: x["start"])
 
 
 def plan(c, nu=None):
@@ -98,7 +110,7 @@ def plan(c, nu=None):
     van = dt.datetime.combine(nu.date(), dt.time(0), tzinfo=config.TZ)
     tot = sync.venster(nu)[1]
     inst = sync.instellingen(c)
-    lijst = [k for k in sync.koppelingen(c) if k["soort"] in ("google", "microsoft", "ics")]
+    lijst = [k for k in sync.koppelingen(c) if k["soort"] in ("google", "microsoft", "ics", "raad")]
     bron = _bronnen(c, van, tot) if any(rol(k)[0] for k in lijst) else []
     uit = []
     for k in lijst:

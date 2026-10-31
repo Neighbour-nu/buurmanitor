@@ -55,7 +55,7 @@
                 {% if a.mee %}<span class="label">je gaat mee</span>{% endif %}
               </span></summary>
             <div class="open">
-              <span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.reeks %} · herhalend{% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}{% if a.link %} · <a href="{{ a.link }}" target="_blank" rel="noopener">openen in {{ 'Google Agenda' if a.soort == 'google' else 'Outlook' }}</a>{% endif %}</span>
+              <span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.reeks %} · herhalend{% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}{% if a.link %} · <a href="{{ a.link }}" target="_blank" rel="noopener">openen in {{ 'Google Agenda' if a.soort == 'google' else 'Outlook' }}</a>{% endif %} · <a href="/clara/verwijder/{{ a.id }}?week={{ week }}">verwijderen</a></span>
               {% if sleutel in onbekend_ids %}<div class="reis"><span class="noot">Reistijd onbekend: {{ reis_dienst }} vindt "{{ a.reisadres or a.locatie }}" niet.</span> <a class="knop klein" href="/clara/reistijd/{{ a.id }}?week={{ week }}">Adres invullen</a></div>{% endif %}
               {% if a.niet_voor_mij and a.locatie and not a.online and not a.heledag %}
               <form method="post" action="/clara/vervoer/{{ a.id }}" class="vervoerkeuze">

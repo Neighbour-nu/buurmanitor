@@ -1590,3 +1590,87 @@ def test_kopie_in_andere_agenda_een_keer_en_een_keer_reistijd(monkeypatch):
     anders = afspraak("Martijn zaalvoetbal", t(5, 20), t(5, 21, 30), locatie="Huis voor de Stad", koppeling_id=1, extern_id="z3")
     p = reis.plan(None, [eigen, anders], {"vertrekpunt": "thuisadres"})
     assert sorted(r["richting"] for r in p["regels"]) == ["heen", "terug"] and {r["afspraak"]["extern_id"] for r in p["regels"]} == {"z1"}
+
+
+# ---------------------------------------------------------------- verwijderen en de raadsagenda bij beschikbaarheid delen
+
+def test_afspraak_verwijderen_uit_alle_agendas(klant, monkeypatch):
+    from app.clara import sync  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(sync, "toegang", lambda c, k: "tok")
+    monkeypatch.setattr(sync, "synchroniseer", lambda c, k, forceer=False, nu=None: None)
+    weg = []
+    monkeypatch.setattr(bronnen, "google_verwijder", lambda tok, a, eid, melden=False: weg.append(("g", a, eid, melden)))
+    monkeypatch.setattr(bronnen, "ms_verwijder", lambda tok, a, eid, melden=False: weg.append(("m", a, eid, melden)))
+    s = _nu_dag(3, 10)
+    with db.pool.connection() as c:
+        for t_ in ("agenda_items", "agenda_reeksen"):
+            c.execute(f"DELETE FROM {t_}")
+        ag = [{"id": "primary", "naam": "Martijn", "primair": True, "schrijven": True, "aan": True, "bezet": True}]
+        g = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, schrijven, agendas, schrijfagenda) VALUES ('google', 'Privé3', true, %s, 'primary')
+                         RETURNING id""", (json.dumps(ag),)).fetchone()["id"]
+        m = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, schrijven, agendas, schrijfagenda) VALUES ('microsoft', 'IV', true, %s, 'cal')
+                         RETURNING id""", (json.dumps([dict(ag[0], id="cal", naam="Agenda")]),)).fetchone()["id"]
+        i = c.execute("INSERT INTO agenda_koppelingen (soort, naam) VALUES ('ics', 'Raad-ICS') RETURNING id").fetchone()["id"]
+
+        def item(kid, agenda, eid, **kw):
+            return c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, ical_uid, titel, start, eind, antwoord, reeks, omschrijving)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                             (kid, agenda, eid, kw.get("uid", "ov@x"), kw.get("titel", "Overleg"), kw.get("start", s), kw.get("eind", s + dt.timedelta(hours=1)),
+                              kw.get("antwoord", "organisator"), kw.get("reeks", ""), kw.get("oms", ""))).fetchone()["id"]
+        eerste = item(g, "primary", "ov_1", reeks="ov")
+        item(m, "cal", "msov_1", antwoord="geaccepteerd", reeks="msov")
+        item(i, "", "ics1")
+        item(g, "primary", "rb1", uid="", titel="🚲 Reistijd naar X", start=s - dt.timedelta(minutes=20), eind=s,
+             oms=f"[clara-reistijd:{g}:ov_1:heen] Ingepland")
+        c.execute("""INSERT INTO agenda_reeksen (koppeling_id, agenda_id, extern_id, titel, start, eind, herhaal, soort, bron_koppeling, bron_reeks)
+                     VALUES (%s, 'primary', 'reisreeks', 'Reistijd', %s, %s, '{"dagen": ["ma"], "tot": ""}', 'reistijd', %s, 'ov')""",
+                  (g, s, s, g))
+        item(g, "primary", "andere", uid="", titel="Iets anders")
+    pagina = klant.get("/clara", headers=KOP).text
+    assert f'href="/clara/verwijder/{eerste}?week=0">verwijderen' in pagina
+    r = klant.get(f"/clara/verwijder/{eerste}", headers=KOP)
+    assert r.status_code == 200 and "Martijn" in r.text and "Agenda" in r.text and "alleen lezen: hier blijft hij staan" in r.text
+    assert 'value="reeks"' in r.text and 'name="melden"' in r.text and 'name="reistijd"' in r.text and "Iets anders" not in r.text
+    assert klant.post(f"/clara/verwijder/{eerste}", headers=KOP, data={}).status_code == 403
+    with db.pool.connection() as c:
+        ids = [x["id"] for x in c.execute("SELECT id FROM agenda_items WHERE ical_uid = 'ov@x'").fetchall()]
+    r = klant.post(f"/clara/verwijder/{eerste}", headers=FORM, follow_redirects=False,
+                   data={"kopie": [str(x) for x in ids], "bereik": "reeks", "melden": "1", "reistijd": "1", "week": "0"})
+    assert "verwijderd+uit" in r.headers["location"] and "reistijd" in r.headers["location"], r.headers["location"]
+    assert ("g", "primary", "ov", True) in weg and ("m", "cal", "msov", False) in weg  # hele reeks; afzegging alleen als organisator
+    assert ("g", "primary", "rb1", False) in weg and ("g", "primary", "reisreeks", False) in weg
+    assert not any(x[2] in ("ics1", "andere") for x in weg)
+    with db.pool.connection() as c:
+        assert c.execute("SELECT status FROM agenda_reeksen WHERE extern_id = 'reisreeks'").fetchone()["status"] == "verwijderd"
+        assert c.execute("SELECT count(*) AS n FROM logboek WHERE actie = 'afspraak verwijderd'").fetchone()["n"] >= 1
+        c.execute("DELETE FROM agenda_koppelingen WHERE id IN (%s, %s, %s)", (g, m, i))
+        c.execute("DELETE FROM agenda_reeksen")
+
+
+def test_raadsagenda_alleen_als_bron_bij_beschikbaarheid(klant, monkeypatch):
+    from app.clara import spiegel, sync  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    s = _nu_dag(2, 19, 30)
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM agenda_items")
+        r = c.execute("INSERT INTO agenda_koppelingen (soort, naam, domein) VALUES ('raad', 'Raadsagenda Helmond', 'politiek') RETURNING id").fetchone()["id"]
+        for eid, titel, start in (("c1", "Commissie Ruimte", s), ("c2", "Raadsvergadering", s + dt.timedelta(days=2))):
+            c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind, domein)
+                         VALUES (%s, '', %s, %s, %s, %s, 'politiek')""", (r, eid, titel, start, start + dt.timedelta(hours=3)))
+        g = c.execute("SELECT id FROM agenda_koppelingen WHERE soort = 'google' LIMIT 1").fetchone()["id"]
+        c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind, domein)
+                     VALUES (%s, 'primary', 'eigen', 'Commissie (eigen agenda)', %s, %s, 'politiek')""", (g, s + dt.timedelta(minutes=15), s + dt.timedelta(hours=3)))
+        van, tot = s - dt.timedelta(days=1), s + dt.timedelta(days=5)
+        assert [a["titel"] for a in spiegel._bronnen(c, van, tot) if a["soort"] == "raad"] == []  # pylint: disable=protected-access
+    pagina = klant.get("/clara/koppelingen", headers=KOP).text
+    assert 'name="raad_mee"' in pagina and "openbare raadsagenda" in pagina
+    klant.post("/clara/spiegel", headers=FORM, data={"raad_mee": "1", "spiegel_titel": "bezet"})
+    with db.pool.connection() as c:
+        assert sync.instellingen(c)["spiegel_raad"] is True
+        # Alleen de vergadering die nog niet (met een andere titel) in een eigen agenda staat.
+        assert [a["titel"] for a in spiegel._bronnen(c, van, tot) if a["soort"] == "raad"] == ["Raadsvergadering"]  # pylint: disable=protected-access
+        assert not spiegel.rol(c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (r,)).fetchone())[0]
+        c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (r,))
+        c.execute("DELETE FROM agenda_items")
+        c.execute("DELETE FROM instellingen WHERE sleutel LIKE 'clara%%'")

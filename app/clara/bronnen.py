@@ -415,9 +415,11 @@ def google_reeks(toegang, agenda_id, extern_id, herhaal, eerste=None):  # noqa: 
           headers={"Authorization": f"Bearer {toegang}"}, methode="PATCH", body={"recurrence": [_rrule(herhaal)]}, soort="Google Agenda")
 
 
-def google_verwijder(toegang, agenda_id, extern_id):
-    """Alleen voor blokken die Clara zelf maakte."""
-    _http(f"{GOOGLE_API}/calendars/{urllib.parse.quote(agenda_id, safe='')}/events/{urllib.parse.quote(extern_id, safe='')}",
+def google_verwijder(toegang, agenda_id, extern_id, melden=False):
+    """Een afspraak verwijderen: blokken van Clara, of (na Martijns bevestiging) een afspraak uit zijn agenda.
+    melden: deelnemers krijgen een afzegging (alleen als hij de organisator is)."""
+    _http(f"{GOOGLE_API}/calendars/{urllib.parse.quote(agenda_id, safe='')}/events/{urllib.parse.quote(extern_id, safe='')}"
+          f"?sendUpdates={'all' if melden else 'none'}",
           headers={"Authorization": f"Bearer {toegang}"}, methode="DELETE", soort="Google Agenda")
 
 
@@ -546,8 +548,8 @@ def ms_blok(toegang, agenda_id, titel, start, eind, voorlopig=False, extern_id=N
     return j.get("id") or extern_id or ""
 
 
-def ms_verwijder(toegang, agenda_id, extern_id):  # noqa: ARG001
-    """Alleen voor blokken die Clara zelf maakte."""
+def ms_verwijder(toegang, agenda_id, extern_id, melden=False):  # noqa: ARG001
+    """Een afspraak verwijderen. Outlook stuurt de deelnemers zelf een afzegging als Martijn de organisator is."""
     _http(f"{GRAPH}/me/events/{urllib.parse.quote(extern_id, safe='')}", headers={"Authorization": f"Bearer {toegang}"},
           methode="DELETE", soort="Outlook")
 

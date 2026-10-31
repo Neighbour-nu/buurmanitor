@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block titel %}Afspraak verwijderen · Clara · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>Afspraak verwijderen <span class="noot">Clara</span></h1>
+<p class="uitleg"><a href="/clara?week={{ week }}">Terug naar de agenda</a></p>
+<section class="kaart">
+  {% set s = a.start.astimezone(tz) %}
+  <h2>{{ a.titel }}</h2>
+  <p class="noot">{{ DAGEN[s.weekday()] }} {{ s.strftime('%d-%m') }}, {% if a.heledag %}hele dag{% else %}{{ s.strftime('%H.%M') }}–{{ a.eind.astimezone(tz).strftime('%H.%M') }}{% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}</p>
+  {% set kan = kopieen | selectattr('kan') | list %}
+  {% if not kan %}
+    <p class="item">Deze afspraak staat alleen in agenda's waar Clara niets mag verwijderen (alleen lezen). Verwijder hem in de agenda zelf.</p>
+  {% else %}
+  <form method="post" action="/clara/verwijder/{{ a.id }}">
+    <input type="hidden" name="week" value="{{ week }}">
+    <p><b>Uit welke agenda's?</b></p>
+    {% for k in kopieen %}
+      <label class="vink">{% if k.kan %}<input type="checkbox" name="kopie" value="{{ k.id }}" checked>{% else %}<input type="checkbox" disabled>{% endif %}
+        {{ k.agenda_naam }} <span class="noot">({{ k.koppeling }}{% if not k.kan %}, alleen lezen: hier blijft hij staan{% endif %}{% if k.organisator_ik %}, jij bent de organisator{% elif k.antwoord in ('geaccepteerd', 'voorlopig', 'geen') %}, je bent uitgenodigd{% endif %})</span></label><br>
+    {% endfor %}
+    {% if herhalend %}
+    <p><b>Herhalende afspraak</b></p>
+    <label class="vink"><input type="radio" name="bereik" value="keer" checked> Alleen deze keer</label><br>
+    <label class="vink"><input type="radio" name="bereik" value="reeks"> De hele reeks (ook alle volgende keren)</label>
+    {% endif %}
+    {% if organisator %}
+    <p class="item">Jij bent de organisator en er zijn deelnemers. Verwijderen is afzeggen voor iedereen.</p>
+    <label class="vink"><input type="checkbox" name="melden" value="1" checked> Stuur de deelnemers een afzegging (Outlook doet dat altijd)</label><br>
+    {% endif %}
+    {% if kan | selectattr('antwoord', 'in', ['geaccepteerd', 'voorlopig', 'geen']) | list %}
+    <p class="noot">Ben je uitgenodigd? Dan is afwijzen netter dan verwijderen: de organisator weet dan dat je niet komt.
+      Afwijzen kan bij Uitnodigingen.</p>
+    {% endif %}
+    {% if reistijd %}
+    <label class="vink"><input type="checkbox" name="reistijd" value="1" checked> Ook de reistijd en ritten van Clara bij deze afspraak weghalen</label><br>
+    {% endif %}
+    <p class="noot">Blokken "Bezet" die Clara in je andere agenda's zette, haalt ze bij de volgende ronde vanzelf weg.
+      Verwijderen kun je niet ongedaan maken.</p>
+    <p class="knoppenrij"><button class="knop vol" type="submit">Verwijderen</button> <a class="knop" href="/clara?week={{ week }}">Niet doen</a></p>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

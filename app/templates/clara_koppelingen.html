@@ -139,13 +139,13 @@
     <table class="tabel">
       <tr><th>Doorzetten</th><th>Account</th><th>Stand</th></tr>
       {% for p in spiegelplan %}
-      <tr><td>{% if p.kan %}<input type="checkbox" name="doel_{{ p.k.id }}" value="1" {{ 'checked' if p.k.spiegel }}>{% endif %}</td>
+      <tr><td>{% if p.kan %}<input type="checkbox" name="doel_{{ p.k.id }}" value="1" {{ 'checked' if p.k.spiegel }}>{% elif p.k.soort == 'raad' %}<input type="checkbox" name="raad_mee" value="1" {{ 'checked' if inst.spiegel_raad }} aria-label="Raadsagenda meenemen">{% endif %}</td>
         <td>{{ p.k.naam }}{% if p.kan %} <span class="noot">in agenda {{ p.agenda }}</span>{% else %}<br><span class="noot">{{ p.uitleg }}</span>{% endif %}</td>
         <td class="noot">{% set st = spiegelstatus.get('doelen', {}).get(p.k.id|string) %}{% if p.staan %}{{ p.staan|length }} blok{{ 'ken' if p.staan|length != 1 }} van Clara{% elif not inst.spiegel_aan and p.kan %}uit{% endif %}{% if inst.spiegel_aan and p.kan and p.k.spiegel %}{% if p.wens|length != p.staan|length %} · straks {{ p.wens|length }}{% endif %}{% endif %}{% if st and st.startswith('fout') %}<br><span class="urgent">{{ st }}</span>{% endif %}</td></tr>
       {% endfor %}
     </table>
     <div class="velden">
-      <label>Wat anderen zien <select name="spiegel_titel"><option value="bezet" {{ 'selected' if inst.spiegel_titel != 'titel' }}>"Bezet"</option><option value="titel" {{ 'selected' if inst.spiegel_titel == 'titel' }}>De titel van de afspraak</option></select></label>
+      <label>Wat anderen zien <select name="spiegel_titel"><option value="bezet" {{ 'selected' if inst.spiegel_titel != 'titel' }}>"Bezet"</option><option value="titel" {{ 'selected' if inst.spiegel_titel == 'titel' }}>De titel (jij ziet hem, collega's alleen "bezet")</option></select></label>
       <label class="vink"><input type="checkbox" name="spiegel_aan" value="1" {{ 'checked' if inst.spiegel_aan }}> Automatisch doorzetten</label>
       <button class="knop vol" type="submit">Opslaan</button>
     </div>
