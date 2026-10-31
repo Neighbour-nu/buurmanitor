@@ -208,3 +208,8 @@ details.afspraak > .open { padding: 0 8px 6px 110px; font-size: 14px; }
 .reis > .knop { align-self: flex-start; }
 .reisoverzicht tr.past-niet td { background: #FFF6F6; }
 .reisoverzicht td:first-child, .reisoverzicht th:first-child { width: 28px; }
+/* knoppen (links en formulierknoppen) even hoog en netjes op één lijn */
+.knop { line-height: 1.4; vertical-align: middle; box-sizing: border-box; }
+button.knop { font-family: var(--kop); }
+.knoppen form.inline { margin: 0; display: flex; }
+.kopregel { margin-bottom: 14px; }
