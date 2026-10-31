@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block titel %}{{ b.onderwerp }} · Bram · Buurmanitor<script>
+(function () { const g = document.getElementById("berichten"); if (g) g.scrollTop = g.scrollHeight; })();
+</script>{% endblock %}
+{% macro moment(iso) -%}{%- set d = datum(iso) -%}{{ DAGEN[d.weekday()] }} {{ d.strftime('%d-%m-%Y %H.%M') }}{%- endmacro %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>{{ b.onderwerp }}</h1>
+    <p class="motto">{{ b.van_naam }} &lt;{{ b.van_adres }}&gt; · {{ b.ontvangen.astimezone(tz).strftime('%d-%m-%Y %H.%M') }} · {{ k.naam }}</p>
+  </div>
+  <div class="knoppen">
+    <a class="knop" href="/bram#b{{ b.id }}">Terug naar de post</a>
+    {% if b.link %}<a class="knop" href="{{ b.link }}" target="_blank" rel="noopener">Openen in {{ 'Gmail' if k.soort == 'google' else 'Outlook' }}</a>{% endif %}
+    {% if b.status == 'open' %}<form method="post" action="/bram/bericht/{{ b.id }}/archiveren" class="inline"><button class="knop" type="submit">Archiveren</button></form>{% endif %}
+  </div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+
+<div class="clara-raster">
+  <section class="kaart">
+    <h2>Het bericht</h2>
+    {% if b.regel %}<p class="bram-regel"><b>Bram:</b> {{ b.regel }}{% if b.voorstel %} <span class="bram-voorstel">→ {{ b.voorstel }}</span>{% endif %}</p>{% endif %}
+    {% if volledig %}
+      <p class="noot">Aan: {{ volledig.aan }}{% if volledig.cc %} · Cc: {{ volledig.cc }}{% endif %}</p>
+      <div class="mailtekst">{{ volledig.tekst or b.fragment }}</div>
+      {% if volledig.bijlagen %}
+      <h2>Bijlagen</h2>
+      {% for x in volledig.bijlagen %}
+        <details class="bijlage"><summary>📎 {{ x.naam }} <span class="noot">{{ (x.grootte / 1024) | round | int }} kB{% if not x.tekst %} · niet als tekst te lezen{% endif %}</span></summary>
+          {% if x.tekst %}<div class="mailtekst">{{ x.tekst }}</div>{% endif %}</details>
+      {% endfor %}
+      {% endif %}
+    {% else %}
+      <p class="item urgent">De mail kon nu niet worden opgehaald: {{ lees_fout }}</p>
+      <p>{{ b.fragment }}</p>
+    {% endif %}
+  </section>
+
+  <aside>
+    <section class="kaart" id="gesprek">
+      <h2>Vraag het Bram</h2>
+      {% if not sleutel_ok %}<p class="item urgent">Er is nog geen Claude-sleutel ingesteld.</p>{% endif %}
+      <div class="berichten" id="berichten">
+      {% for m in berichten %}
+        <div class="bericht {{ m.rol }}"><span class="noot">{{ 'Jij' if m.rol == 'user' else 'Bram' }} · {{ geleden(m.tijd) }}</span>
+          <div class="tekst">{{ m.tekst }}</div></div>
+      {% else %}
+        <p class="noot">Bram leest de mail en de bijlagen. Vraag bijvoorbeeld: "Zet de afspraak in de agenda van Sanne",
+          "Schrijf een kort antwoord dat het past" of "Herinner me vrijdagochtend hieraan".</p>
+      {% endfor %}
+      </div>
+
+      {% for v in voorstellen %}
+        {% set g = v.gegevens %}
+        <form method="post" action="/bram/voorstel/{{ v.id }}" class="voorstel">
+          {% if v.soort == 'antwoord' %}
+            <b>Antwoord aan {{ volledig.antwoord_aan if volledig else b.van_adres }}</b>
+            <textarea name="tekst" rows="8" aria-label="Tekst van het antwoord">{{ g.tekst }}</textarea>
+            <button class="knop klein vol" name="actie" value="doen" onclick="return confirm('Dit antwoord nu versturen?')">Versturen</button>
+          {% elif v.soort == 'afspraak' %}
+            <b>Afspraak:</b> <input type="text" name="titel" value="{{ g.titel }}" aria-label="Titel">
+            <br>{{ moment(g.start) }}–{{ datum(g.eind).strftime('%H.%M') }}{% if g.locatie %} · {{ g.locatie }}{% endif %}
+            {% if g.omschrijving %}<br><span class="noot">{{ g.omschrijving }}</span>{% endif %}
+            {% if doelen %}<br><select name="doel" aria-label="Agenda">{% set gekozen = namespace(klaar=false) %}{% for w, label, d in doelen %}{% set past = g.agenda and label.lower().startswith(g.agenda.lower() ~ ' (') %}<option value="{{ w }}" {% if past and not gekozen.klaar %}selected{% set gekozen.klaar = true %}{% endif %}>{{ label }}</option>{% endfor %}</select>
+            <button class="knop klein vol" name="actie" value="doen">Zet in agenda</button>
+            {% else %}<br><span class="noot">Er is geen agenda met schrijfrechten gekoppeld bij Clara.</span>{% endif %}
+          {% else %}
+            <b>Herinnering:</b> <input type="text" name="titel" value="{{ g.titel }}" aria-label="Titel">
+            <br>{{ moment(g.start) }} <span class="noot">(houdt geen tijd bezet)</span>
+            {% if eigen %}<br><select name="doel" aria-label="Agenda">{% for w, label, d in eigen %}<option value="{{ w }}">{{ label }}</option>{% endfor %}</select>
+            <button class="knop klein vol" name="actie" value="doen">Zet in agenda</button>{% endif %}
+          {% endif %}
+          <button class="knop klein" name="actie" value="weg">Niet doen</button>
+        </form>
+      {% endfor %}
+      {% for v in klaar %}<p class="noot">✓ {{ v.uitslag }}</p>{% endfor %}
+
+      <form method="post" action="/bram/bericht/{{ b.id }}/vraag">
+        <textarea name="vraag" required placeholder="Vraag Bram iets over deze mail"></textarea>
+        {% if not k.claude %}<label class="vink"><input type="checkbox" name="toestaan" value="1"> Deze mail mag Claude lezen
+          <span class="noot">(voor dit account staat dat uit)</span></label>{% endif %}
+        <p><button class="knop vol" type="submit">Stuur</button> <span class="noot">Bram verstuurt of plant pas iets als jij op de knop drukt.</span></p>
+      </form>
+    </section>
+  </aside>
+</div>
+{% endblock %}

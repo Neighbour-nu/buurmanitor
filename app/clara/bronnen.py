@@ -370,8 +370,9 @@ def ms_reeks_ophalen(toegang, agenda_id, reeks_id):  # noqa: ARG001
                  headers={"Authorization": f"Bearer {toegang}"}, soort="Outlook")
 
 
-def google_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None, herhaal=None, locatie=""):
+def google_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None, herhaal=None, locatie="", vrij=False):
     body = {"summary": titel, "description": omschrijving, **({"location": locatie} if locatie else {}),
+            **({"transparency": "transparent"} if vrij else {}),
             "start": {"dateTime": start.isoformat(), "timeZone": "Europe/Amsterdam"},
             "end": {"dateTime": eind.isoformat(), "timeZone": "Europe/Amsterdam"}}
     if kleur in GOOGLE_KLEUREN:
@@ -525,8 +526,8 @@ def ms_antwoord(toegang, agenda_id, extern_id, antwoord):
           methode="POST", body={"sendResponse": True}, soort="Outlook")
 
 
-def ms_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None, herhaal=None, locatie=""):  # noqa: ARG001 (Outlook: geen vaste kleuren)
-    body = {"subject": titel, "body": {"contentType": "text", "content": omschrijving}, "showAs": "busy",
+def ms_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None, herhaal=None, locatie="", vrij=False):  # noqa: ARG001 (Outlook: geen vaste kleuren)
+    body = {"subject": titel, "body": {"contentType": "text", "content": omschrijving}, "showAs": "free" if vrij else "busy",
             **({"location": {"displayName": locatie}} if locatie else {}),
             "start": {"dateTime": start.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"},
             "end": {"dateTime": eind.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"}}

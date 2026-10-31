@@ -6,17 +6,18 @@ portal aan het koppelverzoek dat het voor Bram is.
 """
 import asyncio
 import datetime as dt
+import json
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from .. import personas
-from ..clara import kluis
+from ..clara import kluis, web as clara_web
 from ..clara.web import _nieuwe_staat  # koppelverzoeken delen de tabel oauth_staat met Clara
-from ..kern import config, db, planner
+from ..kern import claude, config, db, planner
 from ..kern.web import DAGEN, controleer_herkomst, ctx, templates
-from . import bronnen, sync
+from . import bronnen, gesprek, sync
 
 router = APIRouter()
 DOMEINEN = config.DOMEINEN
@@ -81,6 +82,109 @@ def _bericht(c, bid):
     if not b:
         raise HTTPException(404)
     return b
+
+
+# ---------------------------------------------------------------- één bericht: lezen en Bram vragen
+
+@router.get("/bram/bericht/{bid:int}", response_class=HTMLResponse)
+def bericht_scherm(request: Request, bid: int, melding: str = "", fout: str = ""):
+    with db.pool.connection() as c:
+        b = _bericht(c, bid)
+        k = c.execute("SELECT * FROM post_koppelingen WHERE id = %s", (b["koppeling_id"],)).fetchone()
+        berichten = c.execute("SELECT * FROM gesprek_berichten WHERE gesprek_id = %s ORDER BY id", (b["gesprek_id"],)).fetchall() if b["gesprek_id"] else []
+        voorstellen = c.execute("SELECT * FROM post_voorstellen WHERE bericht_id = %s AND status = 'open' ORDER BY id", (bid,)).fetchall()
+        klaar = c.execute("SELECT * FROM post_voorstellen WHERE bericht_id = %s AND status = 'uitgevoerd' ORDER BY id", (bid,)).fetchall()
+        agendas = clara_web.sync.koppelingen(c, alleen_actief=True)
+        try:
+            _, volledig = gesprek.volledig_ophalen(c, b)
+            lees_fout = ""
+        except Exception as e:  # noqa: BLE001  (dan toont het scherm wat Bram al weet)
+            volledig, lees_fout = None, str(e)
+    return templates.TemplateResponse("bram_bericht.html", ctx(
+        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, lees_fout=lees_fout, berichten=berichten,
+        voorstellen=voorstellen, klaar=klaar, doelen=clara_web._schrijfdoelen(agendas),  # pylint: disable=protected-access
+        eigen=clara_web._reisdoelen(agendas), melding=melding, fout=fout, tz=config.TZ,  # pylint: disable=protected-access
+        DAGEN=DAGEN, CATEGORIEEN=sync.CATEGORIEEN, sleutel_ok=bool(config.ANTHROPIC_API_KEY),
+        datum=lambda iso: dt.datetime.fromisoformat(iso).astimezone(config.TZ)))
+
+
+@router.post("/bram/bericht/{bid:int}/vraag")
+async def vraag(request: Request, bid: int):
+    """Een vraag aan Bram over dit bericht. Mag Claude de mail van dit account niet lezen, dan alleen met 'deze keer'."""
+    controleer_herkomst(request)
+    f = await request.form()
+    tekst = str(f.get("vraag", "")).strip()[:4000]
+    if not tekst:
+        return _terug(f"/bram/bericht/{bid}#gesprek")
+    with db.pool.connection() as c:
+        b = _bericht(c, bid)
+        k = c.execute("SELECT * FROM post_koppelingen WHERE id = %s", (b["koppeling_id"],)).fetchone()
+        if not k["claude"] and f.get("toestaan") != "1":
+            return _terug(f"/bram/bericht/{bid}#gesprek", fout="Claude mag de mail van dit account niet lezen. Vink 'deze mail mag Claude "
+                                                              "lezen' aan, of zet het vinkje bij Post › Instellingen.")
+        gid = b["gesprek_id"]
+        if not gid:
+            gid = c.execute("INSERT INTO gesprekken (persona, titel) VALUES ('bram', %s) RETURNING id", (b["onderwerp"][:80],)).fetchone()["id"]
+            c.execute("UPDATE post_berichten SET gesprek_id = %s WHERE id = %s", (gid, bid))
+        c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'user', %s)", (gid, tekst))
+
+    def antwoorden():
+        with db.pool.connection() as c:
+            try:
+                gesprek.antwoord(c, _bericht(c, bid), gid)
+            except (claude.ClaudeFout, bronnen.BronFout, kluis.KluisFout) as e:
+                c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)",
+                          (gid, f"(Ik kan nu niet antwoorden: {e})"))
+    await asyncio.to_thread(antwoorden)
+    return RedirectResponse(f"/bram/bericht/{bid}#gesprek", status_code=303)
+
+
+@router.post("/bram/voorstel/{vid:int}")
+async def voorstel(request: Request, vid: int):
+    """Een voorstel van Bram uitvoeren (na Martijns klik): antwoord versturen, afspraak of herinnering in de agenda."""
+    controleer_herkomst(request)
+    f = await request.form()
+    with db.pool.connection() as c:
+        v = c.execute("SELECT * FROM post_voorstellen WHERE id = %s AND status = 'open'", (vid,)).fetchone()
+        if not v:
+            return _terug("/bram", fout="Dit voorstel is al afgehandeld.")
+        terug = f"/bram/bericht/{v['bericht_id']}#gesprek"
+        if f.get("actie") == "weg":
+            c.execute("UPDATE post_voorstellen SET status = 'afgewezen' WHERE id = %s", (vid,))
+            return _terug(terug)
+    g = v["gegevens"]
+
+    def doe():
+        with db.pool.connection() as c:
+            b = _bericht(c, v["bericht_id"])
+            if v["soort"] == "antwoord":
+                tekst = str(f.get("tekst") or g.get("tekst") or "").strip()
+                if not tekst:
+                    raise bronnen.BronFout("Het antwoord is leeg; er is niets verstuurd.")
+                aan = gesprek.versturen(c, b, tekst)
+                uitslag = f"Antwoord verstuurd aan {aan}."
+                c.execute("UPDATE post_voorstellen SET gegevens = gegevens || %s::jsonb WHERE id = %s", (json.dumps({"tekst": tekst}), vid))
+            else:
+                start = dt.datetime.fromisoformat(g["start"])
+                eind = dt.datetime.fromisoformat(g["eind"])
+                titel = str(f.get("titel") or g["titel"]).strip()[:200] or g["titel"]
+                if v["soort"] == "herinnering":
+                    clara_web._maak(c, str(f.get("doel", "")), "🔔 " + titel.removeprefix("🔔").strip(), start, eind,  # pylint: disable=protected-access
+                                    f"Herinnering van Bram (Buurmanitor) bij de mail '{b['onderwerp']}'.", vrij=True)
+                    uitslag = f"Herinnering '{titel}' staat in je agenda op {start.astimezone(config.TZ):%d-%m om %H.%M}."
+                else:
+                    omschrijving = (g.get("omschrijving") or "") + f"\n\nIngepland door Bram (Buurmanitor) uit de mail '{b['onderwerp']}' van {b['van_naam']}."
+                    clara_web._maak(c, str(f.get("doel", "")), titel, start, eind, omschrijving.strip(), locatie=g.get("locatie", ""))  # pylint: disable=protected-access
+                    uitslag = f"'{titel}' staat in de agenda op {start.astimezone(config.TZ):%d-%m om %H.%M}."
+            c.execute("UPDATE post_voorstellen SET status = 'uitgevoerd', uitslag = %s WHERE id = %s", (uitslag, vid))
+            if b["gesprek_id"]:
+                c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)", (b["gesprek_id"], f"(Gedaan: {uitslag})"))
+            return uitslag
+    try:
+        uitslag = await asyncio.to_thread(doe)
+    except (bronnen.BronFout, kluis.KluisFout, clara_web.bronnen.BronFout) as e:
+        return _terug(terug, fout=str(e)[:300])
+    return _terug(terug, melding=uitslag)
 
 
 @router.post("/bram/bericht/{bid:int}/{actie}")

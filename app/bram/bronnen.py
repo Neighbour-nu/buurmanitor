@@ -3,10 +3,10 @@
 Bram gebruikt dezelfde apps bij Google en Microsoft als Clara, met hetzelfde terugkeeradres, maar vraagt een eigen
 toestemming voor mail en bewaart een eigen token per account. Clara krijgt dus nooit toegang tot je mail.
 
-- Gmail: scope gmail.modify. Lezen, labels zetten, gelezen markeren en archiveren (uit Inbox halen). Niet versturen
-  en niet definitief verwijderen.
-- Outlook: Mail.ReadWrite (lezen, categorie, gelezen, verplaatsen naar Archief) en MailboxSettings.Read (de lijst
-  categorieën). Niet versturen.
+- Gmail: gmail.modify (lezen, labels zetten, gelezen markeren en archiveren) en gmail.send (een antwoord versturen,
+  alleen na een klik van Martijn). Niet definitief verwijderen.
+- Outlook: Mail.ReadWrite (lezen, categorie, gelezen, verplaatsen naar Archief), Mail.Send (antwoord versturen, na een
+  klik) en MailboxSettings.Read (de lijst categorieën).
 """
 import base64
 import datetime as dt
@@ -22,8 +22,8 @@ from ..kern import config
 UTC = dt.timezone.utc
 GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me"
 GRAPH = "https://graph.microsoft.com/v1.0"
-GOOGLE_SCOPES = "openid email https://www.googleapis.com/auth/gmail.modify"
-MS_SCOPES = "offline_access openid email User.Read Mail.ReadWrite MailboxSettings.Read"
+GOOGLE_SCOPES = "openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send"
+MS_SCOPES = "offline_access openid email User.Read Mail.ReadWrite Mail.Send MailboxSettings.Read"
 TEKST_MAX = 4000  # zoveel tekst van een mail gaat (alleen als het mag) naar Claude; hij wordt niet bewaard
 DAGEN_TERUG = 30
 MAX_BERICHTEN = 100
@@ -255,3 +255,105 @@ def ms_gelezen(toegang, mid):
 
 def ms_label(toegang, mid, categorie, huidige=()):
     _graph(toegang, f"/me/messages/{mid}", body={"categories": sorted(set(huidige) | {categorie})}, methode="PATCH")
+
+
+# ---------------------------------------------------------------- één bericht helemaal lezen, en antwoorden
+
+BIJLAGE_MAX = 3_000_000  # grotere bijlagen leest Bram niet
+BIJLAGE_TEKST = 6000
+
+
+def bijlage_tekst(naam, soort, data):
+    """De leesbare tekst van een bijlage: pdf, agenda-uitnodiging (ics), tekst of html. Anders leeg."""
+    naam_l, soort = (naam or "").lower(), (soort or "").lower()
+    try:
+        if soort == "application/pdf" or naam_l.endswith(".pdf"):
+            import io  # pylint: disable=import-outside-toplevel
+            from pypdf import PdfReader  # pylint: disable=import-outside-toplevel
+            lezer = PdfReader(io.BytesIO(data))
+            tekst = "\n".join((p.extract_text() or "") for p in lezer.pages[:10])
+        elif soort in ("text/calendar", "application/ics") or naam_l.endswith(".ics"):
+            tekst = data.decode("utf-8", "replace")
+            tekst = "\n".join(r for r in tekst.splitlines() if r.split(":", 1)[0].split(";", 1)[0] in (
+                "SUMMARY", "DTSTART", "DTEND", "LOCATION", "DESCRIPTION", "ORGANIZER", "TZID"))
+        elif soort == "text/html" or naam_l.endswith((".html", ".htm")):
+            tekst = html_naar_tekst(data.decode("utf-8", "replace"))
+        elif soort.startswith("text/") or naam_l.endswith((".txt", ".csv")):
+            tekst = data.decode("utf-8", "replace")
+        else:
+            return ""
+    except Exception:  # noqa: BLE001  (een kapotte bijlage mag het lezen van de mail niet tegenhouden)
+        return ""
+    return re.sub(r"[ \t]+", " ", re.sub(r"\n\s*\n+", "\n\n", tekst)).strip()[:BIJLAGE_TEKST]
+
+
+def _gmail_bijlagen(deel):
+    uit = []
+
+    def loop(d):
+        body = d.get("body") or {}
+        if d.get("filename") and body.get("attachmentId"):
+            uit.append({"naam": d["filename"], "soort": d.get("mimeType", ""), "id": body["attachmentId"],
+                        "grootte": int(body.get("size") or 0)})
+        for p in d.get("parts") or []:
+            loop(p)
+    loop(deel or {})
+    return uit
+
+
+def gmail_volledig(toegang, mid, met_bijlagen=True):
+    """De hele mail: tekst, de koppen om te antwoorden en de bijlagen (met hun tekst als die te lezen is)."""
+    m = _gmail(toegang, f"/messages/{mid}?format=full")
+    koppen = {h["name"].lower(): h["value"] for h in (m.get("payload") or {}).get("headers", [])}
+    bijlagen = _gmail_bijlagen(m.get("payload"))
+    for b in bijlagen:
+        b["tekst"] = ""
+        if met_bijlagen and b["grootte"] <= BIJLAGE_MAX:
+            j = _gmail(toegang, f"/messages/{mid}/attachments/{b['id']}")
+            b["tekst"] = bijlage_tekst(b["naam"], b["soort"], base64.urlsafe_b64decode((j.get("data") or "") + "=" * (-len(j.get("data") or "") % 4)))
+    return {"tekst": _gmail_tekst(m.get("payload"))[:12000], "bijlagen": bijlagen, "draad": m.get("threadId", ""),
+            "van": koppen.get("from", ""), "antwoord_aan": koppen.get("reply-to") or koppen.get("from", ""),
+            "aan": koppen.get("to", ""), "cc": koppen.get("cc", ""), "onderwerp": koppen.get("subject", ""),
+            "message_id": koppen.get("message-id", ""), "references": koppen.get("references", "")}
+
+
+def gmail_antwoord(toegang, account, origineel, tekst):
+    """Antwoord op een Gmail-bericht, in dezelfde draad, aan de afzender (of het Reply-To-adres)."""
+    from email.message import EmailMessage  # pylint: disable=import-outside-toplevel
+    m = EmailMessage()
+    m["From"] = account
+    m["To"] = origineel["antwoord_aan"]
+    onderwerp = origineel["onderwerp"] or ""
+    m["Subject"] = onderwerp if onderwerp.lower().startswith(("re:", "antw:")) else f"Re: {onderwerp}"
+    if origineel.get("message_id"):
+        m["In-Reply-To"] = origineel["message_id"]
+        m["References"] = (origineel.get("references", "") + " " + origineel["message_id"]).strip()
+    m.set_content(tekst)
+    raw = base64.urlsafe_b64encode(m.as_bytes()).decode()
+    return _gmail(toegang, "/messages/send", body={"raw": raw, "threadId": origineel.get("draad", "")}).get("id", "")
+
+
+def ms_volledig(toegang, mid, met_bijlagen=True):
+    q = urllib.parse.quote(mid)
+    m = _graph(toegang, f"/me/messages/{q}?$select=subject,from,replyTo,toRecipients,ccRecipients,body,hasAttachments,conversationId",
+               {"Prefer": 'outlook.body-content-type="text"'})
+    adres = lambda x: f"{(x.get('emailAddress') or {}).get('name', '')} <{(x.get('emailAddress') or {}).get('address', '')}>"  # noqa: E731
+    bijlagen = []
+    if m.get("hasAttachments"):
+        for a in _graph(toegang, f"/me/messages/{q}/attachments?$select=id,name,contentType,size").get("value", []):
+            b = {"naam": a.get("name", ""), "soort": a.get("contentType", ""), "id": a.get("id", ""), "grootte": int(a.get("size") or 0), "tekst": ""}
+            if met_bijlagen and b["grootte"] <= BIJLAGE_MAX and "fileAttachment" in a.get("@odata.type", "fileAttachment"):
+                j = _graph(toegang, f"/me/messages/{q}/attachments/{urllib.parse.quote(b['id'])}")
+                if j.get("contentBytes"):
+                    b["tekst"] = bijlage_tekst(b["naam"], b["soort"], base64.b64decode(j["contentBytes"]))
+            bijlagen.append(b)
+    van = adres(m.get("from") or {})
+    return {"tekst": ((m.get("body") or {}).get("content") or "")[:12000], "bijlagen": bijlagen, "draad": m.get("conversationId", ""),
+            "van": van, "antwoord_aan": ", ".join(adres(x) for x in m.get("replyTo") or []) or van,
+            "aan": ", ".join(adres(x) for x in m.get("toRecipients") or []), "cc": ", ".join(adres(x) for x in m.get("ccRecipients") or []),
+            "onderwerp": m.get("subject", "")}
+
+
+def ms_antwoord(toegang, mid, tekst):
+    """Antwoord aan de afzender; Outlook zet de oorspronkelijke mail eronder en bewaart het in Verzonden items."""
+    _graph(toegang, f"/me/messages/{urllib.parse.quote(mid)}/reply", body={"comment": tekst}, methode="POST")

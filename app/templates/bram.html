@@ -10,7 +10,7 @@
     <div class="post-inhoud">
       <div class="post-kop"><b class="van" title="{{ b.van_adres }}">{{ b.van_naam }}</b>
         <span class="noot">{{ wanneer(b.ontvangen) }} · {{ b.koppeling }}</span></div>
-      <div><a href="{{ b.link }}" target="_blank" rel="noopener" class="onderwerp">{{ b.onderwerp }}</a>
+      <div><a href="/bram/bericht/{{ b.id }}" class="onderwerp" title="Lezen en Bram iets vragen">{{ b.onderwerp }}</a>
         {% if b.prioriteit == 'hoog' %}<span class="label rood">hoog</span>{% endif %}
         {% if b.categorie %}<span class="label">{{ CATEGORIEEN.get(b.categorie, b.categorie) }}</span>{% endif %}
         {% for l in b.labels if label_namen.get(b.koppeling_id, {}).get(l) or b.soort == 'microsoft' %}<span class="label groen">{{ label_namen.get(b.koppeling_id, {}).get(l) or l }}</span>{% endfor %}</div>
@@ -18,6 +18,7 @@
         {% if b.beoordeeld_door == 'regels' %}<span class="noot" title="Gesorteerd op afzender en kenmerken, zonder de inhoud te lezen">(op regels)</span>{% endif %}</div>
       <form method="post" class="knoppenrij post-acties">
         <input type="hidden" name="account" value="{{ account }}">
+        <a class="knop klein" href="/bram/bericht/{{ b.id }}#gesprek">Vraag Bram</a>
         <button class="knop klein {{ 'vol' if b.actie == 'archiveren' }}" formaction="/bram/bericht/{{ b.id }}/archiveren">Archiveren</button>
         {% if not b.gelezen %}<button class="knop klein {{ 'vol' if b.actie == 'gelezen' }}" formaction="/bram/bericht/{{ b.id }}/gelezen">Gelezen</button>{% endif %}
         {% if labels.get(b.koppeling_id) %}

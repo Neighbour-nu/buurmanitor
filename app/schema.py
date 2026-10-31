@@ -255,4 +255,16 @@ MIGRATIES = [
         gezien timestamptz NOT NULL DEFAULT now(),
         UNIQUE (koppeling_id, extern_id))""",
     "CREATE INDEX IF NOT EXISTS post_berichten_open ON post_berichten (status, ontvangen DESC)",
+    # Een gesprek met Bram over één bericht, en wat Bram daarbij voorstelt: een antwoord versturen, een afspraak of
+    # een herinnering in de agenda. Uitgevoerd wordt het pas na een klik van Martijn.
+    "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS gesprek_id int REFERENCES gesprekken(id) ON DELETE SET NULL",
+    """CREATE TABLE IF NOT EXISTS post_voorstellen (
+        id serial PRIMARY KEY,
+        gesprek_id int REFERENCES gesprekken(id) ON DELETE CASCADE,
+        bericht_id int REFERENCES post_berichten(id) ON DELETE CASCADE,
+        soort text NOT NULL CHECK (soort IN ('antwoord', 'afspraak', 'herinnering')),
+        gegevens jsonb NOT NULL DEFAULT '{}',
+        status text NOT NULL DEFAULT 'open',
+        uitslag text NOT NULL DEFAULT '',
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
 ]

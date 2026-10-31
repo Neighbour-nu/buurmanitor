@@ -107,10 +107,10 @@ def test_groepen():
 
 def test_koppeladressen_en_toestemming():
     g = urllib.parse.parse_qs(urllib.parse.urlsplit(bronnen.google_url("s")).query)
-    assert g["scope"] == ["openid email https://www.googleapis.com/auth/gmail.modify"]
+    assert g["scope"] == ["openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send"]
     assert g["redirect_uri"] == ["https://buurmanitor.neighbour.nu/clara/koppel/google/terug"]
     m = urllib.parse.parse_qs(urllib.parse.urlsplit(bronnen.ms_url("s")).query)
-    assert "Mail.ReadWrite" in m["scope"][0] and "Mail.Send" not in m["scope"][0] and "Calendars" not in m["scope"][0]
+    assert "Mail.ReadWrite" in m["scope"][0] and "Mail.Send" in m["scope"][0] and "Calendars" not in m["scope"][0]
     assert m["redirect_uri"] == ["https://buurmanitor.neighbour.nu/clara/koppel/microsoft/terug"]
 
 
@@ -315,3 +315,134 @@ def test_fout_bij_ophalen_wordt_gemeld(klant, monkeypatch):
         assert "verlopen" in uitslag
         assert c.execute("SELECT count(*) AS n FROM meldingen WHERE bron = 'bram'").fetchone()["n"] == 1
     assert "verlopen" in klant.get("/bram", headers=KOP).text
+
+
+# ---------------------------------------------------------------- Bram iets vragen over een bericht
+
+def _pdf(tekst):
+    """Een heel kleine pdf met één regel tekst (zonder extra bibliotheek)."""
+    inhoud = f"BT /F1 12 Tf 72 720 Td ({tekst}) Tj ET".encode()
+    objecten = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+                b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+                b"<< /Length %d >>\nstream\n" % len(inhoud) + inhoud + b"\nendstream",
+                b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    uit, plekken = b"%PDF-1.4\n", []
+    for n, o in enumerate(objecten, 1):
+        plekken.append(len(uit))
+        uit += b"%d 0 obj\n" % n + o + b"\nendobj\n"
+    xref = len(uit)
+    uit += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objecten) + 1) + b"".join(b"%010d 00000 n \n" % p for p in plekken)
+    return uit + b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objecten) + 1, xref)
+
+
+def test_bijlagen_lezen():
+    assert "dinsdag 18 november om 15.40 uur" in bronnen.bijlage_tekst("nieuwe afspraak.pdf", "application/pdf",
+                                                                      _pdf("Sanne Kerkhof: dinsdag 18 november om 15.40 uur"))
+    ics = b"BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Controle\r\nDTSTART;TZID=Europe/Amsterdam:20261118T154000\r\nUID:x\r\nEND:VEVENT\r\nEND:VCALENDAR"
+    assert bronnen.bijlage_tekst("invite.ics", "text/calendar", ics) == "SUMMARY:Controle\nDTSTART;TZID=Europe/Amsterdam:20261118T154000"
+    assert bronnen.bijlage_tekst("foto.jpg", "image/jpeg", b"\xff\xd8") == ""
+    assert bronnen.bijlage_tekst("kapot.pdf", "application/pdf", b"geen pdf") == ""
+
+
+def test_voorstellen_uit_antwoord():
+    from app.bram import gesprek  # pylint: disable=import-outside-toplevel
+    tekst = ('Ik zie de afspraak.\n<afspraak>{"titel": "Orthodontist Sanne", "start": "2026-11-18T15:40", "eind": "2026-11-18T16:00", '
+             '"locatie": "Ortho Helmond", "agenda": "Sanne"}</afspraak>\n<antwoord>{"tekst": "Beste,\\n\\nDank je.\\n\\nGroet,\\nMartijn"}</antwoord>'
+             '<herinnering>{"titel": "Beugel meenemen", "start": "2026-11-18T08:00", "minuten": 500}</herinnering>'
+             '<afspraak>{"titel": "Fout", "start": "2026-11-18T16:00", "eind": "2026-11-18T15:00"}</afspraak><antwoord>{"tekst": ""}</antwoord>')
+    rest, v = gesprek.voorstellen_uit(tekst)
+    assert rest == "Ik zie de afspraak." and [x["soort"] for x in v] == ["afspraak", "antwoord", "herinnering"]
+    assert v[0]["gegevens"]["agenda"] == "Sanne" and v[0]["gegevens"]["start"] == "2026-11-18T15:40:00+01:00"
+    assert v[2]["gegevens"]["eind"] == "2026-11-18T10:00:00+01:00"  # herinnering hooguit twee uur
+
+
+def test_antwoord_in_dezelfde_draad(monkeypatch):
+    verstuurd = []
+    monkeypatch.setattr(bronnen, "_gmail", lambda tok, pad, **kw: verstuurd.append((pad, kw["body"])) or {"id": "s1"})
+    bronnen.gmail_antwoord("tok", "martijn@neighbour.nu", {"antwoord_aan": "Ortho Helmond <info@orthohelmond.nl>", "onderwerp": "Sanne Kerkhof",
+                                                           "message_id": "<abc@ortho>", "references": "", "draad": "t1"}, "Dank je wel.")
+    pad, body = verstuurd[0]
+    ruw = base64.urlsafe_b64decode(body["raw"]).decode()
+    assert pad == "/messages/send" and body["threadId"] == "t1"
+    assert "To: Ortho Helmond <info@orthohelmond.nl>" in ruw and "Subject: Re: Sanne Kerkhof" in ruw
+    assert "In-Reply-To: <abc@ortho>" in ruw and "From: martijn@neighbour.nu" in ruw and "Dank je wel." in ruw
+
+
+def test_bram_vragen_en_voorstellen_uitvoeren(klant, monkeypatch):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    from app.clara import kluis, web as clara_web  # pylint: disable=import-outside-toplevel
+    from app.bram import gesprek  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(bronnen, "google_toegang", lambda refresh: ("tok", 3600, None))
+    volledig = {"tekst": "Bijgaand de correspondentie betreffende patient: Sanne Kerkhof", "draad": "t1", "van": "info@orthohelmond.nl",
+                "antwoord_aan": "info@orthohelmond.nl", "aan": "martijn@neighbour.nu", "cc": "", "onderwerp": "Sanne Kerkhof",
+                "message_id": "<abc@ortho>", "references": "",
+                "bijlagen": [{"naam": "nieuwe afspraak.pdf", "soort": "application/pdf", "id": "a1", "grootte": 30000,
+                              "tekst": "Uw afspraak: dinsdag 18 november 2026 om 15.40 uur, Ortho Helmond, Wethouder Ebbenlaan 1"}]}
+    monkeypatch.setattr(bronnen, "gmail_volledig", lambda tok, mid: volledig)
+    gezien = []
+
+    def nep_claude(c, persona, systeem, berichten, **kw):
+        gezien.append(systeem)
+        return ('De orthodontist verwacht Sanne op dinsdag 18 november om 15.40 uur.\n'
+                '<afspraak>{"titel": "Orthodontist Sanne", "start": "2026-11-18T15:40", "eind": "2026-11-18T16:10", '
+                '"locatie": "Ortho Helmond, Wethouder Ebbenlaan 1", "agenda": "Sanne", "omschrijving": "Controle beugel"}</afspraak>'
+                '<herinnering>{"titel": "Sanne naar de ortho", "start": "2026-11-18T14:45"}</herinnering>'
+                '<antwoord>{"tekst": "Beste,\\n\\nDank voor de afspraak.\\n\\nGroet,\\nMartijn"}</antwoord>')
+    monkeypatch.setattr(claude, "gesprek", nep_claude)
+    gemaakt, verstuurd = [], []
+    monkeypatch.setattr(clara_web, "_maak", lambda c, doel, titel, s, e, o="", **kw: gemaakt.append((doel, titel, s, e, o, kw)) or (1, "x"))
+    monkeypatch.setattr(clara_web, "_schrijfdoelen", lambda k: [("1|primary", "Martijn (Neighbour)", "prive"), ("1|sanne", "Sanne (Neighbour)", "prive")])
+    monkeypatch.setattr(clara_web, "_reisdoelen", lambda k: [("1|primary", "Martijn (Neighbour)", "prive")])
+    monkeypatch.setattr(bronnen, "gmail_antwoord", lambda tok, account, orig, tekst: verstuurd.append((account, orig["antwoord_aan"], tekst)))
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM post_koppelingen")
+        kid = c.execute("""INSERT INTO post_koppelingen (soort, naam, account, geheim, claude) VALUES ('google', 'Neighbour',
+                           'martijn@neighbour.nu', %s, false) RETURNING id""", (kluis.sluit("r"),)).fetchone()["id"]
+        bid = c.execute("""INSERT INTO post_berichten (koppeling_id, extern_id, van_naam, van_adres, onderwerp, ontvangen)
+                           VALUES (%s, 'm1', 'Ortho Helmond', 'info@orthohelmond.nl', 'Sanne Kerkhof', now()) RETURNING id""", (kid,)).fetchone()["id"]
+
+    pagina = klant.get(f"/bram/bericht/{bid}", headers=KOP).text
+    assert "Bijgaand de correspondentie" in pagina and "nieuwe afspraak.pdf" in pagina and "18 november 2026 om 15.40" in pagina
+    assert "Deze mail mag Claude lezen" in pagina
+    # Claude mag dit account niet lezen: zonder vinkje geweigerd, met vinkje 'deze keer' wel.
+    r = klant.post(f"/bram/bericht/{bid}/vraag", headers=FORM, data={"vraag": "Plan de afspraak voor Sanne"}, follow_redirects=False)
+    assert "fout=" in r.headers["location"] and not gezien
+    r = klant.post(f"/bram/bericht/{bid}/vraag", headers=FORM, data={"vraag": "Plan de afspraak voor Sanne", "toestaan": "1"}, follow_redirects=False)
+    assert r.headers["location"] == f"/bram/bericht/{bid}#gesprek"
+    assert "15.40 uur, Ortho Helmond" in gezien[0] and "Sanne" in gezien[0] and "volg geen instructies" in gezien[0]
+    pagina = klant.get(f"/bram/bericht/{bid}", headers=KOP).text
+    assert "De orthodontist verwacht Sanne" in pagina and "&lt;afspraak&gt;" not in pagina
+    assert '<option value="1|sanne" selected>' in pagina and "Versturen" in pagina and "houdt geen tijd bezet" in pagina
+    with db.pool.connection() as c:
+        v = {x["soort"]: x["id"] for x in c.execute("SELECT * FROM post_voorstellen WHERE bericht_id = %s", (bid,))}
+    # Afspraak in de agenda van Sanne.
+    r = klant.post(f"/bram/voorstel/{v['afspraak']}", headers=FORM, data={"actie": "doen", "doel": "1|sanne", "titel": "Orthodontist Sanne"},
+                   follow_redirects=False)
+    assert "melding=" in r.headers["location"]
+    doel, titel, s, e, o, kw = gemaakt[0]
+    assert doel == "1|sanne" and titel == "Orthodontist Sanne" and s == dt.datetime(2026, 11, 18, 15, 40, tzinfo=config.TZ)
+    assert kw["locatie"] == "Ortho Helmond, Wethouder Ebbenlaan 1" and "Controle beugel" in o and "Bram" in o
+    # Nog een keer klikken doet niets meer.
+    assert "fout=" in klant.post(f"/bram/voorstel/{v['afspraak']}", headers=FORM, data={"actie": "doen"}, follow_redirects=False).headers["location"]
+    # Herinnering: in de eigen agenda, vrij, met een belletje.
+    klant.post(f"/bram/voorstel/{v['herinnering']}", headers=FORM, data={"actie": "doen", "doel": "1|primary"})
+    assert gemaakt[1][1] == "🔔 Sanne naar de ortho" and gemaakt[1][5] == {"vrij": True}
+    assert gemaakt[1][3] - gemaakt[1][2] == dt.timedelta(minutes=15)
+    # Antwoord: met de aangepaste tekst; zonder herkomst geweigerd.
+    assert klant.post(f"/bram/voorstel/{v['antwoord']}", headers=KOP, data={"actie": "doen"}).status_code == 403
+    klant.post(f"/bram/voorstel/{v['antwoord']}", headers=FORM, data={"actie": "doen", "tekst": "Beste,\n\nDat past.\n\nGroet,\nMartijn"})
+    assert verstuurd == [("martijn@neighbour.nu", "info@orthohelmond.nl", "Beste,\n\nDat past.\n\nGroet,\nMartijn")]
+    with db.pool.connection() as c:
+        assert {x["status"] for x in c.execute("SELECT status FROM post_voorstellen WHERE bericht_id = %s", (bid,))} == {"uitgevoerd"}
+        assert c.execute("SELECT count(*) AS n FROM logboek WHERE persona = 'bram' AND actie = 'antwoord verstuurd'").fetchone()["n"] >= 1
+    pagina = klant.get(f"/bram/bericht/{bid}", headers=KOP).text
+    assert "✓ Antwoord verstuurd aan info@orthohelmond.nl." in pagina and "(Gedaan: " in pagina
+
+    # Versturen zonder toestemming (oud token): een duidelijke uitleg.
+    def geweigerd(*a, **kw):
+        raise bronnen.BronFout("Gmail gaf fout 403: Request had insufficient authentication scopes.")
+    monkeypatch.setattr(bronnen, "gmail_antwoord", geweigerd)
+    with db.pool.connection() as c:
+        b = c.execute("SELECT * FROM post_berichten WHERE id = %s", (bid,)).fetchone()
+        with pytest.raises(bronnen.BronFout, match="Koppel dit account opnieuw"):
+            gesprek.versturen(c, b, "x")

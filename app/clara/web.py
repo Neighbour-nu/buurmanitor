@@ -161,7 +161,7 @@ def vernieuwen(request: Request):
 
 # ---------------------------------------------------------------- iets in de agenda zetten (na een klik)
 
-def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True, kleur=None, herhaal=None, locatie=""):
+def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True, kleur=None, herhaal=None, locatie="", vrij=False):
     try:
         kid, agenda_id = doel.split("|", 1)
         k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (int(kid),)).fetchone()
@@ -172,7 +172,7 @@ def _maak(c, doel, titel, start, eind, omschrijving="", bijwerken=True, kleur=No
     tok = sync.toegang(c, k)
     maak = bronnen.google_maak if k["soort"] == "google" else bronnen.ms_maak
     extern = maak(tok, agenda_id, titel, start, eind, omschrijving, kleur=kleur, **({"herhaal": herhaal} if herhaal else {}),
-                  **({"locatie": locatie} if locatie else {}))
+                  **({"locatie": locatie} if locatie else {}), **({"vrij": True} if vrij else {}))
     c.execute("INSERT INTO logboek (persona, actie, details) VALUES ('clara', 'afspraak gemaakt', %s)",
               (json.dumps({"koppeling": k["naam"], "titel": titel, "start": start.isoformat(), "eind": eind.isoformat(),
                            "herhaal": herhaal}),))

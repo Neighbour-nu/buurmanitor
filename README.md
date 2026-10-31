@@ -26,7 +26,9 @@ Het logo (twee buurhuizen) is eigen werk.
 
 - Bram (Post): de inbox van Gmail en Outlook in één postkamer, gesorteerd in Actie nodig, Lezen en Kan weg, met per
   bericht één regel en een voorstel. Per account kies je of Claude de inhoud mag lezen; anders sorteert Bram op regels.
-  Archiveren, labelen en gelezen markeren alleen na jouw klik. Versturen kan Bram niet.
+  Archiveren, labelen en gelezen markeren alleen na jouw klik. Per bericht kun je Bram iets vragen: hij leest de mail
+  en de bijlagen (pdf, agenda-uitnodiging, tekst) en zet een antwoord, een afspraak (ook in de agenda van Sanne) of een
+  herinnering klaar. Versturen of inplannen gebeurt pas na jouw klik; een antwoord kun je eerst aanpassen.
 
 Volgende fases: Bram verder (Teams, WhatsApp en Signal), Noor (5), Vera (6) en Jesse (7).
 
@@ -150,12 +152,12 @@ toestemming voor mail en bewaart een eigen token; Clara krijgt geen toegang tot 
 **Google** (console.cloud.google.com, hetzelfde project):
 
 1. API's en services: zet de **Gmail API** aan.
-2. Google Auth Platform › Data access: voeg de scope `.../auth/gmail.modify` toe. Bij een Internal-app is geen
+2. Google Auth Platform › Data access: voeg de scopes `.../auth/gmail.modify` en `.../auth/gmail.send` toe. Bij een Internal-app is geen
    verificatie nodig; bij External zie je bij het koppelen een waarschuwing dat de app niet geverifieerd is.
 
 **Microsoft** (entra.microsoft.com, dezelfde app-registratie):
 
-1. API-machtigingen › Microsoft Graph › Gedelegeerd: voeg `Mail.ReadWrite` en `MailboxSettings.Read` toe.
+1. API-machtigingen › Microsoft Graph › Gedelegeerd: voeg `Mail.ReadWrite`, `Mail.Send` en `MailboxSettings.Read` toe.
 2. Klik in je eigen organisatie op **Beheerderstoestemming verlenen**. Bij andere organisaties moet hun beheerder de
    app opnieuw goedkeuren (de link staat bij Agenda-instellingen › Agenda toevoegen).
 
