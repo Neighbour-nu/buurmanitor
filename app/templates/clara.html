@@ -57,6 +57,10 @@
                   <option value="automatisch" selected>je gaat niet mee</option>
                   {% for w, t in [('fiets', 'mee, op de fiets'), ('auto', 'mee, met de auto'), ('ov', 'mee, met het OV'), ('lopen', 'mee, lopend')] %}<option value="{{ w }}">{{ t }}</option>{% endfor %}
                 </select><noscript><button class="knop klein">Kies</button></noscript>
+                {% if reis_actief %}
+                {% if sleutel in rit_ids or (a.reeks and (a.koppeling_id, a.reeks) in gedekt) %}<span class="label groen">ritten ingepland</span>
+                {% else %}<a class="knop klein" href="/clara/reistijd/{{ a.id }}?week={{ week }}">🚗 Brengen en ophalen</a>{% endif %}
+                {% endif %}
               </form>
               {% endif %}
               {% set reizen = per_afspraak.get(sleutel, []) %}

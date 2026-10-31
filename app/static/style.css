@@ -190,3 +190,5 @@ h2 form.inline { margin: 0; }
 .afspraak.ander { background: var(--achter); }
 .afspraak.ander .wat { color: var(--zacht); }
 .kleurbol { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+fieldset.keuzes { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+fieldset.keuzes legend { padding: 0; margin-bottom: 4px; }

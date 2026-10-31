@@ -19,6 +19,14 @@
     <label class="breed">Waar ga je naartoe? (straat, huisnummer en plaats, of een bekende plek met plaatsnaam)
       <input type="text" name="adres" value="{{ adres }}" required autofocus placeholder="bijvoorbeeld Stadhuisplein 1, Eindhoven"></label>
     {% if online and not a.reisadres %}<p class="noot breed">In deze afspraak staat een online link. Ga je er toch naartoe, vul dan het adres in.</p>{% endif %}
+    {% if a.niet_voor_mij %}
+    <fieldset class="breed keuzes"><legend>Wat doe jij? (deze afspraak staat in de agenda van {{ a.agenda_naam or a.koppeling }})</legend>
+      <label class="vink"><input type="radio" name="modus" value="beide" checked> Wegbrengen en ophalen</label>
+      <label class="vink"><input type="radio" name="modus" value="brengen"> Alleen wegbrengen</label>
+      <label class="vink"><input type="radio" name="modus" value="halen"> Alleen ophalen</label>
+      <label class="vink"><input type="radio" name="modus" value="mee"> Ik ga mee en blijf erbij</label>
+    </fieldset>
+    {% endif %}
     <label>Vervoer <select name="vervoer">
       {% for w, t in [('automatisch', 'automatisch (fiets dichtbij, OV in een grote stad, anders auto)'), ('fiets', 'fiets'), ('auto', 'auto'), ('ov', 'openbaar vervoer'), ('lopen', 'lopen')] %}
       <option value="{{ w }}" {{ 'selected' if vervoer == w }}>{{ t }}</option>{% endfor %}</select></label>
@@ -26,8 +34,12 @@
     <label class="vink breed"><input type="checkbox" name="elke" value="1" {{ 'checked' if elke }}> Elke keer: Clara zet de reistijd
       als herhalende afspraak in je agenda, voor de hele reeks vanaf deze keer. Vervalt een keer, dan haalt ze de reistijd die dag ook weg.</label>
     {% endif %}
-    <button class="knop vol" type="submit">Reistijd berekenen en inplannen</button>
+    <button class="knop vol" type="submit">{% if a.niet_voor_mij %}Ritten berekenen en inplannen{% else %}Reistijd berekenen en inplannen{% endif %}</button>
   </form>
+  {% if a.niet_voor_mij %}
+  <p class="noot">De ritten komen in je eigen agenda: wegbrengen is heen en weer terug naar huis rond het begin, ophalen
+    rond het einde. Is de afspraak te kort om tussendoor naar huis te gaan, dan wordt het één blok.</p>
+  {% endif %}
   <p class="noot">Clara rekent de reis uit met {{ reis_dienst }}: heen vanaf huis (of vanaf je vorige afspraak als die kort
     ervoor is), en terug naar huis. Het adres onthoudt ze voor deze afspraak{% if herhalend %} en alle keren van de reeks{% endif %}.</p>
   {% if a.reis_auto %}

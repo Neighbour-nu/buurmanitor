@@ -268,7 +268,7 @@ def reistijd_automatisch(c, nu=None):
     inst = instellingen(c)
     if not reis.actief() or not inst.get("vertrekpunt"):
         return None
-    doelen = web._schrijfdoelen(koppelingen(c, alleen_actief=True))  # pylint: disable=protected-access
+    doelen = web._reisdoelen(koppelingen(c, alleen_actief=True))  # pylint: disable=protected-access
     if not doelen:
         return None
     try:
