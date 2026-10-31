@@ -1440,7 +1440,7 @@ def test_brengen_en_ophalen_voor_afspraak_van_sanne(klant, monkeypatch):
     pagina = klant.get("/clara", headers=KOP).text + klant.get("/clara?week=1", headers=KOP).text
     assert f"/clara/reistijd/{ids[0]}?week=" in pagina and "Brengen en ophalen" in pagina
     r = klant.get(f"/clara/reistijd/{ids[0]}", headers=KOP)
-    assert 'value="beide" checked' in r.text and "agenda van Sanne" in r.text and "Ritten berekenen" in r.text
+    assert 'value="beide" checked' in r.text and "agenda van Sanne" in r.text and "Berekenen en inplannen" in r.text
 
     # Eén keer wegbrengen en ophalen.
     r = klant.post(f"/clara/reistijd/{ids[0]}", headers=FORM, follow_redirects=False,
@@ -1506,3 +1506,53 @@ def test_agenda_compact_twee_weken(klant):
     assert "Afspraak over twaalf dagen" not in klant.get("/clara?week=1", headers=KOP).text
     with db.pool.connection() as c:
         c.execute("DELETE FROM agenda_items")
+
+
+def test_van_meegaan_naar_brengen_en_ophalen(klant, monkeypatch):
+    from app.clara import reis, sync  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(config, "ORS_API_KEY", "ors-test")
+    monkeypatch.setattr(config, "GOOGLE_MAPS_KEY", "")
+    monkeypatch.setattr(reis, "_ors", lambda pad, params=None, body=None: (
+        {"features": [{"geometry": {"coordinates": list(THUIS if "Strik" in params["text"] else (5.55, 51.47))},
+                       "properties": {"label": params["text"], "confidence": 0.9}}]} if pad.startswith("/pelias")
+        else {"routes": [{"summary": {"duration": 900, "distance": 9000}}]}))
+    monkeypatch.setattr(sync, "toegang", lambda c, k: "tok")
+    monkeypatch.setattr(sync, "synchroniseer", lambda c, k, forceer=False, nu=None: None)
+    gemaakt = []
+    monkeypatch.setattr(bronnen, "google_maak", lambda tok, a, titel, s, e, o="", kleur=None, herhaal=None: gemaakt.append((a, titel)) or f"x{len(gemaakt)}")
+    with db.pool.connection() as c:
+        for t_ in ("agenda_items", "agenda_reisinfo", "agenda_vervoer", "agenda_reeksen"):
+            c.execute(f"DELETE FROM {t_}")
+        sync.instellingen_opslaan(c, {**sync.instellingen(c), "vertrekpunt": "Meester Strikstraat 25, 5708 GA Helmond"})
+        agendas = [{"id": "primary", "naam": "Martijn", "primair": True, "schrijven": True, "aan": True, "bezet": True},
+                   {"id": "sanne", "naam": "Sanne", "primair": False, "schrijven": True, "aan": True, "bezet": False}]
+        kid = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, domein, schrijven, agendas, schrijfagenda, laatst)
+                           VALUES ('google', 'Privé2', 'prive', true, %s, 'primary', now()) RETURNING id""", (json.dumps(agendas),)).fetchone()["id"]
+        les = _nu_dag(0, 23, 0)
+        iid = c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, ical_uid, titel, locatie, start, eind)
+                           VALUES (%s, 'sanne', 'za1', 'za@g', 'Paardrijles Sanne', 'Manege Hooidonk, Nuenen', %s, %s) RETURNING id""",
+                        (kid, les, les + dt.timedelta(minutes=50))).fetchone()["id"]
+    # Vanochtend 'mee, met de auto' gekozen: de afspraak is dan van Martijn, maar brengen en ophalen kan nog steeds.
+    klant.post(f"/clara/vervoer/{iid}", headers=FORM, data={"vervoer": "auto"})
+    pagina = klant.get("/clara", headers=KOP).text
+    assert f'href="/clara/reistijd/{iid}?week=0">🚗 Brengen en ophalen' in pagina
+    r = klant.get(f"/clara/reistijd/{iid}", headers=KOP)
+    assert 'value="mee" checked' in r.text and 'value="beide" >' in r.text
+    r = klant.post(f"/clara/reistijd/{iid}", headers=FORM, follow_redirects=False,
+                   data={"adres": "Manege Hooidonk, Nuenen", "vervoer": "auto", "modus": "beide"})
+    assert "In+je+agenda" in r.headers["location"], r.headers["location"]
+    assert gemaakt and all(a == "primary" for a, _ in gemaakt) and "brengen" in gemaakt[0][1]
+    with db.pool.connection() as c:
+        assert "uid:za@g" not in reis.keuzes(c)  # niet meer 'mee'
+    # Meegaan met 'automatisch' vervoer blijft ook echt staan.
+    gemaakt.clear()
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM agenda_items WHERE omschrijving LIKE '[clara-reistijd%%'")
+    klant.post(f"/clara/reistijd/{iid}", headers=FORM, data={"adres": "Manege Hooidonk, Nuenen", "vervoer": "automatisch", "modus": "mee"})
+    with db.pool.connection() as c:
+        assert reis.keuzes(c).get("uid:za@g") in ("fiets", "auto")
+        c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (kid,))
+        for t_ in ("agenda_items", "agenda_reisinfo", "agenda_vervoer", "agenda_reeksen"):
+            c.execute(f"DELETE FROM {t_}")
+        c.execute("DELETE FROM instellingen WHERE sleutel LIKE 'clara%%'")

@@ -688,15 +688,20 @@ async def reistijd_toevoegen(request: Request, item_id: int):
             eigen = "" if adres == (a.get("locatie") or "").strip() and not a.get("online") else adres
             herhalend = _herhalend(c, a)
             reis.reisinfo_opslaan(c, a, adres=eigen, auto=False)
-            if a.get("niet_voor_mij") and modus in ("beide", "brengen", "halen"):
+            ander = a.get("niet_voor_mij") or a.get("mee")  # afspraak uit een andere agenda, zoals die van Sanne
+            if ander and modus in ("beide", "brengen", "halen"):
+                if a.get("mee"):  # eerder 'mee' gekozen: nu brengt en haalt hij alleen
+                    reis.kies(c, a, "automatisch")
+                    a = _item_met_info(c, item_id)
                 a["reisadres"] = eigen
                 return _brengen_halen(c, a, modus, vervoer, elke and herhalend, inst, _reisdoelen(sync.koppelingen(c)), thuis)
-            if a.get("niet_voor_mij") and modus == "mee":  # hij blijft erbij: dan is het zijn afspraak, met gewone reistijd
-                soort = vervoer if vervoer in ("fiets", "auto", "ov", "lopen") else reis.vervoer(
+            keuze = vervoer
+            if ander and modus == "mee":  # hij blijft erbij: dan is het zijn afspraak, met gewone reistijd
+                keuze = vervoer if vervoer in ("fiets", "auto", "ov", "lopen") else reis.vervoer(
                     thuis["punt"], reis.adres(c, adres, focus=thuis["punt"])["punt"], inst)
-                reis.kies(c, a, soort)
+                reis.kies(c, a, keuze)
                 a = _item_met_info(c, item_id)
-            reis.kies(c, a, vervoer)
+            reis.kies(c, a, keuze)
             doelen = _reisdoelen(sync.koppelingen(c))
             if not doelen:
                 return a, "Om reistijd in te plannen is een Google- of Microsoft-agenda met schrijfrechten nodig."

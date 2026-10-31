@@ -97,7 +97,7 @@
                   {% for r in open_hier %}<input type="hidden" name="sleutel" value="{{ r.sleutel }}">{% endfor %}
                   <button class="knop klein" formaction="/clara/reistijd">Reistijd inplannen</button>
                   {% endif %}
-                  <a class="knop klein" href="/clara/reistijd/{{ a.id }}?week={{ week }}">{% if a.reis_auto %}🔁 elke keer{% else %}Adres of reeks{% endif %}</a>
+                  <a class="knop klein" href="/clara/reistijd/{{ a.id }}?week={{ week }}">{% if a.mee %}🚗 Brengen en ophalen{% elif a.reis_auto %}🔁 elke keer{% else %}Adres of reeks{% endif %}</a>
                 </form>
               </div>
               {% elif reis_actief and not is_reisblok(a) and not a.heledag and not a.niet_voor_mij and sleutel not in onbekend_ids
