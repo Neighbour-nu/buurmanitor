@@ -21,6 +21,10 @@
         <a class="knop klein" href="/bram/bericht/{{ b.id }}#gesprek">Vraag Bram</a>
         <button class="knop klein {{ 'vol' if b.actie == 'archiveren' }}" formaction="/bram/bericht/{{ b.id }}/archiveren">Archiveren</button>
         {% if not b.gelezen %}<button class="knop klein {{ 'vol' if b.actie == 'gelezen' }}" formaction="/bram/bericht/{{ b.id }}/gelezen">Gelezen</button>{% endif %}
+        <button class="knop klein" formaction="/bram/bericht/{{ b.id }}/verwijderen" title="Naar de prullenbak">Verwijderen</button>
+        {% if b.uitgeschreven %}<span class="label groen">uitgeschreven</span>
+        {% elif b.uitschrijf_link %}<a class="knop klein" href="{{ b.uitschrijf_link }}" target="_blank" rel="noopener noreferrer">Uitschrijven op de website</a>
+        {% elif b.nieuwsbrief or b.categorie == 'nieuwsbrief' %}<button class="knop klein" formaction="/bram/bericht/{{ b.id }}/uitschrijven" onclick="return confirm('Uitschrijven bij deze afzender?')">Uitschrijven</button>{% endif %}
         {% if labels.get(b.koppeling_id) %}
         <select name="label" aria-label="Label voor {{ b.onderwerp }}">{% for w, n in labels[b.koppeling_id] %}<option value="{{ w }}">{{ n }}</option>{% endfor %}</select>
         <button class="knop klein" formaction="/bram/bericht/{{ b.id }}/label">{{ 'Label' if b.soort == 'google' else 'Categorie' }}</button>
@@ -55,7 +59,8 @@
       <h2><span>{{ naam }} <span class="klein">{{ lijst | length }}</span></span>
         {% if sleutel == 'weg' and lijst %}<form method="post" action="/bram/archiveren" id="kan-weg" class="inline">
           <input type="hidden" name="account" value="{{ account }}">
-          <button class="knop klein vol" type="submit">Aangevinkte archiveren</button></form>{% endif %}</h2>
+          <button class="knop klein vol" type="submit" name="actie" value="archiveren">Aangevinkte archiveren</button>
+          <button class="knop klein" type="submit" name="actie" value="verwijderen" onclick="return confirm('De aangevinkte berichten naar de prullenbak?')">Verwijderen</button></form>{% endif %}</h2>
       <p class="noot">{{ uitleg }}</p>
       {% for b in lijst %}{{ bericht(b, sleutel == 'weg') }}
       {% else %}<p class="noot">{% if sleutel == 'actie' %}Niets dat op jou wacht.{% elif sleutel == 'lezen' %}Niets te lezen.{% else %}Niets op te ruimen.{% endif %}</p>{% endfor %}

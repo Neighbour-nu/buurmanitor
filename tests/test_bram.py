@@ -446,3 +446,67 @@ def test_bram_vragen_en_voorstellen_uitvoeren(klant, monkeypatch):
         b = c.execute("SELECT * FROM post_berichten WHERE id = %s", (bid,)).fetchone()
         with pytest.raises(bronnen.BronFout, match="Koppel dit account opnieuw"):
             gesprek.versturen(c, b, "x")
+
+
+# ---------------------------------------------------------------- verwijderen en uitschrijven
+
+def test_uitschrijfwijze():
+    w = bronnen.uitschrijfwijze("<mailto:uit@lijst.nl?subject=Afmelden>, <https://lijst.nl/uit?id=1>", "List-Unsubscribe=One-Click")
+    assert w == {"een_klik": "https://lijst.nl/uit?id=1", "link": "https://lijst.nl/uit?id=1",
+                 "mailto": {"aan": "uit@lijst.nl", "onderwerp": "Afmelden", "tekst": "unsubscribe"}}
+    w = bronnen.uitschrijfwijze("<https://lijst.nl/uit>")
+    assert w["een_klik"] is None and w["link"] == "https://lijst.nl/uit" and w["mailto"] is None
+    assert bronnen.uitschrijfwijze("<http://onveilig.nl/uit>", "List-Unsubscribe=One-Click") == {"een_klik": None, "mailto": None, "link": None}
+    assert bronnen.uitschrijfwijze("") == {"een_klik": None, "mailto": None, "link": None}
+    assert bronnen.uitschrijfwijze("<mailto:geen-adres>")["mailto"] is None
+
+
+def test_een_klik_niet_naar_intern_netwerk():
+    for url in ("https://127.0.0.1/uit", "https://localhost/uit", "https://10.0.0.5/uit", "http://example.com/uit", "https://[::1]/uit"):
+        with pytest.raises(bronnen.BronFout, match="niet veilig"):
+            bronnen.een_klik_uitschrijven(url)
+
+
+def test_verwijderen_en_uitschrijven(klant, monkeypatch):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    from app.clara import kluis  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(bronnen, "google_toegang", lambda refresh: ("tok", 3600, None))
+    weg, posts, mails = [], [], []
+    monkeypatch.setattr(bronnen, "gmail_verwijder", lambda tok, mid: weg.append(mid))
+    koppen = {"n1": ("<https://lijst.nl/uit?x=1>, <mailto:uit@lijst.nl>", "List-Unsubscribe=One-Click"),
+              "n2": ("<mailto:afmelden@winkel.nl?subject=stop>", ""), "n3": ("<https://krant.nl/afmelden>", ""), "n4": ("", "")}
+    monkeypatch.setattr(bronnen, "gmail_uitschrijfkoppen", lambda tok, mid: koppen[mid])
+    monkeypatch.setattr(bronnen, "een_klik_uitschrijven", lambda url: posts.append(url) or 200)
+    monkeypatch.setattr(bronnen, "gmail_stuur", lambda tok, account, aan, onderwerp, tekst: mails.append((account, aan, onderwerp)))
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM post_koppelingen")
+        kid = c.execute("INSERT INTO post_koppelingen (soort, naam, account, geheim) VALUES ('google', 'Neighbour', 'm@neighbour.nu', %s) RETURNING id",
+                        (kluis.sluit("r"),)).fetchone()["id"]
+        ids = {}
+        for n, adres in (("n1", "nieuws@lijst.nl"), ("n2", "info@winkel.nl"), ("n3", "krant@krant.nl"), ("n4", "x@x.nl"), ("n5", "a@b.nl"), ("n6", "c@d.nl")):
+            ids[n] = c.execute("""INSERT INTO post_berichten (koppeling_id, extern_id, van_naam, van_adres, onderwerp, ontvangen, nieuwsbrief, categorie)
+                                  VALUES (%s, %s, %s, %s, %s, now(), true, 'nieuwsbrief') RETURNING id""", (kid, n, adres, adres, f"Nieuws {n}")).fetchone()["id"]
+    pagina = klant.get("/bram", headers=KOP).text
+    assert "Uitschrijven" in pagina and "Verwijderen" in pagina and 'value="verwijderen"' in pagina
+
+    # Uitschrijven: één klik, dan mail, dan alleen een link, dan niets.
+    r = klant.post(f"/bram/bericht/{ids['n1']}/uitschrijven", headers=FORM, follow_redirects=False)
+    assert "uitgeschreven+met+%C3%A9%C3%A9n+klik" in r.headers["location"] and posts == ["https://lijst.nl/uit?x=1"] and not mails
+    klant.post(f"/bram/bericht/{ids['n2']}/uitschrijven", headers=FORM)
+    assert mails == [("m@neighbour.nu", "afmelden@winkel.nl", "stop")]
+    r = klant.post(f"/bram/bericht/{ids['n3']}/uitschrijven", headers=FORM, follow_redirects=False)
+    assert "website" in r.headers["location"]
+    r = klant.post(f"/bram/bericht/{ids['n4']}/uitschrijven", headers=FORM, follow_redirects=False)
+    assert "fout=" in r.headers["location"] and "geen+uitschrijfadres" in r.headers["location"]
+    pagina = klant.get("/bram", headers=KOP).text
+    assert pagina.count("uitgeschreven</span>") == 2 and 'href="https://krant.nl/afmelden"' in pagina
+    with db.pool.connection() as c:
+        assert c.execute("SELECT count(*) AS n FROM logboek WHERE persona = 'bram' AND actie = 'uitgeschreven'").fetchone()["n"] >= 2
+
+    # Verwijderen: één bericht vanuit het berichtscherm, en de aangevinkte in één keer.
+    r = klant.post(f"/bram/bericht/{ids['n5']}/verwijderen", headers=FORM, data={"terug": "bericht"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/bram?melding=") and "prullenbak" in urllib.parse.unquote_plus(r.headers["location"])
+    r = klant.post("/bram/archiveren", headers=FORM, data={"bericht": [str(ids["n6"]), str(ids["n1"])], "actie": "verwijderen"}, follow_redirects=False)
+    assert "2+berichten+verwijderd" in r.headers["location"] and weg == ["n5", "n6", "n1"]
+    with db.pool.connection() as c:
+        assert {r["extern_id"] for r in c.execute("SELECT extern_id FROM post_berichten WHERE status = 'weg'")} == {"n1", "n5", "n6"}

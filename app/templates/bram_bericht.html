@@ -12,7 +12,13 @@
   <div class="knoppen">
     <a class="knop" href="/bram#b{{ b.id }}">Terug naar de post</a>
     {% if b.link %}<a class="knop" href="{{ b.link }}" target="_blank" rel="noopener">Openen in {{ 'Gmail' if k.soort == 'google' else 'Outlook' }}</a>{% endif %}
-    {% if b.status == 'open' %}<form method="post" action="/bram/bericht/{{ b.id }}/archiveren" class="inline"><button class="knop" type="submit">Archiveren</button></form>{% endif %}
+    {% if b.status == 'open' %}<form method="post" class="inline"><input type="hidden" name="terug" value="bericht">
+      <button class="knop" formaction="/bram/bericht/{{ b.id }}/archiveren">Archiveren</button>
+      <button class="knop" formaction="/bram/bericht/{{ b.id }}/verwijderen" onclick="return confirm('Deze mail naar de prullenbak?')">Verwijderen</button>
+      {% if b.uitgeschreven %}<span class="label groen">uitgeschreven</span>
+      {% elif b.uitschrijf_link %}<a class="knop" href="{{ b.uitschrijf_link }}" target="_blank" rel="noopener noreferrer">Uitschrijven op de website</a>
+      {% else %}<button class="knop" formaction="/bram/bericht/{{ b.id }}/uitschrijven" onclick="return confirm('Uitschrijven bij deze afzender?')">Uitschrijven</button>{% endif %}
+    </form>{% endif %}
   </div>
 </section>
 {% if melding %}<p class="item">{{ melding }}</p>{% endif %}

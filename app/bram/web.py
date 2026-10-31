@@ -191,10 +191,12 @@ async def voorstel(request: Request, vid: int):
 async def bericht_actie(request: Request, bid: int, actie: str):
     """Archiveren, gelezen markeren of een label zetten, na Martijns klik."""
     controleer_herkomst(request)
-    if actie not in ("archiveren", "gelezen", "label"):
+    if actie not in ("archiveren", "gelezen", "label", "verwijderen", "uitschrijven"):
         raise HTTPException(404)
     f = await request.form()
     terug = "/bram" + (f"?account={int(f.get('account') or 0)}" if f.get("account") not in (None, "", "0") else "")
+    weg = actie in ("archiveren", "verwijderen")
+    vanuit_bericht = f.get("terug") == "bericht"
 
     def doe():
         with db.pool.connection() as c:
@@ -203,20 +205,22 @@ async def bericht_actie(request: Request, bid: int, actie: str):
     try:
         b, tekst = await asyncio.to_thread(doe)
     except (bronnen.BronFout, kluis.KluisFout) as e:
-        return _terug(terug, fout=str(e)[:300])
-    anker = "" if actie == "archiveren" else f"#b{bid}"
-    return _terug(terug + anker, melding=f"'{b['onderwerp'][:60]}': {tekst}.")
+        return _terug(f"/bram/bericht/{bid}" if vanuit_bericht else terug + f"#b{bid}", fout=str(e)[:300])
+    if vanuit_bericht and not weg:
+        return _terug(f"/bram/bericht/{bid}", melding=f"{tekst[:1].upper()}{tekst[1:]}.")
+    return _terug(terug + ("" if weg else f"#b{bid}"), melding=f"'{b['onderwerp'][:60]}': {tekst}.")
 
 
 @router.post("/bram/archiveren")
 async def archiveren(request: Request):
-    """Meerdere berichten tegelijk archiveren (de aangevinkte uit Kan weg)."""
+    """Meerdere berichten tegelijk archiveren of verwijderen (de aangevinkte uit Kan weg)."""
     controleer_herkomst(request)
     f = await request.form()
+    actie = "verwijderen" if f.get("actie") == "verwijderen" else "archiveren"
     ids = [int(x) for x in f.getlist("bericht") if str(x).isdigit()]
     terug = "/bram" + (f"?account={int(f.get('account') or 0)}" if f.get("account") not in (None, "", "0") else "")
     if not ids:
-        return _terug(terug, fout="Niets aangevinkt; er is niets gearchiveerd.")
+        return _terug(terug, fout=f"Niets aangevinkt; er is niets {'verwijderd' if actie == 'verwijderen' else 'gearchiveerd'}.")
 
     def doe():
         gelukt, fouten = 0, []
@@ -226,13 +230,13 @@ async def archiveren(request: Request):
                 if not b:
                     continue
                 try:
-                    sync.uitvoeren(c, b, "archiveren")
+                    sync.uitvoeren(c, b, actie)
                     gelukt += 1
                 except (bronnen.BronFout, kluis.KluisFout) as e:
                     fouten.append(f"{b['onderwerp'][:40]}: {e}")
         return gelukt, fouten
     gelukt, fouten = await asyncio.to_thread(doe)
-    tekst = f"{gelukt} bericht{'en' if gelukt != 1 else ''} gearchiveerd."
+    tekst = f"{gelukt} bericht{'en' if gelukt != 1 else ''} {'verwijderd' if actie == 'verwijderen' else 'gearchiveerd'}."
     if fouten:
         return _terug(terug, melding=tekst, fout="Niet gelukt: " + "; ".join(fouten[:3])[:300])
     return _terug(terug, melding=tekst)

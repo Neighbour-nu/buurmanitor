@@ -26,7 +26,8 @@ Het logo (twee buurhuizen) is eigen werk.
 
 - Bram (Post): de inbox van Gmail en Outlook in één postkamer, gesorteerd in Actie nodig, Lezen en Kan weg, met per
   bericht één regel en een voorstel. Per account kies je of Claude de inhoud mag lezen; anders sorteert Bram op regels.
-  Archiveren, labelen en gelezen markeren alleen na jouw klik. Per bericht kun je Bram iets vragen: hij leest de mail
+  Archiveren, labelen, gelezen markeren, verwijderen (naar de prullenbak) en uitschrijven bij nieuwsbrieven (met één
+  klik volgens RFC 8058, anders met een mail naar het uitschrijfadres) alleen na jouw klik. Per bericht kun je Bram iets vragen: hij leest de mail
   en de bijlagen (pdf, agenda-uitnodiging, tekst) en zet een antwoord, een afspraak (ook in de agenda van Sanne) of een
   herinnering klaar. Versturen of inplannen gebeurt pas na jouw klik; een antwoord kun je eerst aanpassen.
 

@@ -258,6 +258,9 @@ MIGRATIES = [
     # Een gesprek met Bram over één bericht, en wat Bram daarbij voorstelt: een antwoord versturen, een afspraak of
     # een herinnering in de agenda. Uitgevoerd wordt het pas na een klik van Martijn.
     "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS gesprek_id int REFERENCES gesprekken(id) ON DELETE SET NULL",
+    # Uitschrijven: wanneer Bram het deed, of de link als het alleen via de website van de afzender kan.
+    "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS uitgeschreven timestamptz",
+    "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS uitschrijf_link text NOT NULL DEFAULT ''",
     """CREATE TABLE IF NOT EXISTS post_voorstellen (
         id serial PRIMARY KEY,
         gesprek_id int REFERENCES gesprekken(id) ON DELETE CASCADE,

@@ -284,6 +284,13 @@ def uitvoeren(c, b, actie, label=""):
         c.execute("UPDATE post_berichten SET status = 'weg', gelezen = true, extern_id = coalesce(nullif(%s, ''), extern_id) WHERE id = %s",
                   (nieuw_id or "", b["id"]))
         return "gearchiveerd"
+    if actie == "verwijderen":
+        nieuw_id = bronnen.gmail_verwijder(tok, b["extern_id"]) if g else bronnen.ms_verwijder(tok, b["extern_id"])
+        c.execute("UPDATE post_berichten SET status = 'weg', gelezen = true, extern_id = coalesce(nullif(%s, ''), extern_id) WHERE id = %s",
+                  (nieuw_id or "", b["id"]))
+        return "naar de prullenbak (30 dagen terug te halen)" if g else "naar Verwijderde items"
+    if actie == "uitschrijven":
+        return uitschrijven(c, k, tok, b)
     if actie == "gelezen":
         (bronnen.gmail_gelezen if g else bronnen.ms_gelezen)(tok, b["extern_id"])
         c.execute("UPDATE post_berichten SET gelezen = true WHERE id = %s", (b["id"],))
@@ -300,3 +307,35 @@ def uitvoeren(c, b, actie, label=""):
                   (json.dumps([label]), b["id"]))
         return f"label {namen[label]}"
     raise bronnen.BronFout("Onbekende actie.")
+
+
+def uitschrijven(c, k, tok, b):
+    """Uitschrijven bij de afzender: met één klik als die dat aanbiedt, anders met een mail naar het uitschrijfadres.
+    Kan het alleen via de website, dan bewaart Bram de link zodat Martijn die zelf opent."""
+    g = k["soort"] == "google"
+    kop, post_kop = (bronnen.gmail_uitschrijfkoppen if g else bronnen.ms_uitschrijfkoppen)(tok, b["extern_id"])
+    wijze = bronnen.uitschrijfwijze(kop, post_kop)
+    hoe = None
+    if wijze["een_klik"]:
+        try:
+            bronnen.een_klik_uitschrijven(wijze["een_klik"])
+            hoe = "met één klik"
+        except bronnen.BronFout:
+            if not wijze["mailto"]:
+                raise
+    if not hoe and wijze["mailto"]:
+        m = wijze["mailto"]
+        if g:
+            bronnen.gmail_stuur(tok, k["account"], m["aan"], m["onderwerp"], m["tekst"])
+        else:
+            bronnen.ms_stuur(tok, m["aan"], m["onderwerp"], m["tekst"])
+        hoe = f"met een mail naar {m['aan']}"
+    if hoe:
+        c.execute("UPDATE post_berichten SET uitgeschreven = now() WHERE koppeling_id = %s AND van_adres = %s", (k["id"], b["van_adres"]))
+        c.execute("INSERT INTO logboek (persona, actie, details) VALUES ('bram', 'uitgeschreven', %s)",
+                  (json.dumps({"account": k["naam"], "afzender": b["van_adres"], "hoe": hoe}),))
+        return f"uitgeschreven {hoe}; het kan een paar dagen duren voor er niets meer komt"
+    if wijze["link"]:
+        c.execute("UPDATE post_berichten SET uitschrijf_link = %s WHERE id = %s", (wijze["link"], b["id"]))
+        return "uitschrijven kan alleen op de website van de afzender; open de link bij het bericht"
+    raise bronnen.BronFout("Deze mail heeft geen uitschrijfadres. Zoek de uitschrijflink onderaan de mail zelf.")

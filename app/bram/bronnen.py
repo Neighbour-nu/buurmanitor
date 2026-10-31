@@ -13,7 +13,9 @@ import datetime as dt
 import email.utils
 import html
 import re
+import urllib.error
 import urllib.parse
+import urllib.request
 
 from ..clara.bronnen import (MS_LOGIN, BronFout, NietGevonden, OpnieuwKoppelen, _http,  # noqa: F401
                              _id_token_gegevens, terugadres)
@@ -357,3 +359,96 @@ def ms_volledig(toegang, mid, met_bijlagen=True):
 def ms_antwoord(toegang, mid, tekst):
     """Antwoord aan de afzender; Outlook zet de oorspronkelijke mail eronder en bewaart het in Verzonden items."""
     _graph(toegang, f"/me/messages/{urllib.parse.quote(mid)}/reply", body={"comment": tekst}, methode="POST")
+
+
+# ---------------------------------------------------------------- verwijderen en uitschrijven (na een klik)
+
+def gmail_verwijder(toegang, mid):
+    """Naar de prullenbak (Gmail haalt hem daar na 30 dagen zelf weg). Niet definitief."""
+    _gmail(toegang, f"/messages/{mid}/trash", body={})
+
+
+def ms_verwijder(toegang, mid):
+    """Naar Verwijderde items. Outlook geeft het bericht daarbij een nieuw id."""
+    return _graph(toegang, f"/me/messages/{urllib.parse.quote(mid)}/move", body={"destinationId": "deleteditems"}, methode="POST").get("id", "")
+
+
+def gmail_uitschrijfkoppen(toegang, mid):
+    m = _gmail(toegang, f"/messages/{mid}?format=metadata&metadataHeaders=List-Unsubscribe&metadataHeaders=List-Unsubscribe-Post")
+    koppen = {h["name"].lower(): h["value"] for h in (m.get("payload") or {}).get("headers", [])}
+    return koppen.get("list-unsubscribe", ""), koppen.get("list-unsubscribe-post", "")
+
+
+def ms_uitschrijfkoppen(toegang, mid):
+    m = _graph(toegang, f"/me/messages/{urllib.parse.quote(mid)}?$select=internetMessageHeaders")
+    koppen = {(h.get("name") or "").lower(): h.get("value", "") for h in m.get("internetMessageHeaders") or []}
+    return koppen.get("list-unsubscribe", ""), koppen.get("list-unsubscribe-post", "")
+
+
+def uitschrijfwijze(kop, post_kop=""):
+    """Hoe je je uitschrijft volgens de koppen List-Unsubscribe (RFC 2369) en List-Unsubscribe-Post (RFC 8058).
+    Geeft {"een_klik": url, "mailto": {...}, "link": url}; wat er niet is, is None. Pure functie."""
+    adressen = re.findall(r"<([^>]+)>", kop or "") or [x.strip() for x in (kop or "").split(",") if x.strip()]
+    webs = [a for a in adressen if a.lower().startswith("https://")]
+    mail = next((a for a in adressen if a.lower().startswith("mailto:")), None)
+    uit = {"een_klik": None, "mailto": None, "link": webs[0] if webs else None}
+    if webs and "list-unsubscribe=one-click" in (post_kop or "").lower().replace(" ", ""):
+        uit["een_klik"] = webs[0]
+    if mail:
+        deel = urllib.parse.urlsplit(mail)
+        q = urllib.parse.parse_qs(deel.query)
+        adres = urllib.parse.unquote(deel.path)
+        if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", adres):
+            uit["mailto"] = {"aan": adres, "onderwerp": (q.get("subject") or ["unsubscribe"])[0][:200],
+                             "tekst": (q.get("body") or ["unsubscribe"])[0][:1000]}
+    return uit
+
+
+class _GeenDoorverwijzing(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **kw):  # noqa: D102
+        return None
+
+
+def _openbaar_adres(url):
+    """Alleen https naar een openbaar adres: nooit naar de server zelf of het interne netwerk (n8n, de database)."""
+    import ipaddress  # pylint: disable=import-outside-toplevel
+    import socket  # pylint: disable=import-outside-toplevel
+    deel = urllib.parse.urlsplit(url)
+    if deel.scheme != "https" or not deel.hostname:
+        return False
+    try:
+        adressen = {x[4][0] for x in socket.getaddrinfo(deel.hostname, deel.port or 443)}
+    except OSError:
+        return False
+    return bool(adressen) and all(ipaddress.ip_address(a.split("%")[0]).is_global for a in adressen)
+
+
+def een_klik_uitschrijven(url):
+    """Uitschrijven met één klik (RFC 8058): een POST met List-Unsubscribe=One-Click, zonder doorverwijzingen te volgen."""
+    if not _openbaar_adres(url):
+        raise BronFout("Dit uitschrijfadres is niet veilig of niet bereikbaar; uitschrijven kan via de link in de mail.")
+    opener = urllib.request.build_opener(_GeenDoorverwijzing)
+    verzoek = urllib.request.Request(url, data=b"List-Unsubscribe=One-Click", method="POST",
+                                     headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Buurmanitor/1.0 (Bram)"})
+    try:
+        with opener.open(verzoek, timeout=15) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        if 300 <= e.code < 400:
+            return e.code  # doorverwijzing na het uitschrijven: het verzoek is aangekomen
+        raise BronFout(f"De afzender weigerde het uitschrijven (fout {e.code}); probeer de link in de mail.") from e
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise BronFout(f"Het uitschrijfadres is niet bereikbaar ({getattr(e, 'reason', e)}).") from e
+
+
+def gmail_stuur(toegang, account, aan, onderwerp, tekst):
+    from email.message import EmailMessage  # pylint: disable=import-outside-toplevel
+    m = EmailMessage()
+    m["From"], m["To"], m["Subject"] = account, aan, onderwerp
+    m.set_content(tekst)
+    return _gmail(toegang, "/messages/send", body={"raw": base64.urlsafe_b64encode(m.as_bytes()).decode()}).get("id", "")
+
+
+def ms_stuur(toegang, aan, onderwerp, tekst):
+    _graph(toegang, "/me/sendMail", body={"message": {"subject": onderwerp, "body": {"contentType": "Text", "content": tekst},
+                                                      "toRecipients": [{"emailAddress": {"address": aan}}]}, "saveToSentItems": True}, methode="POST")

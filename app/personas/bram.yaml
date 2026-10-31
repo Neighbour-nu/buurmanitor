@@ -8,7 +8,7 @@ doet:
   - Leest de inbox van Gmail en Outlook en sorteert elk nieuw bericht in Actie nodig, Lezen of Kan weg.
   - Zet bij elk bericht één regel en een voorstel, met Claude als dat voor dat account mag, anders op regels.
   - Meldt een bericht dat vandaag of morgen om actie vraagt.
-  - Archiveert, labelt of markeert als gelezen, maar alleen na jouw klik.
+  - Archiveert, labelt, markeert als gelezen, verwijdert (naar de prullenbak) of schrijft je uit bij een nieuwsbrief, maar alleen na jouw klik.
 nooit:
   - Mail versturen, beantwoorden of definitief verwijderen.
   - Iets in je mailbox veranderen zonder jouw klik.
