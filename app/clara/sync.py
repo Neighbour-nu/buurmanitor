@@ -9,7 +9,7 @@ import threading
 import time
 
 from ..kern import config, meldingen, planner
-from . import analyse, bronnen, kluis, reis
+from . import analyse, bronnen, kluis, reis, spiegel
 
 INTERVAL = {"google": dt.timedelta(minutes=5), "microsoft": dt.timedelta(minutes=5), "ics": dt.timedelta(minutes=15),
             "raad": dt.timedelta(hours=1)}
@@ -27,9 +27,9 @@ def venster(nu=None):
 def instellingen(c):
     r = c.execute("SELECT waarde FROM instellingen WHERE sleutel = 'clara'").fetchone()
     try:
-        return {**analyse.STANDAARD, **reis.STANDAARD, **(json.loads(r["waarde"]) if r and r["waarde"] else {})}
+        return {**analyse.STANDAARD, **reis.STANDAARD, **spiegel.STANDAARD, **(json.loads(r["waarde"]) if r and r["waarde"] else {})}
     except ValueError:
-        return {**analyse.STANDAARD, **reis.STANDAARD}
+        return {**analyse.STANDAARD, **reis.STANDAARD, **spiegel.STANDAARD}
 
 
 def instellingen_opslaan(c, inst):
@@ -174,6 +174,8 @@ def afspraken(c, van, tot, met_verborgen=False):
     lijst = []
     for r in rijen:
         a = dict(r)
+        if spiegel.is_spiegel(a):  # blokken 'Bezet' van Clara zelf: geen echte afspraak
+            continue
         ag, aantal = agendas.get((a["koppeling_id"], a["agenda_id"]), (None, 0))
         # Naam van de agenda (zoals 'Sanne' of 'ZEROHERO') als een account er meer heeft.
         a["agenda_naam"] = ag["naam"] if ag and aantal > 1 else ""
@@ -250,6 +252,9 @@ def taak_agenda(c, forceer=False):
     if koppelingen(c, alleen_actief=True):
         melden(c)
         r = reistijd_bijwerken(c)
+        if r:
+            uitslag.append(r)
+        r = spiegel.bijwerken(c)
         if r:
             uitslag.append(r)
     return "; ".join(uitslag) or "niets aan de beurt"

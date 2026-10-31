@@ -144,4 +144,17 @@ MIGRATIES = [
         aangemaakt timestamptz NOT NULL DEFAULT now())""",
     # Voorstel van Clara voor een bepaalde agenda (bijvoorbeeld die van Sanne).
     "ALTER TABLE agenda_voorstellen ADD COLUMN IF NOT EXISTS agenda text NOT NULL DEFAULT ''",
+    # Beschikbaarheid delen: mag Clara in dit account blokken 'Bezet' zetten, en welke blokken staan er al.
+    "ALTER TABLE agenda_koppelingen ADD COLUMN IF NOT EXISTS spiegel boolean NOT NULL DEFAULT true",
+    """CREATE TABLE IF NOT EXISTS agenda_spiegel (
+        doel_koppeling int NOT NULL REFERENCES agenda_koppelingen(id) ON DELETE CASCADE,
+        bron text NOT NULL,
+        doel_agenda text NOT NULL,
+        extern_id text NOT NULL,
+        titel text NOT NULL DEFAULT '',
+        start timestamptz NOT NULL,
+        eind timestamptz NOT NULL,
+        voorlopig boolean NOT NULL DEFAULT false,
+        bijgewerkt timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (doel_koppeling, bron))""",
 ]

@@ -24,7 +24,7 @@
     </div>
     {% if k.agendas %}
       <table class="tabel">
-        <tr><th>Meelezen</th><th>Agenda</th><th>Domein</th><th title="Houden afspraken in deze agenda jouw tijd bezet? Zet uit voor bijvoorbeeld de agenda van Sanne.">Bezet voor mij</th>{% if k.schrijven %}<th>Standaard inplannen</th>{% endif %}</tr>
+        <tr><th>Meelezen</th><th>Agenda</th><th>Domein</th><th title="Houden afspraken in deze agenda jouw tijd bezet, en zet Clara ze door als je beschikbaarheid deelt? Zet uit voor bijvoorbeeld de agenda van Sanne.">Bezet voor mij</th>{% if k.schrijven %}<th>Standaard inplannen</th>{% endif %}</tr>
         {% for a in k.agendas %}
         <tr><td><input type="checkbox" name="aan_{{ a.id }}" value="1" {{ 'checked' if a.aan }}></td>
           <td>{% if a.kleur %}<span class="kleurbol" style="background: {{ a.kleur }}"></span>{% endif %}{{ a.naam }}{% if a.primair %} <span class="label">hoofdagenda</span>{% endif %}{% if not a.schrijven %} <span class="noot">(alleen lezen)</span>{% endif %}</td>
@@ -122,6 +122,34 @@
     <button class="knop" type="submit">Icoon en kleur bijwerken</button>
   </form>
   {% endif %}
+</section>
+
+<section class="kaart" id="beschikbaarheid">
+  <h2>Beschikbaarheid delen</h2>
+  <p class="noot">Clara zet je afspraken als blok "Bezet" in je andere agenda's, zodat collega's in hun eigen Outlook of
+    Google zien wanneer je er niet bent. Agenda's die niet "bezet voor mij" zijn (zoals die van Sanne) blijven erbuiten,
+    net als vrije tijd, afgewezen en nog niet beantwoorde uitnodigingen, verborgen afspraken, hele dagen en de openbare
+    raadsagenda. De blokken zijn privé, zonder herinnering, en komen in de agenda bij "Standaard inplannen". Clara past
+    alleen blokken aan die ze zelf heeft gezet.</p>
+  {% if not inst.spiegel_aan %}<p class="item">Doorzetten staat uit. Gebruik je nog een andere dienst die je agenda's
+    synchroniseert, zoals CalendarBridge? Zet die eerst uit en laat hem zijn blokken weghalen. Anders nemen de twee
+    elkaars blokken over.</p>{% endif %}
+  <form method="post" action="/clara/spiegel">
+    <table class="tabel">
+      <tr><th>Doorzetten</th><th>Account</th><th>Stand</th></tr>
+      {% for p in spiegelplan %}
+      <tr><td>{% if p.kan %}<input type="checkbox" name="doel_{{ p.k.id }}" value="1" {{ 'checked' if p.k.spiegel }}>{% endif %}</td>
+        <td>{{ p.k.naam }}{% if p.kan %} <span class="noot">in agenda {{ p.agenda }}</span>{% else %}<br><span class="noot">{{ p.uitleg }}</span>{% endif %}</td>
+        <td class="noot">{% set st = spiegelstatus.get('doelen', {}).get(p.k.id|string) %}{% if p.staan %}{{ p.staan|length }} blok{{ 'ken' if p.staan|length != 1 }} van Clara{% elif not inst.spiegel_aan and p.kan %}uit{% endif %}{% if inst.spiegel_aan and p.kan and p.k.spiegel %}{% if p.wens|length != p.staan|length %} · straks {{ p.wens|length }}{% endif %}{% endif %}{% if st and st.startswith('fout') %}<br><span class="urgent">{{ st }}</span>{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+    <div class="velden">
+      <label>Wat anderen zien <select name="spiegel_titel"><option value="bezet" {{ 'selected' if inst.spiegel_titel != 'titel' }}>"Bezet"</option><option value="titel" {{ 'selected' if inst.spiegel_titel == 'titel' }}>De titel van de afspraak</option></select></label>
+      <label class="vink"><input type="checkbox" name="spiegel_aan" value="1" {{ 'checked' if inst.spiegel_aan }}> Automatisch doorzetten</label>
+      <button class="knop vol" type="submit">Opslaan</button>
+    </div>
+    {% if spiegelstatus.bijgewerkt %}<p class="noot">Laatste ronde {{ geleden(spiegelstatus.bijgewerkt) }}.</p>{% endif %}
+  </form>
 </section>
 
 <section class="kaart" id="verbergen">

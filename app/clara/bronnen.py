@@ -24,6 +24,10 @@ class BronFout(Exception):
     """Ophalen of schrijven mislukt; de melding is in gewone taal."""
 
 
+class NietGevonden(BronFout):
+    """De afspraak bestaat niet (meer) in de bron."""
+
+
 class OpnieuwKoppelen(BronFout):
     """De toegang is ingetrokken of verlopen: Martijn moet deze agenda opnieuw koppelen."""
 
@@ -79,6 +83,8 @@ def _http(url, data=None, headers=None, methode=None, body=None, timeout=30, soo
             j = json.loads(tekst)
         except ValueError:
             j = {}
+        if not isinstance(j, dict):
+            j = {}
         fout = j.get("error")
         if isinstance(fout, dict):  # Google- en Graph-API's: {"error": {"code": ..., "message": ...}}
             code, uitleg = str(fout.get("code") or fout.get("status") or ""), str(fout.get("message") or "")
@@ -90,6 +96,8 @@ def _http(url, data=None, headers=None, methode=None, body=None, timeout=30, soo
             raise OpnieuwKoppelen(f"De toegang tot {soort} is verlopen of ingetrokken. Koppel deze agenda opnieuw.") from e
         if e.code == 401:
             raise OpnieuwKoppelen(f"{soort} accepteert de toegang niet meer. Koppel deze agenda opnieuw.") from e
+        if e.code in (404, 410):
+            raise NietGevonden(f"{soort}: niet gevonden ({e.code}).") from e
         raise BronFout(f"{soort} gaf fout {e.code}: {(uitleg or code or tekst)[:200]}") from e
     except (urllib.error.URLError, TimeoutError) as e:
         raise BronFout(f"{soort} is nu niet bereikbaar ({getattr(e, 'reason', e)}).") from e
@@ -232,6 +240,30 @@ def google_wijzig(toegang, agenda_id, extern_id, titel=None, kleur=None):
               headers={"Authorization": f"Bearer {toegang}"}, methode="PATCH", body=body, soort="Google Agenda")
 
 
+def google_blok(toegang, agenda_id, titel, start, eind, voorlopig=False, extern_id=None):
+    """Een blok 'Bezet' van Clara maken of bijwerken (beschikbaarheid delen): privé, bezet, zonder herinnering."""
+    from .spiegel import OMSCHRIJVING  # pylint: disable=import-outside-toplevel
+    body = {"summary": titel, "description": OMSCHRIJVING, "visibility": "private", "transparency": "opaque",
+            "reminders": {"useDefault": False, "overrides": []}, "colorId": "8",
+            "start": {"dateTime": start.isoformat(), "timeZone": "Europe/Amsterdam"},
+            "end": {"dateTime": eind.isoformat(), "timeZone": "Europe/Amsterdam"}}
+    if voorlopig:
+        body["summary"] = titel + " (voorlopig)"
+    pad = f"{GOOGLE_API}/calendars/{urllib.parse.quote(agenda_id, safe='')}/events"
+    if extern_id:
+        j = _http(f"{pad}/{urllib.parse.quote(extern_id, safe='')}", headers={"Authorization": f"Bearer {toegang}"},
+                  methode="PATCH", body=body, soort="Google Agenda")
+    else:
+        j = _http(pad, headers={"Authorization": f"Bearer {toegang}"}, body=body, soort="Google Agenda")
+    return j.get("id") or extern_id or ""
+
+
+def google_verwijder(toegang, agenda_id, extern_id):
+    """Alleen voor blokken die Clara zelf maakte."""
+    _http(f"{GOOGLE_API}/calendars/{urllib.parse.quote(agenda_id, safe='')}/events/{urllib.parse.quote(extern_id, safe='')}",
+          headers={"Authorization": f"Bearer {toegang}"}, methode="DELETE", soort="Google Agenda")
+
+
 # ---------------------------------------------------------------- Microsoft 365 (Outlook)
 
 MS_LOGIN = "https://login.microsoftonline.com"
@@ -332,6 +364,28 @@ def ms_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None)
                   "start": {"dateTime": start.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"},
                   "end": {"dateTime": eind.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"}})
     return j.get("id", "")
+
+
+def ms_blok(toegang, agenda_id, titel, start, eind, voorlopig=False, extern_id=None):
+    """Een blok 'Bezet' van Clara maken of bijwerken (beschikbaarheid delen): privé, zonder herinnering."""
+    from .spiegel import OMSCHRIJVING  # pylint: disable=import-outside-toplevel
+    body = {"subject": titel, "body": {"contentType": "text", "content": OMSCHRIJVING},
+            "showAs": "tentative" if voorlopig else "busy", "sensitivity": "private", "isReminderOn": False,
+            "start": {"dateTime": start.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"},
+            "end": {"dateTime": eind.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"}}
+    if extern_id:
+        j = _http(f"{GRAPH}/me/events/{urllib.parse.quote(extern_id, safe='')}", headers={"Authorization": f"Bearer {toegang}"},
+                  methode="PATCH", body=body, soort="Outlook")
+    else:
+        j = _http(f"{GRAPH}/me/calendars/{urllib.parse.quote(agenda_id, safe='')}/events",
+                  headers={"Authorization": f"Bearer {toegang}"}, body=body, soort="Outlook")
+    return j.get("id") or extern_id or ""
+
+
+def ms_verwijder(toegang, agenda_id, extern_id):  # noqa: ARG001
+    """Alleen voor blokken die Clara zelf maakte."""
+    _http(f"{GRAPH}/me/events/{urllib.parse.quote(extern_id, safe='')}", headers={"Authorization": f"Bearer {toegang}"},
+          methode="DELETE", soort="Outlook")
 
 
 # ---------------------------------------------------------------- Agendalink (ICS), alleen lezen

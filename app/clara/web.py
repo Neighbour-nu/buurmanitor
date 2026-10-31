@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from .. import personas
 from ..kern import claude, config, db
 from ..kern.web import DAGEN, controleer_herkomst, ctx, templates
-from . import analyse, bronnen, gesprek, kluis, reis, sync
+from . import analyse, bronnen, gesprek, kluis, reis, spiegel, sync
 
 router = APIRouter()
 DOMEINEN = config.DOMEINEN
@@ -266,6 +266,8 @@ def koppelingen_scherm(request: Request, melding: str = "", fout: str = ""):
         inst = sync.instellingen(c)
         regels = sync.verbergregels(c)
         vertrekpunt_label = (reis.adres(c, inst["vertrekpunt"], alleen_cache=True) or {}).get("label", "") if inst.get("vertrekpunt") else ""
+        spiegelplan = spiegel.plan(c)
+        spiegelstatus = spiegel.status(c)
         reisblokken = c.execute("""SELECT count(*) AS n FROM agenda_items i JOIN agenda_koppelingen k ON k.id = i.koppeling_id
                                    WHERE k.soort = 'google' AND i.eind > now() AND i.omschrijving LIKE %s""",
                                 (reis.MARKER + "%",)).fetchone()["n"]
@@ -274,7 +276,7 @@ def koppelingen_scherm(request: Request, melding: str = "", fout: str = ""):
     return templates.TemplateResponse("clara_koppelingen.html", ctx(
         request, "clara", koppelingen=lijst, aantallen=aantallen, inst=inst, melding=melding, fout=fout, regels=regels,
         reis_actief=reis.actief(), vertrekpunt_label=vertrekpunt_label, reis_dienst=reis.dienst_naam(),
-        kleuren=bronnen.GOOGLE_KLEUREN, reisblokken=reisblokken,
+        kleuren=bronnen.GOOGLE_KLEUREN, reisblokken=reisblokken, spiegelplan=spiegelplan, spiegelstatus=spiegelstatus,
         kluis_ok=kluis.actief(), google_ok=bool(config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET),
         ms_ok=bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET), politiek_ok=config.POLITIEK_ACTIEF,
         beheerder_url=bronnen.ms_beheerder_url() if config.MS_CLIENT_ID else "", DAGEN=DAGEN,
@@ -526,6 +528,24 @@ async def reistijd_instellingen(request: Request):
     if not gevonden:
         return _terug("/clara/koppelingen", fout=f"Dit adres vond {reis.dienst_naam()} niet. Probeer straat, huisnummer, postcode en plaats.")
     return _terug("/clara/koppelingen", melding=f"Vertrekpunt gevonden: {gevonden['label']}. Clara rekent de reistijd binnen vijf minuten uit.")
+
+
+@router.post("/clara/spiegel")
+async def spiegel_instellingen(request: Request):
+    """Beschikbaarheid delen: aan/uit, wat anderen zien, en naar welke accounts."""
+    controleer_herkomst(request)
+    f = await request.form()
+    with db.pool.connection() as c:
+        inst = sync.instellingen(c)
+        aan = f.get("spiegel_aan") == "1"
+        inst.update({"spiegel_aan": aan, "spiegel_titel": "titel" if f.get("spiegel_titel") == "titel" else "bezet"})
+        sync.instellingen_opslaan(c, inst)
+        for k in sync.koppelingen(c):
+            if spiegel.rol(k)[0] or f.get(f"toon_{k['id']}"):
+                c.execute("UPDATE agenda_koppelingen SET spiegel = %s WHERE id = %s", (f.get(f"doel_{k['id']}") == "1", k["id"]))
+    return _terug("/clara/koppelingen#beschikbaarheid", melding=(
+        "Opgeslagen. Clara zet je beschikbaarheid binnen vijf minuten door (de eerste keer in een paar rondes)." if aan
+        else "Opgeslagen. Doorzetten staat uit; blokken die Clara al zette haalt ze binnen vijf minuten weg."))
 
 
 @router.post("/clara/reistijd/bijwerken")

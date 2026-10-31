@@ -846,3 +846,192 @@ def test_agenda_van_sanne_kleur_niet_bezet_en_inplannen(klant, monkeypatch):
     assert f'<option value="{kid}|primary" selected>' not in pagina
     klant.post(f"/clara/voorstel/{vid}", headers=FORM, data={"actie": "inplannen", "doel": f"{kid}|sanne"})
     assert gemaakt == [("sanne", "Tandarts Sanne")]
+
+
+# ---------------------------------------------------------------- beschikbaarheid delen (in plaats van CalendarBridge)
+
+def test_blok_bezet_verzoeken(monkeypatch):
+    verzoeken = []
+    monkeypatch.setattr(bronnen, "_http", lambda url, **kw: verzoeken.append((url, kw)) or {"id": "b1"})
+    assert bronnen.google_blok("tok", "primary", "Bezet", t(3, 9), t(3, 10)) == "b1"
+    bronnen.google_blok("tok", "primary", "Bezet", t(3, 9), t(3, 10), voorlopig=True, extern_id="b1")
+    bronnen.google_verwijder("tok", "primary", "b1")
+    g = verzoeken[0][1]["body"]
+    assert g["visibility"] == "private" and g["transparency"] == "opaque" and g["reminders"] == {"useDefault": False, "overrides": []}
+    assert g["description"].startswith("[clara-spiegel]") and "methode" not in verzoeken[0][1]
+    assert verzoeken[1][0].endswith("/events/b1") and verzoeken[1][1]["methode"] == "PATCH" and verzoeken[1][1]["body"]["summary"] == "Bezet (voorlopig)"
+    assert verzoeken[2][1]["methode"] == "DELETE"
+    verzoeken.clear()
+    bronnen.ms_blok("tok", "cal", "Bezet", t(3, 9), t(3, 10))
+    bronnen.ms_blok("tok", "cal", "Bezet", t(3, 9), t(3, 10), voorlopig=True, extern_id="e/1")
+    bronnen.ms_verwijder("tok", "cal", "e/1")
+    m = verzoeken[0][1]["body"]
+    assert verzoeken[0][0].endswith("/me/calendars/cal/events") and m["sensitivity"] == "private" and m["isReminderOn"] is False
+    assert m["showAs"] == "busy" and m["start"]["dateTime"] == "2026-11-03T09:00:00" and m["body"]["content"].startswith("[clara-spiegel]")
+    assert verzoeken[1][0].endswith("/me/events/e%2F1") and verzoeken[1][1]["body"]["showAs"] == "tentative"
+    assert verzoeken[2][1]["methode"] == "DELETE"
+
+
+def test_niet_gevonden_is_eigen_fout(monkeypatch):
+    _http_fout(monkeypatch, 410, {"error": {"code": 410, "message": "Resource has been deleted"}})
+    with pytest.raises(bronnen.NietGevonden):
+        bronnen.google_verwijder("tok", "primary", "x")
+
+
+def test_beschikbaarheid_doorzetten(klant, monkeypatch):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    from app.clara import spiegel, sync  # pylint: disable=import-outside-toplevel
+    nu = dt.datetime.now(TZ)
+    morgen = _nu_dag(1, 10)
+    log = []
+    teller = iter(range(1000))
+
+    def maak(soort):
+        def f(tok, agenda_id, titel, start, eind, voorlopig=False, extern_id=None):
+            log.append((soort, "wijzig" if extern_id else "nieuw", agenda_id, titel, start, voorlopig))
+            return extern_id or f"{soort}{next(teller)}"
+        return f
+
+    def weg(soort):
+        return lambda tok, agenda_id, extern_id: log.append((soort, "weg", agenda_id, extern_id))
+    monkeypatch.setattr(sync, "toegang", lambda c, k: "tok")
+    monkeypatch.setattr(bronnen, "google_blok", maak("g"))
+    monkeypatch.setattr(bronnen, "ms_blok", maak("m"))
+    monkeypatch.setattr(bronnen, "google_verwijder", weg("g"))
+    monkeypatch.setattr(bronnen, "ms_verwijder", weg("m"))
+
+    def item(kid, agenda, eid, titel, start, uur=1, **kw):
+        c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, ical_uid, titel, start, eind, heledag, status, vrij,
+                     antwoord, omschrijving) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                  (kid, agenda, eid, kw.get("uid", ""), titel, start, start + dt.timedelta(hours=uur), kw.get("heledag", False),
+                   kw.get("status", "bevestigd"), kw.get("vrij", False), kw.get("antwoord", "eigen"), kw.get("omschrijving", "")))
+
+    with db.pool.connection() as c:
+        g = c.execute("SELECT * FROM agenda_koppelingen WHERE soort = 'google'").fetchone()
+        c.execute("DELETE FROM agenda_koppelingen WHERE soort <> 'google'")
+        c.execute("DELETE FROM agenda_items")
+        c.execute("DELETE FROM agenda_spiegel")
+        c.execute("UPDATE agenda_koppelingen SET schrijfagenda = 'primary', fout = NULL, spiegel = true, actief = true WHERE id = %s", (g["id"],))
+        ag = [{"id": "cal", "naam": "Agenda", "primair": True, "schrijven": True, "aan": True, "bezet": True}]
+        ms = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, domein, schrijven, agendas, schrijfagenda)
+                          VALUES ('microsoft', 'IV-professional', 'fbim', true, %s, 'cal') RETURNING id""", (json.dumps(ag),)).fetchone()["id"]
+        lees = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, domein, schrijven, agendas, schrijfagenda)
+                            VALUES ('microsoft', 'Upper Spire', 'upperspire', false, %s, '') RETURNING id""", (json.dumps(ag),)).fetchone()["id"]
+        ics = c.execute("INSERT INTO agenda_koppelingen (soort, naam, domein) VALUES ('ics', 'Gemeenteraad', 'politiek') RETURNING id").fetchone()["id"]
+        gid = g["id"]
+        item(gid, "primary", "p1", "Tandarts", morgen)
+        item(gid, "primary", "p2", "Werkplek", morgen + dt.timedelta(hours=2), vrij=True)
+        item(gid, "primary", "p3", "Verjaardag", morgen, uur=24, heledag=True)
+        item(gid, "primary", "p4", "Nog beantwoorden", morgen + dt.timedelta(hours=3), antwoord="geen")
+        item(gid, "primary", "p5", "Whaller Bestuur", morgen + dt.timedelta(hours=4), omschrijving="Whaller Bestuursvergadering")
+        c.execute("UPDATE agenda_items SET organisator = 'Whaller Event' WHERE extern_id = 'p5'")
+        item(gid, "primary", "p6", "Busy", morgen + dt.timedelta(hours=5), omschrijving="Created by CalendarBridge")
+        item(gid, "sanne", "s1", "Zwemles", morgen)
+        item(gid, "zh", "z1", "Keepersavond", morgen + dt.timedelta(days=1))  # agenda leest niet mee
+        item(ms, "cal", "m1", "Klantoverleg", morgen + dt.timedelta(days=2), status="voorlopig")
+        item(ms, "cal", "m2", "Gedeeld overleg", morgen + dt.timedelta(days=3), uid="GEDEELD@x")
+        item(gid, "primary", "p7", "Gedeeld overleg", morgen + dt.timedelta(days=3), uid="gedeeld@X")
+        item(ics, "", "r1", "Commissie", morgen + dt.timedelta(days=4))
+        item(ms, "cal", "oud", "Bezet", morgen + dt.timedelta(days=5), omschrijving=spiegel.OMSCHRIJVING)  # blok van Clara zelf
+
+        # Uit: niets gebeurt, maar het scherm laat zien wat er zou komen.
+        assert spiegel.bijwerken(c) is None and not log
+    pagina = klant.get("/clara/koppelingen", headers=KOP).text
+    assert "Beschikbaarheid delen" in pagina and "CalendarBridge" in pagina
+    assert "koppel opnieuw met lezen en schrijven" in pagina and "agendalink: alleen lezen" in pagina
+    assert f'name="doel_{ms}"' in pagina and f'name="doel_{lees}"' not in pagina
+
+    assert klant.post("/clara/spiegel", headers=KOP, data={"spiegel_aan": "1"}).status_code == 403
+    r = klant.post("/clara/spiegel", headers=FORM, follow_redirects=False,
+                   data={"spiegel_aan": "1", "spiegel_titel": "bezet", f"doel_{gid}": "1", f"doel_{ms}": "1"})
+    assert r.status_code == 303 and "binnen+vijf+minuten" in r.headers["location"]
+
+    with db.pool.connection() as c:
+        assert "beschikbaarheid" in spiegel.bijwerken(c)
+        naar_ms = sorted((x[3], x[4]) for x in log if x[0] == "m")
+        naar_g = sorted((x[3], x[4], x[5]) for x in log if x[0] == "g")
+        # Naar IV-professional: de tandarts, het gedeelde overleg niet (staat er al) en de commissie uit de agendalink.
+        assert naar_ms == [("Bezet", morgen), ("Bezet", morgen + dt.timedelta(days=4))], naar_ms
+        # Naar Google: het voorlopige klantoverleg en de commissie; niet het blok dat Clara zelf in Outlook zette.
+        assert naar_g == [("Bezet", morgen + dt.timedelta(days=2), True), ("Bezet", morgen + dt.timedelta(days=4), False)], naar_g
+        assert all(x[2] == ("cal" if x[0] == "m" else "primary") for x in log)
+        # Nog een ronde: niets meer te doen.
+        log.clear()
+        assert spiegel.bijwerken(c) is None and not log
+        # De blokken van Clara staan niet in de week en tellen niet als dubbele boeking.
+        item(ms, "cal", "m-blok", "Bezet", morgen, omschrijving=spiegel.OMSCHRIJVING)
+        titels = [a["titel"] for a in sync.afspraken(c, morgen - dt.timedelta(hours=1), morgen + dt.timedelta(days=6))]
+        assert "Bezet" not in titels and "Tandarts" in titels
+        assert spiegel.bijwerken(c) is None and not log
+
+        # Afspraak verschoven: blok gaat mee. Afspraak weg: blok weg. Met de hand verwijderd blok: opnieuw.
+        c.execute("UPDATE agenda_items SET start = start + interval '1 hour', eind = eind + interval '1 hour' WHERE extern_id = 'p1'")
+        c.execute("DELETE FROM agenda_items WHERE extern_id = 'r1'")
+        spiegel.bijwerken(c)
+        soorten = sorted((x[0], x[1]) for x in log)
+        assert soorten == [("g", "weg"), ("m", "weg"), ("m", "wijzig")], soorten
+        log.clear()
+
+        def kwijt(*a, **kw):
+            if kw.get("extern_id"):
+                raise bronnen.NietGevonden("weg")
+            return "g-opnieuw"
+        monkeypatch.setattr(bronnen, "google_blok", kwijt)
+        c.execute("UPDATE agenda_items SET status = 'bevestigd' WHERE extern_id = 'm1'")
+        spiegel.bijwerken(c)
+        assert c.execute("SELECT extern_id FROM agenda_spiegel WHERE doel_koppeling = %s", (gid,)).fetchone()["extern_id"] == "g-opnieuw"
+        monkeypatch.setattr(bronnen, "google_blok", maak("g"))
+
+        # Titel tonen in plaats van "Bezet".
+        inst = sync.instellingen(c)
+        sync.instellingen_opslaan(c, {**inst, "spiegel_titel": "titel"})
+        spiegel.bijwerken(c)
+        assert sorted(x[3] for x in log) == ["Klantoverleg", "Tandarts"]
+        log.clear()
+    pagina = klant.get("/clara/koppelingen", headers=KOP).text
+    assert "1 blok van Clara" in pagina and "Laatste ronde" in pagina
+
+    # Eén doel uit: daar gaan de blokken weg. Alles uit: overal weg.
+    klant.post("/clara/spiegel", headers=FORM, data={"spiegel_aan": "1", "spiegel_titel": "bezet", f"doel_{gid}": "1"})
+    with db.pool.connection() as c:
+        spiegel.bijwerken(c)
+        assert [x[:2] for x in log if x[1] == "weg"] == [("m", "weg")]
+        log.clear()
+    klant.post("/clara/spiegel", headers=FORM, data={"spiegel_titel": "bezet", f"doel_{gid}": "1", f"doel_{ms}": "1"})
+    with db.pool.connection() as c:
+        spiegel.bijwerken(c)
+        assert [x[:2] for x in log] == [("g", "weg")]
+        assert c.execute("SELECT count(*) AS n FROM agenda_spiegel").fetchone()["n"] == 0
+        c.execute("DELETE FROM agenda_koppelingen WHERE soort <> 'google'")
+        c.execute("DELETE FROM instellingen WHERE sleutel LIKE 'clara%%'")
+
+
+def test_spiegel_fout_bij_een_doel_houdt_de_rest_niet_op(klant, monkeypatch):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    from app.clara import spiegel, sync  # pylint: disable=import-outside-toplevel
+    morgen = _nu_dag(1, 10)
+    monkeypatch.setattr(sync, "toegang", lambda c, k: "tok")
+
+    def kapot(*a, **kw):
+        raise bronnen.BronFout("Outlook gaf fout 403: Access is denied")
+    gemaakt = []
+    monkeypatch.setattr(bronnen, "ms_blok", kapot)
+    monkeypatch.setattr(bronnen, "google_blok", lambda *a, **kw: gemaakt.append(a[1]) or "g1")
+    with db.pool.connection() as c:
+        g = c.execute("SELECT * FROM agenda_koppelingen WHERE soort = 'google'").fetchone()
+        ag = [{"id": "cal", "naam": "Agenda", "primair": True, "schrijven": True, "aan": True, "bezet": True}]
+        ms = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, schrijven, agendas, schrijfagenda)
+                          VALUES ('microsoft', 'Raad', true, %s, 'cal') RETURNING id""", (json.dumps(ag),)).fetchone()["id"]
+        c.execute("DELETE FROM agenda_items")
+        c.execute("DELETE FROM agenda_spiegel")
+        for kid, agenda, titel, start in ((g["id"], "primary", "Eigen", morgen), (ms, "cal", "Raadsvergadering", morgen + dt.timedelta(days=1))):
+            c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind)
+                         VALUES (%s, %s, %s, %s, %s, %s)""", (kid, agenda, titel, titel, start, start + dt.timedelta(hours=1)))
+        sync.instellingen_opslaan(c, {**sync.instellingen(c), "spiegel_aan": True})
+        uitslag = spiegel.bijwerken(c)
+        assert "Raad: Outlook gaf fout 403" in uitslag and gemaakt == ["primary"]
+        assert c.execute("SELECT count(*) AS n FROM meldingen WHERE titel LIKE 'Beschikbaarheid naar Raad%%'").fetchone()["n"] == 1
+        c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (ms,))
+        c.execute("DELETE FROM agenda_items")
+        c.execute("DELETE FROM agenda_spiegel")
+        c.execute("DELETE FROM instellingen WHERE sleutel LIKE 'clara%%'")
