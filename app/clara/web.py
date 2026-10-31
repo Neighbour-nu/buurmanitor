@@ -1013,8 +1013,8 @@ async def verwijderen(request: Request, item_id: int):
 RAAD_MARKER = "[clara-raad:"
 
 
-def _raadsbronnen(c):
-    return [k for k in sync.koppelingen(c, alleen_actief=True) if k["soort"] in ("raad", "ics")]
+def _raadsbronnen(c, ook_uit=False):
+    return [k for k in sync.koppelingen(c, alleen_actief=not ook_uit) if k["soort"] in ("raad", "ics")]
 
 
 @router.get("/clara/raadsagenda", response_class=HTMLResponse)
@@ -1042,9 +1042,28 @@ def raadsagenda(request: Request, melding: str = "", fout: str = ""):
             (e["start"] == i["start"] and " ".join((e["titel"] or "").lower().split()) == t)
             or (e.get("domein") == "politiek" and abs((e["start"] - i["start"]).total_seconds()) <= 45 * 60) for e in eigen)
     standaard = next((w for w, _l, d in doelen if d == "politiek"), doelen[0][0] if doelen else "")
+    # Per bron laten zien wat er is opgehaald (en of het lukte), zodat een lege lijst te verklaren is.
+    with db.pool.connection() as c:
+        alle = _raadsbronnen(c, ook_uit=True)
+        tellen = {r["koppeling_id"]: r for r in c.execute("""SELECT koppeling_id, count(*) AS alles,
+                                                               count(*) FILTER (WHERE eind > %s) AS komend
+                                                             FROM agenda_items WHERE koppeling_id = ANY(%s) GROUP BY koppeling_id""",
+                                                          (nu, [k["id"] for k in alle] or [0])).fetchall()}
+    status = [{"k": k, "alles": tellen.get(k["id"], {}).get("alles", 0), "komend": tellen.get(k["id"], {}).get("komend", 0)} for k in alle]
     return templates.TemplateResponse("clara_raadsagenda.html", ctx(
         request, "clara", items=items, bronnen=bronnen_, doelen=doelen, standaard=standaard, tz=tz, DAGEN=DAGEN,
-        melding=melding, fout=fout, politiek_ok=config.POLITIEK_ACTIEF))
+        melding=melding, fout=fout, politiek_ok=config.POLITIEK_ACTIEF, status=status,
+        heeft_raad=any(k["soort"] == "raad" for k in alle)))
+
+
+@router.post("/clara/raadsagenda/vernieuwen")
+async def raadsagenda_vernieuwen(request: Request):
+    """De raadsagenda en de agendalinks nu meteen opnieuw ophalen."""
+    controleer_herkomst(request)
+    with db.pool.connection() as c:
+        ids = [k["id"] for k in _raadsbronnen(c)]
+    uitslag = [u for kid in ids if (u := await asyncio.to_thread(_sync_los, kid))]
+    return _terug("/clara/raadsagenda", melding=("Opgehaald. " + "; ".join(uitslag)) if uitslag else "Er is geen actieve raadsagenda of agendalink.")
 
 
 @router.post("/clara/raadsagenda")

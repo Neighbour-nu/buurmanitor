@@ -6,13 +6,29 @@
   Vink aan wat je in je eigen agenda wilt. <a href="/clara">Terug naar de agenda</a></p>
 {% if melding %}<p class="item">{{ melding }}</p>{% endif %}
 {% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+{% if status %}
+<section class="kaart">
+  <h2><span>Bronnen</span>
+    <form method="post" action="/clara/raadsagenda/vernieuwen" class="inline"><button class="knop klein" type="submit">Nu ophalen</button></form></h2>
+  {% for s in status %}
+  <p class="noot"><b>{{ s.k.naam }}</b> ({{ 'Notubiz' if s.k.soort == 'raad' else 'agendalink' }}){% if not s.k.actief %} · <span class="label">niet actief</span>{% endif %}
+    · {{ s.komend }} komende vergadering{{ 'en' if s.komend != 1 }}{% if s.alles != s.komend %} ({{ s.alles }} in totaal, ook voorbije){% endif %}
+    · {% if s.k.laatst %}opgehaald {{ geleden(s.k.laatst) }}{% else %}nog niet opgehaald{% endif %}
+    {% if s.k.fout %}<br><span class="label rood">fout</span> {{ s.k.fout }}{% endif %}</p>
+  {% endfor %}
+  {% if not heeft_raad and politiek_ok %}
+  <form method="post" action="/clara/koppel/raad" class="knoppenrij"><input type="hidden" name="domein" value="politiek">
+    <span class="noot">De openbare raadsagenda (Notubiz) is nog niet gekoppeld.</span> <button class="knop klein vol" type="submit">Raadsagenda koppelen</button></form>
+  {% endif %}
+</section>
+{% endif %}
 <section class="kaart">
   {% if not bronnen %}
     <p class="item">Er is nog geen raadsagenda gekoppeld. Koppel de raadsagenda (Notubiz){% if not politiek_ok %} of een agendalink{% endif %} bij
       <a href="/clara/koppelingen">Agenda-instellingen</a>. Voor Bundeling: kopieer in Bundeling de agendalink (iCal of 'agenda abonneren') en voeg hem toe
       als agendalink met de naam Bundeling.</p>
   {% elif not items %}
-    <p class="noot">Er staan de komende acht weken geen vergaderingen in de raadsagenda.</p>
+    <p class="noot">Er staan de komende acht weken geen vergaderingen in deze bronnen. Kijk hierboven of het ophalen lukt, of klik op Nu ophalen.</p>
   {% elif not doelen %}
     <p class="item">Om vergaderingen over te nemen is een eigen Google- of Microsoft-agenda met schrijfrechten nodig.</p>
   {% else %}
