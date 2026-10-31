@@ -92,6 +92,11 @@ def _http(url, data=None, headers=None, methode=None, body=None, timeout=30, soo
             code, uitleg = str(fout or ""), str(j.get("error_description") or "")
         if any(t in tekst for t in ("AADSTS65001", "AADSTS90094", "AADSTS90008")):
             raise BronFout(f"Voor {soort} is toestemming van de beheerder van die organisatie nodig.") from e
+        if code == "invalid_client" or any(t in tekst for t in ("AADSTS7000215", "AADSTS7000222", "AADSTS700016")):
+            aad = re.search(r"AADSTS\d+", tekst)
+            raise BronFout(f"{soort} accepteert de gegevens van de Buurmanitor-app niet ({aad.group(0) if aad else code}): "
+                           "het clientgeheim klopt niet of is verlopen. Zet de waarde van een geldig clientgeheim met "
+                           "bash ~/buurmanitor/app/deploy/clara.sh en koppel daarna opnieuw.") from e
         if code in ("invalid_grant", "interaction_required", "consent_required"):
             raise OpnieuwKoppelen(f"De toegang tot {soort} is verlopen of ingetrokken. Koppel deze agenda opnieuw.") from e
         if e.code == 401:

@@ -1035,3 +1035,11 @@ def test_spiegel_fout_bij_een_doel_houdt_de_rest_niet_op(klant, monkeypatch):
         c.execute("DELETE FROM agenda_items")
         c.execute("DELETE FROM agenda_spiegel")
         c.execute("DELETE FROM instellingen WHERE sleutel LIKE 'clara%%'")
+
+
+def test_verkeerd_clientgeheim_duidelijk(monkeypatch):
+    _http_fout(monkeypatch, 401, {"error": "invalid_client", "error_description": "AADSTS7000215: Invalid client secret provided."})
+    with pytest.raises(bronnen.BronFout) as fout:
+        bronnen.ms_code("code", False)
+    assert not isinstance(fout.value, bronnen.OpnieuwKoppelen)
+    assert "AADSTS7000215" in str(fout.value) and "clientgeheim" in str(fout.value) and "clara.sh" in str(fout.value)
