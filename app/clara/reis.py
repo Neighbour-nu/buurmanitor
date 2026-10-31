@@ -324,7 +324,7 @@ def plan(c, afspraken, inst, nu=None, alleen_cache=True):
             ingepland[m.group(1)] = a
     reis = sorted((a for a in afspraken if buiten_de_deur(a)), key=lambda a: a["start"])
     bezette = sorted((a for a in afspraken if analyse.bezet(a) and not is_reisblok(a)), key=lambda a: a["start"])
-    regels, onbekend, thuis_afspraken = [], [], []
+    regels, onbekend, thuis_afspraken, al_gereisd = [], [], [], []
     gekozen = keuzes(c)
     gedekt = gedekte_reeksen(c)
 
@@ -348,6 +348,9 @@ def plan(c, afspraken, inst, nu=None, alleen_cache=True):
                             and a["start"] - vorige["eind"] < tussendoor and vorige["eind"] <= a["start"])
         if vanaf_vorige and km(vorige_doel["punt"], doel["punt"]) < 0.15:
             continue  # zelfde plek als de vorige afspraak
+        if any(b["start"] < a["eind"] and a["start"] < b["eind"] and km(p, doel["punt"]) < 0.15 for b, p in al_gereisd):
+            continue  # tegelijk op dezelfde plek als een afspraak waar al reistijd voor is (bijvoorbeeld een kopie in een andere agenda)
+        al_gereisd.append((a, doel["punt"]))
         van, van_naam = (vorige_doel["punt"], plek_naam(vorige)) if vanaf_vorige else (thuis["punt"], "thuis")
         keuze = gekozen.get(keuze_sleutel(a))
         if keuze == "geen":

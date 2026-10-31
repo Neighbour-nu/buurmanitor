@@ -1577,3 +1577,16 @@ def test_meet_of_teams_link_met_adres_is_niet_online():
     assert not bronnen.ms_item(dict(ms, location={"displayName": "Huis voor de Stad"}), "cal")["online"]
     assert bronnen.ms_item(dict(ms, location={"displayName": "Microsoft Teams-vergadering"}), "cal")["online"]
     assert bronnen.ms_item(ms, "cal")["online"]
+
+
+def test_kopie_in_andere_agenda_een_keer_en_een_keer_reistijd(monkeypatch):
+    eigen = afspraak("Zaalvoetbal", t(5, 20), t(5, 21, 30), agenda_naam="Martijn", locatie="Huis voor de Stad", koppeling_id=1, extern_id="z1")
+    kopie = afspraak("zaalvoetbal ", t(5, 20), t(5, 21, 30), agenda_naam="Brigit", locatie="Huis voor de Stad", koppeling_id=1, extern_id="z2")
+    uit = analyse.samenvoegen([kopie, eigen])
+    assert len(uit) == 1 and uit[0]["ook"] in (["Brigit"], ["Martijn"])
+    assert len(analyse.samenvoegen([eigen, afspraak("Zaalvoetbal", t(5, 20), t(5, 22), agenda_naam="Brigit")])) == 2  # andere tijd: apart
+    # Ook met een andere titel maar dezelfde tijd en plek: maar één keer reistijd.
+    reis = _nep_reis(monkeypatch)
+    anders = afspraak("Martijn zaalvoetbal", t(5, 20), t(5, 21, 30), locatie="Huis voor de Stad", koppeling_id=1, extern_id="z3")
+    p = reis.plan(None, [eigen, anders], {"vertrekpunt": "thuisadres"})
+    assert sorted(r["richting"] for r in p["regels"]) == ["heen", "terug"] and {r["afspraak"]["extern_id"] for r in p["regels"]} == {"z1"}

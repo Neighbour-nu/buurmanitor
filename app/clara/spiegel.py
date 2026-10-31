@@ -80,10 +80,12 @@ def _bronnen(c, van, tot):
         if not analyse.bezet(a) or a.get("antwoord") == "geen" or analyse.verborgen(a, regels):
             continue
         uid = (a.get("ical_uid") or "").lower()
+        titel = ("titel", " ".join((a.get("titel") or "").lower().split()), a["start"], a["eind"])
+        if (uid and (uid, a["start"]) in gezien) or titel in gezien:
+            continue
         if uid:
-            if (uid, a["start"]) in gezien:
-                continue
             gezien.add((uid, a["start"]))
+        gezien.add(titel)
         uit.append(a)
     return uit
 
