@@ -424,7 +424,8 @@ async def koppeling_bijwerken(request: Request, kid: int):
         agendas = []
         for a in k["agendas"] or []:
             d = str(f.get(f"domein_{a['id']}", a.get("domein") or domein))
-            agendas.append({**a, "aan": f.get(f"aan_{a['id']}") == "1", "domein": d if d in dict(DOMEINEN) else domein})
+            agendas.append({**a, "aan": f.get(f"aan_{a['id']}") == "1", "domein": d if d in dict(DOMEINEN) else domein,
+                            "bezet": f.get(f"bezet_{a['id']}") == "1"})
         c.execute("""UPDATE agenda_koppelingen SET naam = %s, domein = %s, agendas = %s, schrijfagenda = %s, actief = %s
                      WHERE id = %s""",
                   (str(f.get("naam") or k["naam"])[:80], domein if domein in dict(DOMEINEN) else k["domein"], json.dumps(agendas),

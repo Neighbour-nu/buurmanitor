@@ -24,11 +24,12 @@
     </div>
     {% if k.agendas %}
       <table class="tabel">
-        <tr><th>Meelezen</th><th>Agenda</th><th>Domein</th>{% if k.schrijven %}<th>Hier inplannen</th>{% endif %}</tr>
+        <tr><th>Meelezen</th><th>Agenda</th><th>Domein</th><th title="Houden afspraken in deze agenda jouw tijd bezet? Zet uit voor bijvoorbeeld de agenda van Sanne.">Bezet voor mij</th>{% if k.schrijven %}<th>Standaard inplannen</th>{% endif %}</tr>
         {% for a in k.agendas %}
         <tr><td><input type="checkbox" name="aan_{{ a.id }}" value="1" {{ 'checked' if a.aan }}></td>
-          <td>{{ a.naam }}{% if a.primair %} <span class="label">hoofdagenda</span>{% endif %}{% if not a.schrijven %} <span class="noot">(alleen lezen)</span>{% endif %}</td>
+          <td>{% if a.kleur %}<span class="kleurbol" style="background: {{ a.kleur }}"></span>{% endif %}{{ a.naam }}{% if a.primair %} <span class="label">hoofdagenda</span>{% endif %}{% if not a.schrijven %} <span class="noot">(alleen lezen)</span>{% endif %}</td>
           <td><select name="domein_{{ a.id }}">{% for d, n in domeinen %}<option value="{{ d }}" {{ 'selected' if (a.domein or k.domein) == d }}>{{ n }}</option>{% endfor %}</select></td>
+          <td><input type="checkbox" name="bezet_{{ a.id }}" value="1" {{ 'checked' if a.bezet is not defined or a.bezet }}></td>
           {% if k.schrijven %}<td>{% if a.schrijven %}<input type="radio" name="schrijfagenda" value="{{ a.id }}" {{ 'checked' if k.schrijfagenda == a.id }}>{% endif %}</td>{% endif %}</tr>
         {% endfor %}
       </table>

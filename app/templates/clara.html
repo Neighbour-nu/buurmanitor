@@ -41,14 +41,14 @@
         <div class="dagkop">{{ DAGEN[dag.weekday()] }} {{ dag.day }}-{{ dag.month }}{% if dag == nu.date() %} <span class="label">vandaag</span>{% endif %}</div>
         {% for a in items %}
           {% set sleutel = (a.koppeling_id, a.extern_id) %}
-          <div class="afspraak {{ a.domein }} {{ 'reisblok' if is_reisblok(a) }} {{ 'conflict' if sleutel in conflict_ids }} {{ 'vrijgehouden' if a.vrij or a.antwoord == 'afgewezen' }} {{ 'voorlopig' if a.status == 'voorlopig' or a.antwoord in ('voorlopig', 'geen') }}">
+          <div class="afspraak {{ a.domein }} {{ 'reisblok' if is_reisblok(a) }} {{ 'conflict' if sleutel in conflict_ids }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }} {{ 'voorlopig' if a.status == 'voorlopig' or a.antwoord in ('voorlopig', 'geen') }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %}>
             <span class="tijd">{{ tijd(a) }}</span>
             <span class="wat">{% if a.link %}<a href="{{ a.link }}" target="_blank" rel="noopener">{{ a.titel }}</a>{% else %}{{ a.titel }}{% endif %}
               {% if sleutel in conflict_ids %}<span class="label rood">dubbel</span>{% endif %}
               {% if sleutel in krap_ids %}<span class="label rood">krap</span>{% endif %}
               {% if a.antwoord == 'geen' %}<span class="label">uitnodiging</span>{% endif %}
               {% if a.antwoord == 'afgewezen' %}<span class="label">afgewezen</span>{% endif %}
-              <br><span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.koppeling }}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}</span>
+              <br><span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}</span>
               {% if sleutel in onbekend_ids %}<div class="reis"><span class="noot">Reistijd onbekend: {{ reis_dienst }} vindt "{{ a.locatie }}" niet. Zet een volledig adres in de afspraak.</span></div>{% endif %}
               {% set reizen = per_afspraak.get(sleutel, []) %}
               {% if reizen %}
@@ -112,7 +112,8 @@
       {% for v in voorstellen %}
         <form method="post" action="/clara/voorstel/{{ v.id }}" class="voorstel">
           <b>Voorstel:</b> {{ v.titel }}, {{ DAGEN[v.start.astimezone(tz).weekday()] }} {{ v.start.astimezone(tz).strftime('%d-%m %H.%M') }}–{{ v.eind.astimezone(tz).strftime('%H.%M') }}
-          {% if doelen %}<select name="doel">{% for w, label, d in doelen %}<option value="{{ w }}" {{ 'selected' if d == v.domein }}>{{ label }}</option>{% endfor %}</select>
+          {% if v.agenda %}<span class="noot">voor {{ v.agenda }}</span>{% endif %}
+          {% if doelen %}<select name="doel">{% set gekozen = namespace(klaar=false) %}{% for w, label, d in doelen %}{% set past = (v.agenda and label.lower().startswith(v.agenda.lower() ~ ' (')) or (not v.agenda and d == v.domein) %}<option value="{{ w }}" {% if past and not gekozen.klaar %}selected{% set gekozen.klaar = true %}{% endif %}>{{ label }}</option>{% endfor %}</select>
           <button class="knop klein vol" name="actie" value="inplannen">Zet in agenda</button>{% endif %}
           <button class="knop klein" name="actie" value="weg">Niet doen</button>
         </form>

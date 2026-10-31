@@ -732,3 +732,117 @@ def test_gesprekken_archiveren_en_verwijderen(klant):
     assert "Archief (1)" in klant.get("/iris", headers=KOP).text
     klant.post(f"/gesprek/{iris}/weg", headers=FORM, data={"terug": "/iris"})
     assert "Nog geen gesprekken" in klant.get("/iris", headers=KOP).text
+
+
+# ---------------------------------------------------------------- kleuren en andere agenda's (zoals die van Sanne)
+
+def test_kleuren_zoals_in_google(monkeypatch):
+    verzoeken = []
+    monkeypatch.setattr(bronnen, "_http", lambda url, **kw: verzoeken.append(url) or {"items": [
+        {"id": "primary", "summary": "Martijn", "primary": True, "accessRole": "owner", "backgroundColor": "#9fc6e7"},
+        {"id": "sanne", "summary": "Sanne", "accessRole": "owner", "backgroundColor": "#ac725e"},
+        {"id": "eigen", "summary": "Eigen kleur", "accessRole": "reader", "backgroundColor": "#123ABC"},
+        {"id": "raar", "summary": "Zonder", "accessRole": "reader", "backgroundColor": "rood"}]})
+    lijst = {a["id"]: a for a in bronnen.google_agendas("tok")}
+    assert lijst["sanne"]["kleur"] == "#795548"  # bruin, zoals Google Agenda het nu toont
+    assert lijst["primary"]["kleur"] == "#4285F4" and lijst["eigen"]["kleur"] == "#123ABC" and lijst["raar"]["kleur"] == ""
+    assert not lijst["eigen"]["schrijven"]
+    e = {"id": "e1", "summary": "Zwemles", "colorId": "11", "start": {"dateTime": "2026-11-03T16:00:00+01:00"},
+         "end": {"dateTime": "2026-11-03T17:00:00+01:00"}}
+    assert bronnen.google_item(e, "sanne")["kleur"] == "#D50000"
+    assert bronnen.google_item(dict(e, colorId=None), "sanne")["kleur"] == ""
+    monkeypatch.setattr(bronnen, "_http", lambda url, **kw: verzoeken.append(url) or {"value": [
+        {"id": "o1", "name": "Agenda", "isDefaultCalendar": True, "canEdit": True, "hexColor": "#e74856"},
+        {"id": "o2", "name": "Gedeeld", "canEdit": False, "hexColor": ""}]})
+    ms = {a["id"]: a for a in bronnen.ms_agendas("tok")}
+    assert ms["o1"]["kleur"] == "#e74856" and ms["o2"]["kleur"] == "" and "hexColor" in verzoeken[-1]
+
+
+def test_dubbele_in_andere_agenda_telt_niet_als_bezet():
+    eigen = afspraak("Ouderavond", t(5, 19), t(5, 20), ical_uid="x@g", agenda_naam="Martijn")
+    sanne = afspraak("Ouderavond", t(5, 19), t(5, 20), ical_uid="x@g", agenda_naam="Sanne", vrij=True, niet_voor_mij=True)
+    for volgorde in ([eigen, sanne], [sanne, eigen]):
+        uit = analyse.samenvoegen(volgorde)
+        assert len(uit) == 1 and not uit[0].get("niet_voor_mij") and uit[0]["ook"] == ["Sanne"]
+
+
+def test_voorstel_voor_een_andere_agenda():
+    tekst, v = gesprek.voorstellen_uit('Prima. <voorstel>{"titel": "Zwemles Sanne", "start": "2026-11-04T16:00", '
+                                       '"eind": "2026-11-04T17:00", "domein": "prive", "agenda": "Sanne"}</voorstel>')
+    assert tekst == "Prima." and v[0]["agenda"] == "Sanne" and v[0]["titel"] == "Zwemles Sanne"
+    assert gesprek.voorstellen_uit('<voorstel>{"titel": "x", "start": "2026-11-04T16:00", "eind": "2026-11-04T17:00"}</voorstel>')[1][0]["agenda"] == ""
+    assert '"agenda"' in gesprek.UITLEG and "Sanne" in gesprek.UITLEG
+
+
+def test_agenda_van_sanne_kleur_niet_bezet_en_inplannen(klant, monkeypatch):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    morgen = _nu_dag(2, 16)
+    gemaakt = []
+    monkeypatch.setattr(bronnen, "google_toegang", lambda refresh: ("tok", 3600, None))
+    monkeypatch.setattr(bronnen, "google_agendas", lambda tok: [
+        {"id": "primary", "naam": "Martijn", "primair": True, "schrijven": True, "kleur": "#4285F4"},
+        {"id": "sanne", "naam": "Sanne", "primair": False, "schrijven": True, "kleur": "#795548"}])
+
+    def items(tok, agenda_id, van, tot):
+        if agenda_id == "primary":
+            return [bronnen.item(agenda_id="primary", extern_id="m1", titel="Belafspraak", start=morgen, eind=morgen + dt.timedelta(hours=1)),
+                    bronnen.item(agenda_id="primary", extern_id="m2", titel="Rood blok", start=morgen + dt.timedelta(days=1),
+                                 eind=morgen + dt.timedelta(days=1, hours=1), kleur="#D50000")]
+        vandaag = _nu_dag(0, 0)
+        return [bronnen.item(agenda_id="sanne", extern_id="s1", titel="Zwemles", start=morgen, eind=morgen + dt.timedelta(hours=1),
+                             locatie="Zwembad De Wissen, Helmond"),
+                bronnen.item(agenda_id="sanne", extern_id="s0", titel="Studiedag", start=vandaag, eind=vandaag + dt.timedelta(days=1),
+                             heledag=True)]
+    monkeypatch.setattr(bronnen, "google_items", items)
+    monkeypatch.setattr(bronnen, "google_maak", lambda tok, a, titel, s, e, o="", kleur=None: gemaakt.append((a, titel)) or "n1")
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM meldingen WHERE bron = 'clara'")
+        k = c.execute("SELECT * FROM agenda_koppelingen WHERE soort = 'google'").fetchone()
+    kid = k["id"]
+    klant.post(f"/clara/koppeling/{kid}", headers=FORM, data={"actie": "agendas"})
+    pagina = klant.get("/clara/koppelingen", headers=KOP).text
+    assert "Bezet voor mij" in pagina and 'name="bezet_sanne" value="1" checked' in pagina and "background: #795548" in pagina
+
+    # Eerst telt Sanne mee als bezet: een dubbele boeking.
+    klant.post(f"/clara/koppeling/{kid}", headers=FORM, data={
+        "naam": k["naam"], "domein": "prive", "actief": "1", "schrijfagenda": "primary",
+        "aan_primary": "1", "aan_sanne": "1", "bezet_primary": "1", "bezet_sanne": "1"})
+    assert "Zwemles" in klant.get("/clara", headers=KOP).text
+    with db.pool.connection() as c:
+        assert c.execute("SELECT count(*) AS n FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Dubbele boeking%%'").fetchone()["n"] == 1
+        c.execute("DELETE FROM meldingen WHERE bron = 'clara'")
+
+    # Sanne niet meer 'bezet voor mij': geen dubbele boeking, wel zichtbaar in haar eigen kleur.
+    klant.post(f"/clara/koppeling/{kid}", headers=FORM, data={
+        "naam": k["naam"], "domein": "prive", "actief": "1", "schrijfagenda": "primary",
+        "aan_primary": "1", "aan_sanne": "1", "bezet_primary": "1"})
+    with db.pool.connection() as c:
+        assert c.execute("SELECT count(*) AS n FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Dubbele boeking%%'").fetchone()["n"] == 0
+        k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (kid,)).fetchone()
+        assert {a["id"]: a["bezet"] for a in k["agendas"]} == {"primary": True, "sanne": False}
+        from app.clara import sync  # pylint: disable=import-outside-toplevel
+        lijst = {a["titel"]: a for a in sync.afspraken(c, morgen - dt.timedelta(hours=1), morgen + dt.timedelta(days=2))}
+        assert lijst["Zwemles"]["niet_voor_mij"] and lijst["Zwemles"]["agenda_naam"] == "Sanne" and lijst["Zwemles"]["kleur_toon"] == "#795548"
+        assert lijst["Belafspraak"]["kleur_toon"] == "#4285F4" and lijst["Rood blok"]["kleur_toon"] == "#D50000"
+        assert not analyse.conflicten(list(lijst.values()))
+        ctx = gesprek.context(c)
+        assert "Zwemles [Privé, Sanne] (Zwembad De Wissen, Helmond; niet bezet voor Martijn)" in ctx
+        assert "kan inplannen: Martijn, Sanne" in ctx
+    pagina = klant.get("/clara", headers=KOP).text
+    assert "border-left-color: #795548" in pagina and "border-left-color: #D50000" in pagina and "(niet bezet voor jou)" in pagina
+    assert "dubbel" not in pagina.split('id="gesprek"')[0]
+    vandaag = klant.get("/", headers=KOP).text
+    assert "Studiedag" in vandaag and "border-left-color: #795548" in vandaag
+
+    # Een voorstel van Clara voor Sanne: haar agenda staat al gekozen.
+    with db.pool.connection() as c:
+        gid = c.execute("INSERT INTO gesprekken (persona, titel) VALUES ('clara', 'Sanne') RETURNING id").fetchone()["id"]
+        s = _nu_dag(5, 16)
+        vid = c.execute("""INSERT INTO agenda_voorstellen (gesprek_id, titel, start, eind, domein, agenda)
+                           VALUES (%s, 'Tandarts Sanne', %s, %s, 'prive', 'Sanne') RETURNING id""",
+                        (gid, s, s + dt.timedelta(hours=1))).fetchone()["id"]
+    pagina = klant.get(f"/clara?g={gid}", headers=KOP).text
+    assert "voor Sanne" in pagina and f'<option value="{kid}|sanne" selected>' in pagina
+    assert f'<option value="{kid}|primary" selected>' not in pagina
+    klant.post(f"/clara/voorstel/{vid}", headers=FORM, data={"actie": "inplannen", "doel": f"{kid}|sanne"})
+    assert gemaakt == [("sanne", "Tandarts Sanne")]

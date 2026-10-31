@@ -71,7 +71,8 @@ def agendas_bijwerken(c, k):
     lijst = []
     for a in nieuw:
         eerder = oud.get(a["id"], {})
-        lijst.append({**a, "aan": eerder.get("aan", a["primair"]), "domein": eerder.get("domein", k["domein"])})
+        lijst.append({**a, "aan": eerder.get("aan", a["primair"]), "domein": eerder.get("domein", k["domein"]),
+                      "bezet": eerder.get("bezet", True)})
     schrijf = k["schrijfagenda"] or next((a["id"] for a in lijst if a["primair"] and a["schrijven"]), "")
     c.execute("UPDATE agenda_koppelingen SET agendas = %s, schrijfagenda = %s WHERE id = %s",
               (json.dumps(lijst), schrijf, k["id"]))
@@ -82,7 +83,14 @@ def ophalen(c, k, van, tot):
     """Alle afspraken van één koppeling in het venster, met het domein erbij."""
     if k["soort"] in ("google", "microsoft"):
         tok = toegang(c, k)
-        agendas = k["agendas"] or agendas_bijwerken(c, k)
+        agendas = k["agendas"]
+        if not agendas:
+            agendas = agendas_bijwerken(c, k)
+        elif any("kleur" not in a for a in agendas):  # van voor de kleuren: één keer verversen, lukt dat niet dan de oude lijst
+            try:
+                agendas = agendas_bijwerken(c, k)
+            except bronnen.BronFout:
+                pass
         uit = []
         for a in agendas:
             if not a.get("aan"):
@@ -98,17 +106,17 @@ def ophalen(c, k, van, tot):
 def opslaan(c, kid, items, van, tot):
     for i in items:
         c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, domein, ical_uid, titel, locatie, start,
-                        eind, heledag, status, vrij, antwoord, organisator, online, link, geschat, bijgewerkt, omschrijving)
+                        eind, heledag, status, vrij, antwoord, organisator, online, link, geschat, bijgewerkt, omschrijving, kleur)
                      VALUES (%(k)s, %(agenda_id)s, %(extern_id)s, %(domein)s, %(ical_uid)s, %(titel)s, %(locatie)s, %(start)s,
                         %(eind)s, %(heledag)s, %(status)s, %(vrij)s, %(antwoord)s, %(organisator)s, %(online)s, %(link)s,
-                        %(geschat)s, now(), %(omschrijving)s)
+                        %(geschat)s, now(), %(omschrijving)s, %(kleur)s)
                      ON CONFLICT (koppeling_id, agenda_id, extern_id) DO UPDATE SET domein = EXCLUDED.domein,
                         ical_uid = EXCLUDED.ical_uid, titel = EXCLUDED.titel, locatie = EXCLUDED.locatie,
                         start = EXCLUDED.start, eind = EXCLUDED.eind, heledag = EXCLUDED.heledag, status = EXCLUDED.status,
                         vrij = EXCLUDED.vrij, antwoord = EXCLUDED.antwoord, organisator = EXCLUDED.organisator,
                         online = EXCLUDED.online, link = EXCLUDED.link, geschat = EXCLUDED.geschat, bijgewerkt = now(),
-                        omschrijving = EXCLUDED.omschrijving""",
-                  {"omschrijving": "", **i, "k": kid})
+                        omschrijving = EXCLUDED.omschrijving, kleur = EXCLUDED.kleur""",
+                  {"omschrijving": "", "kleur": "", **i, "k": kid})
     sleutels = [f"{i['agenda_id']}\x1f{i['extern_id']}" for i in items]
     weg = c.execute("""DELETE FROM agenda_items WHERE koppeling_id = %s AND start < %s AND eind > %s
                        AND NOT (agenda_id || chr(31) || extern_id = ANY(%s)) RETURNING id""",
@@ -162,7 +170,20 @@ def afspraken(c, van, tot, met_verborgen=False):
                          FROM agenda_items i JOIN agenda_koppelingen k ON k.id = i.koppeling_id
                          WHERE k.actief AND i.start < %s AND i.eind > %s ORDER BY i.start""", (tot, van)).fetchall()
     regels = verbergregels(c)
-    lijst = [dict(r) for r in rijen]
+    agendas = {(k["id"], a["id"]): (a, len(k["agendas"] or [])) for k in koppelingen(c, alleen_actief=True) for a in (k["agendas"] or [])}
+    lijst = []
+    for r in rijen:
+        a = dict(r)
+        ag, aantal = agendas.get((a["koppeling_id"], a["agenda_id"]), (None, 0))
+        # Naam van de agenda (zoals 'Sanne' of 'ZEROHERO') als een account er meer heeft.
+        a["agenda_naam"] = ag["naam"] if ag and aantal > 1 else ""
+        # Kleur zoals in Google Agenda: eigen kleur van de afspraak, anders die van de agenda.
+        a["kleur_toon"] = a.get("kleur") or (ag or {}).get("kleur") or ""
+        # Agenda's die niet 'bezet voor mij' zijn (bijvoorbeeld die van Sanne): wel zien, niet als bezette tijd tellen.
+        a["niet_voor_mij"] = bool(ag) and ag.get("bezet") is False
+        if a["niet_voor_mij"]:
+            a["vrij"] = True
+        lijst.append(a)
     if not met_verborgen:
         lijst = [a for a in lijst if not analyse.verborgen(a, regels)]
     return analyse.samenvoegen(lijst)

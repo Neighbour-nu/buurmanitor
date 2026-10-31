@@ -103,6 +103,8 @@ MIGRATIES = [
     "CREATE INDEX IF NOT EXISTS agenda_items_start ON agenda_items (start)",
     # Begin van de omschrijving, voor verbergregels (bijvoorbeeld de naam van een Whaller-sphere).
     "ALTER TABLE agenda_items ADD COLUMN IF NOT EXISTS omschrijving text NOT NULL DEFAULT ''",
+    # Eigen kleur van een afspraak (Google: colorId), zoals in Google Agenda.
+    "ALTER TABLE agenda_items ADD COLUMN IF NOT EXISTS kleur text NOT NULL DEFAULT ''",
     # Reistijd: gevonden adressen (ook 'niet gevonden', zodat de dienst niet steeds dezelfde vraag krijgt) en routes.
     """CREATE TABLE IF NOT EXISTS plekken (
         sleutel text PRIMARY KEY,
@@ -140,4 +142,6 @@ MIGRATIES = [
         koppeling_id int,
         extern_id text,
         aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    # Voorstel van Clara voor een bepaalde agenda (bijvoorbeeld die van Sanne).
+    "ALTER TABLE agenda_voorstellen ADD COLUMN IF NOT EXISTS agenda text NOT NULL DEFAULT ''",
 ]

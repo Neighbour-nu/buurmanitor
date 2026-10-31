@@ -44,14 +44,16 @@ def samenvoegen(afspraken):
     """Dezelfde afspraak in meer agenda's (je bent op twee adressen uitgenodigd) wordt één regel, met 'ook in'.
     Een raadsvergadering uit Notubiz valt weg als dezelfde vergadering al in een andere agenda staat."""
     gezien, uit = {}, []
-    for a in sorted(afspraken, key=lambda x: (x["start"], x.get("soort") == "raad", x.get("antwoord") != "organisator")):
+    # Bij dubbelen wint de versie uit een agenda die 'bezet voor mij' is (niet die van bijvoorbeeld Sanne).
+    for a in sorted(afspraken, key=lambda x: (x["start"], x.get("soort") == "raad", bool(x.get("niet_voor_mij")),
+                                              x.get("antwoord") != "organisator")):
         sleutel = (a.get("ical_uid") or "").lower()
         if sleutel:
             k = (sleutel, a["start"])
             if k in gezien:
                 eerder = gezien[k]
-                naam = a.get("koppeling") or ""
-                if naam and naam != eerder.get("koppeling") and naam not in eerder["ook"]:
+                naam = a.get("agenda_naam") or a.get("koppeling") or ""
+                if naam and naam != (eerder.get("agenda_naam") or eerder.get("koppeling")) and naam not in eerder["ook"]:
                     eerder["ook"].append(naam)
                 continue
         a = dict(a, ook=[])

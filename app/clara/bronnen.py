@@ -32,10 +32,27 @@ def terugadres(soort, stap="terug"):
     return f"https://{config.PORTAL_HOST}/clara/koppel/{soort}/{stap}"
 
 
+# Kleuren zoals Google Agenda ze nu toont. De API geeft voor agenda's nog de oude kleurcodes; die vertalen we.
+GOOGLE_AFSPRAAKKLEUR = {"1": "#7986CB", "2": "#33B679", "3": "#8E24AA", "4": "#E67C73", "5": "#F6BF26", "6": "#F4511E",
+                        "7": "#039BE5", "8": "#616161", "9": "#3F51B5", "10": "#0B8043", "11": "#D50000"}
+GOOGLE_AGENDAKLEUR = {
+    "#ac725e": "#795548", "#d06b64": "#E67C73", "#f83a22": "#D50000", "#fa573c": "#F4511E", "#ff7537": "#EF6C00",
+    "#ffad46": "#F09300", "#42d692": "#009688", "#16a765": "#0B8043", "#7bd148": "#7CB342", "#b3dc6c": "#C0CA33",
+    "#fbe983": "#E4C441", "#fad165": "#F6BF26", "#92e1c0": "#33B679", "#9fe1e7": "#039BE5", "#9fc6e7": "#4285F4",
+    "#4986e7": "#3F51B5", "#9a9cff": "#7986CB", "#b99aff": "#B39DDB", "#c2c2c2": "#616161", "#cabdbf": "#A79B8E",
+    "#cca6ac": "#AD1457", "#f691b2": "#D81B60", "#cd74e6": "#9E69AF", "#a47ae2": "#8E24AA"}
+
+
+def agendakleur(hexkleur):
+    """Kleur van een agenda zoals Google Agenda hem toont (eigen kleuren blijven zoals ze zijn)."""
+    h = (hexkleur or "").strip()
+    return GOOGLE_AGENDAKLEUR.get(h.lower(), h) if re.fullmatch(r"#[0-9a-fA-F]{6}", h) else ""
+
+
 def item(**kw):
     basis = {"agenda_id": "", "extern_id": "", "ical_uid": "", "titel": "", "locatie": "", "heledag": False,
              "status": "bevestigd", "vrij": False, "antwoord": "eigen", "organisator": "", "online": False, "link": "",
-             "geschat": False, "omschrijving": ""}
+             "geschat": False, "omschrijving": "", "kleur": ""}
     basis.update(kw)
     basis["omschrijving"] = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", basis["omschrijving"] or "")).strip()[:1000]
     basis["titel"] = (basis["titel"] or "").strip()[:300] or "(zonder titel)"
@@ -128,8 +145,8 @@ def google_agendas(toegang):
     j = _http(f"{GOOGLE_API}/users/me/calendarList?maxResults=250", headers={"Authorization": f"Bearer {toegang}"},
               soort="Google Agenda")
     return [{"id": a["id"], "naam": a.get("summaryOverride") or a.get("summary") or a["id"], "primair": bool(a.get("primary")),
-             "schrijven": a.get("accessRole") in ("owner", "writer")} for a in j.get("items", [])
-            if not a.get("deleted") and not a.get("hidden")]
+             "schrijven": a.get("accessRole") in ("owner", "writer"), "kleur": agendakleur(a.get("backgroundColor"))}
+            for a in j.get("items", []) if not a.get("deleted") and not a.get("hidden")]
 
 
 def _google_tijd(t, tz):
@@ -156,7 +173,7 @@ def google_item(e, agenda_id, tz=config.TZ):
                 vrij=e.get("transparency") == "transparent", antwoord=antwoord,
                 organisator=(e.get("organizer") or {}).get("displayName") or (e.get("organizer") or {}).get("email", ""),
                 online=bool(e.get("hangoutLink") or e.get("conferenceData")), link=e.get("htmlLink", ""),
-                omschrijving=e.get("description", ""))
+                omschrijving=e.get("description", ""), kleur=GOOGLE_AFSPRAAKKLEUR.get(str(e.get("colorId", "")), ""))
 
 
 def google_items(toegang, agenda_id, van, tot):
@@ -259,10 +276,10 @@ def ms_toegang(refresh, tenant, alleen_lezen):
 
 
 def ms_agendas(toegang):
-    j = _http(f"{GRAPH}/me/calendars?$top=100&$select=id,name,isDefaultCalendar,canEdit",
+    j = _http(f"{GRAPH}/me/calendars?$top=100&$select=id,name,isDefaultCalendar,canEdit,hexColor",
               headers={"Authorization": f"Bearer {toegang}"}, soort="Outlook")
     return [{"id": a["id"], "naam": a.get("name") or "Agenda", "primair": bool(a.get("isDefaultCalendar")),
-             "schrijven": bool(a.get("canEdit"))} for a in j.get("value", [])]
+             "schrijven": bool(a.get("canEdit")), "kleur": agendakleur(a.get("hexColor"))} for a in j.get("value", [])]
 
 
 def _ms_tijd(t, tz):

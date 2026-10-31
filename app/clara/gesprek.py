@@ -15,7 +15,9 @@ VERVOER_TAG = re.compile(r"<vervoer>\s*(\{.*?\})\s*</vervoer>", re.S)
 UITLEG = """# Voorstellen doen
 Stel je een concreet tijdstip voor om iets in te plannen (een schrijfblok, voorbereiding, reistijd), zet dan per
 voorstel aan het eind van je antwoord precies één regel:
-<voorstel>{"titel": "...", "start": "JJJJ-MM-DDTUU:MM", "eind": "JJJJ-MM-DDTUU:MM", "domein": "politiek|prive|zerohero|fbim|upperspire"}</voorstel>
+<voorstel>{"titel": "...", "start": "JJJJ-MM-DDTUU:MM", "eind": "JJJJ-MM-DDTUU:MM", "domein": "politiek|prive|zerohero|fbim|upperspire", "agenda": "naam van de agenda"}</voorstel>
+"agenda" is de naam van een agenda uit de lijst hieronder waarin je kunt inplannen, bijvoorbeeld "Sanne" voor een
+afspraak voor Sanne (de dochter van Martijn). Laat "agenda" weg als het voor Martijn zelf is.
 Tijden in Nederlandse tijd. Martijn ziet het als knop en beslist zelf.
 
 # Vervoer per afspraak
@@ -34,7 +36,9 @@ def _regel(a, tz):
     extra = [x for x in (a.get("locatie"), "online" if a.get("online") else "",
                          {"geen": "uitnodiging, nog niet beantwoord", "voorlopig": "voorlopig", "afgewezen": "afgewezen"}.get(a.get("antwoord"), ""),
                          "vrij" if a.get("vrij") else "") if x]
-    return f"- {tijd} {a['titel']} [{sync.DOMEINEN.get(a.get('domein'), a.get('domein'))}, {a.get('koppeling')}]" + (
+    if a.get("niet_voor_mij"):
+        extra = [x for x in extra if x != "vrij"] + ["niet bezet voor Martijn"]
+    return f"- {tijd} {a['titel']} [{sync.DOMEINEN.get(a.get('domein'), a.get('domein'))}, {a.get('agenda_naam') or a.get('koppeling')}]" + (
         f" ({'; '.join(extra)})" if extra else "")
 
 
@@ -51,6 +55,10 @@ def context(c, nu=None):
     kop.append("Gekoppelde agenda's: " + "; ".join(
         f"{k['naam']} ({k['soort']}{', ' + 'lezen en schrijven' if k['schrijven'] else ', alleen lezen'})"
         + (f" FOUT: {k['fout']}" if k["fout"] else "") for k in koppelingen))
+    schrijfbaar = sorted({a["naam"] for k in koppelingen if k["schrijven"] and k["soort"] in ("google", "microsoft")
+                          for a in (k["agendas"] or []) if a.get("schrijven") and (a.get("aan") or a["id"] == k["schrijfagenda"])})
+    if schrijfbaar:
+        kop.append("Agenda's waarin Martijn (na zijn klik) kan inplannen: " + ", ".join(schrijfbaar) + ".")
     regels = sync.verbergregels(c)
     if regels:
         kop.append("Martijn laat deze afspraken bewust weg (ze staan hieronder niet): " + "; ".join(
@@ -105,7 +113,8 @@ def voorstellen_uit(tekst, tz=config.TZ):
             continue
         if eind > start and (eind - start) <= dt.timedelta(hours=12):
             uit.append({"titel": str(v.get("titel") or "Blok")[:200], "start": start, "eind": eind,
-                        "domein": v.get("domein") if v.get("domein") in sync.DOMEINEN else ""})
+                        "domein": v.get("domein") if v.get("domein") in sync.DOMEINEN else "",
+                        "agenda": str(v.get("agenda") or "").strip()[:80]})
     return VOORSTEL.sub("", tekst).strip(), uit
 
 
@@ -140,7 +149,7 @@ def antwoord(c, gesprek_id):
         tekst = "Hier is mijn voorstel." if voorstellen else "(Geen antwoord ontvangen. Probeer het nog eens.)"
     c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)", (gesprek_id, tekst))
     for v in voorstellen:
-        c.execute("INSERT INTO agenda_voorstellen (gesprek_id, titel, start, eind, domein) VALUES (%s, %s, %s, %s, %s)",
-                  (gesprek_id, v["titel"], v["start"], v["eind"], v["domein"]))
+        c.execute("INSERT INTO agenda_voorstellen (gesprek_id, titel, start, eind, domein, agenda) VALUES (%s, %s, %s, %s, %s, %s)",
+                  (gesprek_id, v["titel"], v["start"], v["eind"], v["domein"], v.get("agenda", "")))
     c.execute("UPDATE gesprekken SET bijgewerkt = now() WHERE id = %s", (gesprek_id,))
     return tekst
