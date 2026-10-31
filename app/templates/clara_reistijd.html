@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block titel %}Reistijd · Clara · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>Reistijd <span class="noot">Clara</span></h1>
+<p class="uitleg"><a href="/clara?week={{ week }}">Terug naar de week</a></p>
+<section class="kaart">
+  <h2>{{ a.titel }}</h2>
+  {% set s = a.start.astimezone(tz) %}
+  <p class="noot">{{ DAGEN[s.weekday()] }} {{ s.strftime('%d-%m') }}, {{ s.strftime('%H.%M') }}–{{ a.eind.astimezone(tz).strftime('%H.%M') }}
+    · {{ a.agenda_naam or a.koppeling }}{% if a.locatie %} · in de afspraak: {{ a.locatie }}{% endif %}{% if herhalend %} · herhalende afspraak{% endif %}</p>
+  {% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+  {% if not reis_actief or not vertrekpunt %}
+    <p class="item">Stel eerst je vertrekpunt en de routedienst in bij <a href="/clara/koppelingen#reistijd">Koppelingen › Reistijd</a>.</p>
+  {% elif not doelen %}
+    <p class="item">Om reistijd in te plannen is een Google- of Microsoft-agenda met schrijfrechten nodig.</p>
+  {% else %}
+  <form method="post" action="/clara/reistijd/{{ a.id }}" class="velden">
+    <input type="hidden" name="week" value="{{ week }}">
+    <label class="breed">Waar ga je naartoe? (straat, huisnummer en plaats, of een bekende plek met plaatsnaam)
+      <input type="text" name="adres" value="{{ adres }}" required autofocus placeholder="bijvoorbeeld Stadhuisplein 1, Eindhoven"></label>
+    {% if online and not a.reisadres %}<p class="noot breed">In deze afspraak staat een online link. Ga je er toch naartoe, vul dan het adres in.</p>{% endif %}
+    <label>Vervoer <select name="vervoer">
+      {% for w, t in [('automatisch', 'automatisch (fiets dichtbij, OV in een grote stad, anders auto)'), ('fiets', 'fiets'), ('auto', 'auto'), ('ov', 'openbaar vervoer'), ('lopen', 'lopen')] %}
+      <option value="{{ w }}" {{ 'selected' if vervoer == w }}>{{ t }}</option>{% endfor %}</select></label>
+    {% if herhalend %}
+    <label class="vink breed"><input type="checkbox" name="elke" value="1" {{ 'checked' if elke }}> Elke keer: Clara zet de reistijd voor
+      alle volgende keren van deze reeks zelf in je agenda (tot vier weken vooruit, alleen als de reis past)</label>
+    {% endif %}
+    <button class="knop vol" type="submit">Reistijd berekenen en inplannen</button>
+  </form>
+  <p class="noot">Clara rekent de reis uit met {{ reis_dienst }}: heen vanaf huis (of vanaf je vorige afspraak als die kort
+    ervoor is), en terug naar huis. Het adres onthoudt ze voor deze afspraak{% if herhalend %} en alle keren van de reeks{% endif %}.</p>
+  {% if a.reis_auto %}
+  <form method="post" action="/clara/reistijd/{{ a.id }}/stop" class="knoppenrij">
+    <input type="hidden" name="week" value="{{ week }}">
+    <span class="noot">Clara plant de reistijd voor deze reeks nu elke keer zelf in.</span>
+    <button class="knop klein" type="submit">Niet meer elke keer</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

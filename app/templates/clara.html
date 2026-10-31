@@ -49,7 +49,7 @@
               {% if a.antwoord == 'geen' %}<span class="label">uitnodiging</span>{% endif %}
               {% if a.antwoord == 'afgewezen' %}<span class="label">afgewezen</span>{% endif %}
               <br><span class="noot">{{ domeinnaam.get(a.domein, a.domein) }} · {{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.mee %} (je gaat mee){% endif %}{% if a.ook %} (ook in {{ a.ook | join(', ') }}){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}</span>
-              {% if sleutel in onbekend_ids %}<div class="reis"><span class="noot">Reistijd onbekend: {{ reis_dienst }} vindt "{{ a.locatie }}" niet. Zet een volledig adres in de afspraak.</span></div>{% endif %}
+              {% if sleutel in onbekend_ids %}<div class="reis"><span class="noot">Reistijd onbekend: {{ reis_dienst }} vindt "{{ a.reisadres or a.locatie }}" niet.</span> <a class="knop klein" href="/clara/reistijd/{{ a.id }}?week={{ week }}">Adres invullen</a></div>{% endif %}
               {% if a.niet_voor_mij and a.locatie and not a.online and not a.heledag %}
               <form method="post" action="/clara/vervoer/{{ a.id }}" class="vervoerkeuze">
                 <input type="hidden" name="week" value="{{ week }}">
@@ -85,8 +85,12 @@
                   {% for r in open_hier %}<input type="hidden" name="sleutel" value="{{ r.sleutel }}">{% endfor %}
                   <button class="knop klein" formaction="/clara/reistijd">Reistijd inplannen</button>
                   {% endif %}
+                  <a class="knop klein" href="/clara/reistijd/{{ a.id }}?week={{ week }}">{% if a.reis_auto %}🔁 elke keer{% else %}Adres of reeks{% endif %}</a>
                 </form>
               </div>
+              {% elif reis_actief and not is_reisblok(a) and not a.heledag and not a.niet_voor_mij and sleutel not in onbekend_ids
+                     and a.antwoord != 'afgewezen' and not a.vrij and a.status != 'geannuleerd' %}
+              <div class="reis"><a class="knop klein" href="/clara/reistijd/{{ a.id }}?week={{ week }}">＋ Reistijd</a></div>
               {% endif %}</span>
           </div>
         {% else %}<p class="noot leeg-dag">Geen afspraken.</p>{% endfor %}

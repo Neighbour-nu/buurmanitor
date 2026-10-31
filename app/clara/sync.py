@@ -172,6 +172,7 @@ def afspraken(c, van, tot, met_verborgen=False):
     regels = verbergregels(c)
     agendas = {(k["id"], a["id"]): (a, len(k["agendas"] or [])) for k in koppelingen(c, alleen_actief=True) for a in (k["agendas"] or [])}
     gekozen = reis.keuzes(c)
+    info = reis.reisinfo(c)
     lijst = []
     for r in rijen:
         a = dict(r)
@@ -186,6 +187,8 @@ def afspraken(c, van, tot, met_verborgen=False):
         a["niet_voor_mij"] = bool(ag) and ag.get("bezet") is False
         # ...tenzij Martijn vervoer koos: dan gaat hij mee (bijvoorbeeld Sanne naar de manege brengen) en telt het wel.
         a["mee"] = a["niet_voor_mij"] and reis.gaat_mee(a, gekozen)
+        ri = info.get(reis.keuze_sleutel(a))
+        a["reisadres"], a["reis_auto"] = (ri["adres"], ri["auto"]) if ri else ("", False)
         if a["mee"]:
             a["niet_voor_mij"] = False
         if a["niet_voor_mij"]:
@@ -251,12 +254,55 @@ def instellingen_lijst(c, sleutel, nieuw=None):
         return []
 
 
+AUTO_DAGEN = 28  # zo ver vooruit plant Clara reistijd voor afspraken waarbij Martijn 'elke keer' koos
+AUTO_MAX = 40
+
+
+def reistijd_automatisch(c, nu=None):
+    """Reistijd inplannen voor afspraken (meestal reeksen) waarvoor Martijn 'elke keer' koos. Alleen als de reis past;
+    past hij niet, dan komt er een melding (zie reistijd_bijwerken) en beslist Martijn zelf."""
+    if not c.execute("SELECT 1 FROM agenda_reisinfo WHERE auto LIMIT 1").fetchone():
+        return None
+    from . import web  # pylint: disable=import-outside-toplevel  (schrijven gaat via dezelfde weg als de knop)
+    nu = nu or dt.datetime.now(config.TZ)
+    inst = instellingen(c)
+    if not reis.actief() or not inst.get("vertrekpunt"):
+        return None
+    doelen = web._schrijfdoelen(koppelingen(c, alleen_actief=True))  # pylint: disable=protected-access
+    if not doelen:
+        return None
+    try:
+        p = reisplan(c, nu, nu + dt.timedelta(days=AUTO_DAGEN), alleen_cache=False)
+    except bronnen.BronFout as e:
+        return f"reistijd automatisch: {e}"
+    gemaakt, gebruikt = 0, set()
+    for r in p["regels"]:
+        a = r["afspraak"]
+        if gemaakt >= AUTO_MAX or not a.get("reis_auto") or not r.get("minuten") or r["ingepland"] or not r["past"] or r["start"] <= nu:
+            continue
+        doel = web._doel_voor(doelen, a.get("domein"))  # pylint: disable=protected-access
+        try:
+            web._maak(c, doel, reis.blok_titel(r), r["start"], r["eind"], reis.blok_omschrijving(r), bijwerken=False,  # pylint: disable=protected-access
+                      kleur=str(inst.get("reis_kleur", "8")))
+        except (bronnen.BronFout, kluis.KluisFout) as e:
+            return f"reistijd automatisch: {e}"
+        gebruikt.add(int(doel.split("|")[0]))
+        gemaakt += 1
+    for kid in gebruikt:
+        k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (kid,)).fetchone()
+        synchroniseer(c, k, forceer=True)
+    return f"reistijd automatisch: {gemaakt} blokken" if gemaakt else None
+
+
 @planner.taak("agenda", elke=dt.timedelta(minutes=5))
 def taak_agenda(c, forceer=False):
     uitslag = [u for k in koppelingen(c, alleen_actief=True) if (u := synchroniseer(c, k, forceer=forceer))]
     if koppelingen(c, alleen_actief=True):
         melden(c)
         r = reistijd_bijwerken(c)
+        if r:
+            uitslag.append(r)
+        r = reistijd_automatisch(c)
         if r:
             uitslag.append(r)
         r = spiegel.bijwerken(c)

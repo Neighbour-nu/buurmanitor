@@ -1202,3 +1202,100 @@ def test_reeks_inplannen_overslaan_stoppen_vervangen(klant, monkeypatch):
         assert c.execute("SELECT status FROM agenda_reeksen WHERE id = %s", (nieuw,)).fetchone()["status"] == "verwijderd"
         c.execute("DELETE FROM agenda_reeksen")
         c.execute("DELETE FROM agenda_items")
+
+
+# ---------------------------------------------------------------- reistijd per afspraak (ook elke keer van een reeks)
+
+def test_eigen_reisadres_telt():
+    from app.clara import reis  # pylint: disable=import-outside-toplevel
+    a = afspraak("Overleg", t(4, 10), t(4, 11), locatie="https://teams.microsoft.com/l/abc")
+    assert a["online"] and not reis.buiten_de_deur(a)
+    a["reisadres"] = "Stadhuisplein 1, Eindhoven"
+    assert reis.buiten_de_deur(a) and reis.plek_tekst(a) == "Stadhuisplein 1, Eindhoven" and reis.plek_naam(a) == "Stadhuisplein 1, Eindhoven"
+    assert not reis.buiten_de_deur(afspraak("Zonder plek", t(4, 10), t(4, 11)))
+
+
+def test_reistijd_per_afspraak_en_elke_keer(klant, monkeypatch):
+    from app.clara import reis, sync  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(config, "ORS_API_KEY", "ors-test")
+    monkeypatch.setattr(config, "GOOGLE_MAPS_KEY", "")
+    eindhoven = (5.4797, 51.4416)
+
+    def nep_ors(pad, params=None, body=None):
+        if pad.startswith("/pelias"):
+            punt = THUIS if "Strik" in params["text"] else (eindhoven if "Eindhoven" in params["text"] else None)
+            return {"features": [{"geometry": {"coordinates": list(punt)}, "properties": {"label": params["text"], "confidence": 0.9}}]} if punt else {"features": []}
+        return {"routes": [{"summary": {"duration": 1500, "distance": 15000}}]}
+    monkeypatch.setattr(reis, "_ors", nep_ors)
+    monkeypatch.setattr(sync, "toegang", lambda c, k: "tok")
+    gemaakt = []
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM agenda_items")
+        c.execute("DELETE FROM agenda_reisinfo")
+        c.execute("DELETE FROM agenda_vervoer")
+        c.execute("DELETE FROM plekken WHERE sleutel LIKE '%%nergens%%'")
+        c.execute("UPDATE agenda_koppelingen SET schrijven = false")
+        sync.instellingen_opslaan(c, {**sync.instellingen(c), "vertrekpunt": "Meester Strikstraat 25, 5708 GA Helmond", "marge": 5})
+        k = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, domein, schrijven, agendas, schrijfagenda, laatst)
+                         VALUES ('google', 'Reis-per-afspraak', 'prive', true, %s, 'primary', now()) RETURNING *""",
+                      (json.dumps([{"id": "primary", "naam": "M", "primair": True, "schrijven": True, "aan": True, "bezet": True}]),)).fetchone()
+        kid = k["id"]
+        morgen = _nu_dag(2, 14)
+        los = c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind)
+                           VALUES (%s, 'primary', 'los1', 'Overleg zonder adres', %s, %s) RETURNING id""",
+                        (kid, morgen, morgen + dt.timedelta(hours=1))).fetchone()["id"]
+        reeks_ids = [c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, ical_uid, titel, locatie, start, eind, reeks)
+                                  VALUES (%s, 'primary', %s, 'les@x', 'Cursus', 'Stadhuisplein 1, Eindhoven', %s, %s, 'les') RETURNING id""",
+                                (kid, f"les_{n}", morgen + dt.timedelta(days=7 * n, hours=5), morgen + dt.timedelta(days=7 * n, hours=7))).fetchone()["id"]
+                     for n in range(3)]
+
+    teller = iter(range(1000))
+
+    def maak(tok, agenda_id, titel, s, e, o="", kleur=None, **kw):
+        gemaakt.append((titel, s))
+        eid = f"blok{next(teller)}"
+        with db.pool.connection() as c2:  # zoals na het ophalen: het blok staat dan in de agenda
+            c2.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind, omschrijving)
+                          VALUES (%s, %s, %s, %s, %s, %s, %s)""", (kid, agenda_id, eid, titel, s, e, o))
+        return eid
+    monkeypatch.setattr(bronnen, "google_maak", maak)
+    monkeypatch.setattr(sync, "synchroniseer", lambda c, k, forceer=False, nu=None: None)
+
+    pagina = klant.get("/clara", headers=KOP).text
+    assert f'href="/clara/reistijd/{los}?week=0">＋ Reistijd' in pagina
+    r = klant.get(f"/clara/reistijd/{los}", headers=KOP)
+    assert r.status_code == 200 and "Waar ga je naartoe" in r.text and 'name="elke"' not in r.text
+    # Onbekend adres: het formulier komt terug met de vraag erbij.
+    r = klant.post(f"/clara/reistijd/{los}", headers=FORM, data={"adres": "Nergensstraat 99", "vervoer": "automatisch"})
+    assert r.status_code == 200 and "vindt OpenRouteService niet" in r.text and "Nergensstraat 99" in r.text and not gemaakt
+    assert klant.post(f"/clara/reistijd/{los}", headers=KOP, data={"adres": "x"}).status_code == 403
+    r = klant.post(f"/clara/reistijd/{los}", headers=FORM, follow_redirects=False,
+                   data={"adres": "Stadhuisplein 1, Eindhoven", "vervoer": "auto", "week": "0"})
+    assert r.status_code == 303 and "ingepland" in r.headers["location"], r.headers["location"]
+    assert [x[0] for x in gemaakt] == ["🚗 Reistijd naar Stadhuisplein 1, Eindhoven (rijden)", "🚗 Terugreis naar huis (rijden)"]
+    assert gemaakt[0][1] == morgen - dt.timedelta(minutes=30)
+    with db.pool.connection() as c:
+        assert c.execute("SELECT adres, auto FROM agenda_reisinfo WHERE sleutel = %s", (f"id:{kid}:los1",)).fetchone() == {
+            "adres": "Stadhuisplein 1, Eindhoven", "auto": False}
+
+    # Reeks: elke keer.
+    gemaakt.clear()
+    r = klant.get(f"/clara/reistijd/{reeks_ids[0]}", headers=KOP)
+    assert 'name="elke"' in r.text and "herhalende afspraak" in r.text and 'value="Stadhuisplein 1, Eindhoven"' in r.text
+    r = klant.post(f"/clara/reistijd/{reeks_ids[0]}", headers=FORM, follow_redirects=False,
+                   data={"adres": "Stadhuisplein 1, Eindhoven", "vervoer": "automatisch", "elke": "1", "week": "0"})
+    assert "voortaan+zelf" in r.headers["location"], r.headers["location"]
+    assert len(gemaakt) == 6  # drie keer heen en terug (binnen vier weken)
+    with db.pool.connection() as c:
+        assert c.execute("SELECT adres, auto FROM agenda_reisinfo WHERE sleutel = 'uid:les@x'").fetchone() == {"adres": "", "auto": True}
+        assert sync.reistijd_automatisch(c) is None and len(gemaakt) == 6  # niets dubbel
+        assert "reistijd wordt elke keer automatisch ingepland" in gesprek.context(c)
+    assert "🔁 elke keer" in klant.get("/clara?week=1", headers=KOP).text or "🔁 elke keer" in klant.get("/clara?week=2", headers=KOP).text
+    klant.post(f"/clara/reistijd/{reeks_ids[0]}/stop", headers=FORM, data={"week": "0"})
+    with db.pool.connection() as c:
+        assert not c.execute("SELECT auto FROM agenda_reisinfo WHERE sleutel = 'uid:les@x'").fetchone()["auto"]
+        c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (kid,))
+        c.execute("UPDATE agenda_koppelingen SET schrijven = true WHERE soort = 'google'")
+        c.execute("DELETE FROM agenda_reisinfo")
+        c.execute("DELETE FROM instellingen WHERE sleutel LIKE 'clara%%'")

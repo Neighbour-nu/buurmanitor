@@ -251,11 +251,35 @@ def is_reisblok(a):
 
 
 def buiten_de_deur(a):
-    return analyse.bezet(a) and not a.get("online") and bool((a.get("locatie") or "").strip()) and not is_reisblok(a)
+    if not analyse.bezet(a) or is_reisblok(a):
+        return False
+    if (a.get("reisadres") or "").strip():  # zelf ingevuld adres: altijd reizen, ook als er een online link in staat
+        return True
+    return not a.get("online") and bool((a.get("locatie") or "").strip())
+
+
+def plek_naam(a):
+    return (a.get("reisadres") or "").strip() or (a.get("locatie") or "").strip()
+
+
+def reisinfo(c):
+    return {r["sleutel"]: r for r in c.execute("SELECT * FROM agenda_reisinfo").fetchall()}
+
+
+def reisinfo_opslaan(c, a, adres=None, auto=None):
+    sleutel = keuze_sleutel(a)
+    oud = c.execute("SELECT * FROM agenda_reisinfo WHERE sleutel = %s", (sleutel,)).fetchone() or {}
+    adres = (oud.get("adres", "") if adres is None else adres.strip())[:300]
+    auto = bool(oud.get("auto", False) if auto is None else auto)
+    c.execute("""INSERT INTO agenda_reisinfo (sleutel, adres, auto, titel) VALUES (%s, %s, %s, %s)
+                 ON CONFLICT (sleutel) DO UPDATE SET adres = EXCLUDED.adres, auto = EXCLUDED.auto, titel = EXCLUDED.titel,
+                 bijgewerkt = now()""", (sleutel, adres, auto, (a.get("titel") or "")[:200]))
 
 
 def plek_tekst(a):
     """De tekst om op te zoeken. Vergaderzalen uit de raadsagenda liggen in Helmond."""
+    if (a.get("reisadres") or "").strip():
+        return a["reisadres"].strip()
     t = (a.get("locatie") or "").strip()
     return f"{t}, Helmond" if a.get("soort") == "raad" and "helmond" not in t.lower() else t
 
@@ -298,11 +322,11 @@ def plan(c, afspraken, inst, nu=None, alleen_cache=True):
                             and a["start"] - vorige["eind"] < tussendoor and vorige["eind"] <= a["start"])
         if vanaf_vorige and km(vorige_doel["punt"], doel["punt"]) < 0.15:
             continue  # zelfde plek als de vorige afspraak
-        van, van_naam = (vorige_doel["punt"], vorige["locatie"]) if vanaf_vorige else (thuis["punt"], "thuis")
+        van, van_naam = (vorige_doel["punt"], plek_naam(vorige)) if vanaf_vorige else (thuis["punt"], "thuis")
         keuze = gekozen.get(keuze_sleutel(a))
         if keuze == "geen":
             regels.append({"afspraak": a, "richting": "heen", "vervoer": "geen", "gekozen": True, "minuten": None,
-                           "sleutel": _sleutel_blok(a, "heen"), "ingepland": False, "past": True, "van": van_naam, "naar": a["locatie"]})
+                           "sleutel": _sleutel_blok(a, "heen"), "ingepland": False, "past": True, "van": van_naam, "naar": plek_naam(a)})
             continue
         soort = keuze or vervoer(van, doel["punt"], inst)
         minuten, geschat = reistijd(c, van, doel["punt"], soort, alleen_cache, tijd=a["start"], aankomst=True)
@@ -310,12 +334,12 @@ def plan(c, afspraken, inst, nu=None, alleen_cache=True):
             minuten += marge
             start = a["start"] - dt.timedelta(minutes=minuten)
             in_de_weg = [b for b in bezette if b is not a and b["start"] < a["start"] and b["eind"] > start]
-            regels.append({"afspraak": a, "richting": "heen", "van": van_naam, "naar": a["locatie"], "vervoer": soort,
+            regels.append({"afspraak": a, "richting": "heen", "van": van_naam, "naar": plek_naam(a), "vervoer": soort,
                            "gekozen": bool(keuze), "minuten": minuten, "geschat": geschat, "start": start, "eind": a["start"], "past": not in_de_weg,
                            "botst": in_de_weg[0]["titel"] if in_de_weg else "",
                            "sleutel": _sleutel_blok(a, "heen"), "ingepland": _sleutel_blok(a, "heen") in ingepland})
         else:
-            regels.append({"afspraak": a, "richting": "heen", "van": van_naam, "naar": a["locatie"], "vervoer": soort,
+            regels.append({"afspraak": a, "richting": "heen", "van": van_naam, "naar": plek_naam(a), "vervoer": soort,
                            "gekozen": bool(keuze), "minuten": None, "sleutel": _sleutel_blok(a, "heen"), "ingepland": False, "past": True})
         volgende = reis[i + 1] if i + 1 < len(reis) else None
         door = bool(volgende and volgende["start"].astimezone(tz).date() == a["eind"].astimezone(tz).date()
@@ -324,7 +348,7 @@ def plan(c, afspraken, inst, nu=None, alleen_cache=True):
             terug = keuze or vervoer(doel["punt"], thuis["punt"], inst)
             m2, g2 = reistijd(c, doel["punt"], thuis["punt"], terug, alleen_cache, tijd=a["eind"], aankomst=False)
             if m2 is not None:
-                regels.append({"afspraak": a, "richting": "terug", "van": a["locatie"], "naar": "thuis", "vervoer": terug,
+                regels.append({"afspraak": a, "richting": "terug", "van": plek_naam(a), "naar": "thuis", "vervoer": terug,
                                "gekozen": bool(keuze), "minuten": m2 + marge, "geschat": g2, "start": a["eind"],
                                "eind": a["eind"] + dt.timedelta(minutes=m2 + marge), "past": True, "botst": "",
                                "sleutel": _sleutel_blok(a, "terug"), "ingepland": _sleutel_blok(a, "terug") in ingepland})

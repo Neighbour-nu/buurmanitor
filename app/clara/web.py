@@ -592,6 +592,136 @@ async def reistijd_inplannen(request: Request):
     return _terug(f"/clara?week={week}", melding=f"{n} reistijdblok{'ken' if n != 1 else ''} in je agenda gezet." if n else "Er was niets meer in te plannen.")
 
 
+def _item_met_info(c, item_id):
+    """Eén afspraak zoals de week hem ziet (met reisadres, 'mee' en dergelijke), of None."""
+    i = c.execute("SELECT * FROM agenda_items WHERE id = %s", (item_id,)).fetchone()
+    if not i:
+        return None
+    for a in sync.afspraken(c, i["start"] - dt.timedelta(minutes=1), i["eind"] + dt.timedelta(minutes=1), met_verborgen=True):
+        if a["id"] == item_id or (a["koppeling_id"], a["extern_id"]) == (i["koppeling_id"], i["extern_id"]):
+            return a
+    return dict(i)
+
+
+def _herhalend(c, a):
+    if a.get("reeks"):
+        return True
+    uid = (a.get("ical_uid") or "").strip()
+    return bool(uid) and c.execute("SELECT count(*) AS n FROM agenda_items WHERE lower(ical_uid) = lower(%s)", (uid,)).fetchone()["n"] > 1
+
+
+def _reistijd_scherm(request, c, a, week, fout="", adres=None, vervoer=None, elke=None):
+    gekozen = reis.keuzes(c).get(reis.keuze_sleutel(a))
+    return templates.TemplateResponse("clara_reistijd.html", ctx(
+        request, "clara", a=a, week=week, fout=fout, tz=config.TZ, DAGEN=DAGEN, herhalend=_herhalend(c, a),
+        adres=adres if adres is not None else (a.get("reisadres") or (
+            "" if a.get("online") or bronnen.ONLINE.search(a.get("locatie") or "") else a.get("locatie") or "")),
+        online=bool(a.get("online") or bronnen.ONLINE.search(a.get("locatie") or "")),
+        vervoer=vervoer or gekozen or "automatisch", elke=a.get("reis_auto") if elke is None else elke,
+        reis_actief=reis.actief(), vertrekpunt=sync.instellingen(c).get("vertrekpunt"), reis_dienst=reis.dienst_naam(),
+        doelen=_schrijfdoelen(sync.koppelingen(c))))
+
+
+@router.get("/clara/reistijd/{item_id:int}", response_class=HTMLResponse)
+def reistijd_vragen(request: Request, item_id: int, week: int = 0):
+    """Reistijd voor één afspraak (of elke keer van een reeks): adres en vervoer nakijken of invullen."""
+    with db.pool.connection() as c:
+        a = _item_met_info(c, item_id)
+        if not a:
+            raise HTTPException(404)
+        return _reistijd_scherm(request, c, a, week)
+
+
+@router.post("/clara/reistijd/{item_id:int}")
+async def reistijd_toevoegen(request: Request, item_id: int):
+    """Na de klik: adres en vervoer vastleggen, reistijd uitrekenen en de blokken in de agenda zetten. Met 'elke keer'
+    plant Clara voortaan ook de volgende keren van de reeks zelf in (tot vier weken vooruit, als de reis past)."""
+    controleer_herkomst(request)
+    f = await request.form()
+    try:
+        week = int(str(f.get("week", "0")))
+    except ValueError:
+        week = 0
+    adres = str(f.get("adres", "")).strip()[:300]
+    vervoer = str(f.get("vervoer", "automatisch"))
+    elke = f.get("elke") == "1"
+
+    def doe():
+        with db.pool.connection() as c:
+            a = _item_met_info(c, item_id)
+            if not a:
+                raise HTTPException(404)
+            inst = sync.instellingen(c)
+            if not reis.actief() or not inst.get("vertrekpunt"):
+                return None, "Stel eerst je vertrekpunt en de routedienst in bij Koppelingen › Reistijd."
+            if not adres:
+                return a, "Vul het adres in waar je naartoe gaat."
+            thuis = reis.adres(c, inst["vertrekpunt"])
+            if not thuis:
+                return a, "Je vertrekpunt is niet gevonden. Kijk het na bij Koppelingen › Reistijd."
+            c.execute("DELETE FROM plekken WHERE sleutel = %s AND NOT gevonden", (reis._sleutel(adres),))  # pylint: disable=protected-access
+            if not reis.adres(c, adres, focus=thuis["punt"]):
+                return a, f"Dit adres vindt {reis.dienst_naam()} niet. Probeer straat, huisnummer en plaats, of een bekende plek met plaatsnaam."
+            eigen = "" if adres == (a.get("locatie") or "").strip() and not a.get("online") else adres
+            herhalend = _herhalend(c, a)
+            reis.reisinfo_opslaan(c, a, adres=eigen, auto=elke and herhalend)
+            reis.kies(c, a, vervoer)
+            doelen = _schrijfdoelen(sync.koppelingen(c))
+            if not doelen:
+                return a, "Om reistijd in te plannen is een Google- of Microsoft-agenda met schrijfrechten nodig."
+            dag = dt.datetime.combine(a["start"].astimezone(config.TZ).date(), dt.time(0), tzinfo=config.TZ)
+            plan = sync.reisplan(c, dag, dag + dt.timedelta(days=1), alleen_cache=False)
+            nu = dt.datetime.now(config.TZ)
+            regels = [r for r in plan["regels"] if (r["afspraak"]["koppeling_id"], r["afspraak"]["extern_id"]) == (a["koppeling_id"], a["extern_id"])]
+            if not regels:
+                return None, (f"Adres voor '{a['titel']}' opgeslagen. Er is geen reistijd nodig: het is (bijna) thuis, of je komt "
+                              "van een afspraak op dezelfde plek.")
+            klaar, botst, gebruikt = [], [], set()
+            for r in regels:
+                if not r.get("minuten") or r["ingepland"] or r["start"] < nu:
+                    continue
+                doel = _doel_voor(doelen, a.get("domein"))
+                _maak(c, doel, reis.blok_titel(r), r["start"], r["eind"], reis.blok_omschrijving(r), bijwerken=False,
+                      kleur=str(inst.get("reis_kleur", "8")))
+                gebruikt.add(int(doel.split("|")[0]))
+                klaar.append(f"{'heen' if r['richting'] == 'heen' else 'terug'} {r['minuten']} min {reis.VERVOER[r['vervoer']]}")
+                if not r["past"]:
+                    botst.append(r["botst"])
+            for kid in gebruikt:
+                sync.synchroniseer(c, c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (kid,)).fetchone(), forceer=True)
+            tekst = (f"Reistijd voor '{a['titel']}' ingepland: " + ", ".join(klaar) + "." if klaar
+                     else f"Reistijd voor '{a['titel']}' stond al in je agenda (of er was geen route te vinden).")
+            if botst:
+                tekst += f" Let op: dat botst met {botst[0]}."
+            if elke and herhalend:
+                tekst += " Voor de volgende keren zet Clara de reistijd voortaan zelf in je agenda (tot vier weken vooruit)."
+                n = sync.reistijd_automatisch(c)
+                if n:
+                    tekst += f" Nu al: {n.split(': ', 1)[1]}."
+            return None, tekst
+    try:
+        a, tekst = await asyncio.to_thread(doe)
+    except (bronnen.BronFout, kluis.KluisFout) as e:
+        return _terug(f"/clara?week={week}", fout=str(e))
+    if a is not None:  # er mist nog iets: het formulier opnieuw, met de vraag erbij
+        with db.pool.connection() as c:
+            return _reistijd_scherm(request, c, a, week, fout=tekst, adres=adres, vervoer=vervoer, elke=elke)
+    return _terug(f"/clara?week={week}", melding=tekst)
+
+
+@router.post("/clara/reistijd/{item_id:int}/stop")
+async def reistijd_stop(request: Request, item_id: int):
+    """'Elke keer' weer uitzetten (blokken die er al staan blijven staan)."""
+    controleer_herkomst(request)
+    f = await request.form()
+    with db.pool.connection() as c:
+        a = _item_met_info(c, item_id)
+        if not a:
+            raise HTTPException(404)
+        reis.reisinfo_opslaan(c, a, auto=False)
+    return _terug(f"/clara?week={f.get('week') or 0}", melding=f"Clara plant de reistijd voor '{a['titel']}' niet meer zelf in.")
+
+
 @router.post("/clara/vervoer/{item_id}")
 async def vervoer_kiezen(request: Request, item_id: int):
     """Vervoer voor één afspraak (en bij een reeks voor alle keren) kiezen, of terug naar automatisch."""

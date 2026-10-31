@@ -49,7 +49,9 @@ vervoer vast met het id dat bij die afspraak staat; vanaf dan telt de afspraak a
 betekent dat hij niet (meer) meegaat.
 De reistijden zelf rekent het systeem uit met de routedienst (Google Maps of OpenRouteService); jij hoeft en kunt dat
 niet zelf. Leg je een vervoerskeuze vast, zeg dan dat de nieuwe reistijd binnen een paar minuten in de week staat.
-Zeg niet dat je geen toegang hebt tot routes of het thuisadres: dat regelt het systeem. Doe dit alleen als hij het zelf zegt, niet uit jezelf. Je accepteert, verplaatst of verwijdert zelf
+Zeg niet dat je geen toegang hebt tot routes of het thuisadres: dat regelt het systeem.
+Mist er bij een afspraak een adres, of wil Martijn reistijd voor elke keer van een reeks, dan doet hij dat met de knop
+"Reistijd" bij die afspraak in de week; daar vult hij het adres in en kiest hij "elke keer". Doe dit alleen als hij het zelf zegt, niet uit jezelf. Je accepteert, verplaatst of verwijdert zelf
 nooit iets en zegt ook niet dat je dat gedaan hebt. Gebruik alleen tijden die in de vrije blokken passen, tenzij
 Martijn iets anders vraagt."""
 
@@ -66,6 +68,10 @@ def _regel(a, tz):
             extra.append(f"id {a['id']} voor vervoer als hij meegaat")
     elif a.get("mee"):
         extra.append("Martijn gaat mee")
+    if a.get("reisadres") and a.get("reisadres") != a.get("locatie"):
+        extra.append(f"reisadres {a['reisadres']}")
+    if a.get("reis_auto"):
+        extra.append("reistijd wordt elke keer automatisch ingepland")
     return f"- {tijd} {a['titel']} [{sync.DOMEINEN.get(a.get('domein'), a.get('domein'))}, {a.get('agenda_naam') or a.get('koppeling')}]" + (
         f" ({'; '.join(extra)})" if extra else "")
 

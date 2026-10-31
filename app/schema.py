@@ -144,6 +144,14 @@ MIGRATIES = [
         aangemaakt timestamptz NOT NULL DEFAULT now())""",
     # Voorstel van Clara voor een bepaalde agenda (bijvoorbeeld die van Sanne).
     "ALTER TABLE agenda_voorstellen ADD COLUMN IF NOT EXISTS agenda text NOT NULL DEFAULT ''",
+    # Reistijd per afspraak (of per reeks, via de iCalUID): een eigen adres als de afspraak er geen (goed) heeft, en of
+    # Clara de reistijd elke keer zelf inplant (Martijn zette dat aan met een klik).
+    """CREATE TABLE IF NOT EXISTS agenda_reisinfo (
+        sleutel text PRIMARY KEY,
+        adres text NOT NULL DEFAULT '',
+        auto boolean NOT NULL DEFAULT false,
+        titel text NOT NULL DEFAULT '',
+        bijgewerkt timestamptz NOT NULL DEFAULT now())""",
     # Herhalende afspraken: bij welke reeks hoort een afspraak (Google recurringEventId, Outlook seriesMasterId).
     "ALTER TABLE agenda_items ADD COLUMN IF NOT EXISTS reeks text NOT NULL DEFAULT ''",
     # Reeksen die Clara (na een klik) maakte, zodat ze die later kan stoppen, een keer overslaan of verwijderen.
