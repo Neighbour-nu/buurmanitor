@@ -246,7 +246,14 @@ def herhaal_normaal(h):
         tot = dt.date.fromisoformat(tot).isoformat() if tot else ""
     except ValueError:
         tot = ""
-    return {"dagen": dagen, "tot": tot}
+    uit = {"dagen": dagen, "tot": tot}
+    try:
+        interval = max(1, min(8, int(h.get("interval") or 1)))
+    except (TypeError, ValueError):
+        interval = 1
+    if interval > 1:
+        uit["interval"] = interval
+    return uit
 
 
 def eerste_keer(start, herhaal):
@@ -261,11 +268,15 @@ def herhaal_tekst(h):
         return ""
     namen = [DAGNAMEN[d] for d in h["dagen"]]
     dagen = namen[0] if len(namen) == 1 else ", ".join(namen[:-1]) + " en " + namen[-1]
+    if h.get("interval", 1) > 1:
+        return f"om de {h['interval']} weken op {dagen}" + (f" tot en met {dt.date.fromisoformat(h['tot']):%d-%m-%Y}" if h.get("tot") else "")
     return f"elke {dagen}" + (f" tot en met {dt.date.fromisoformat(h['tot']):%d-%m-%Y}" if h.get("tot") else "")
 
 
 def _rrule(h):
     regel = "RRULE:FREQ=WEEKLY;WKST=MO;BYDAY=" + ",".join(DAGCODES[d][0] for d in h["dagen"])
+    if h.get("interval", 1) > 1:
+        regel += f";INTERVAL={h['interval']}"
     if h.get("tot"):
         einde = dt.datetime.combine(dt.date.fromisoformat(h["tot"]), dt.time(23, 59, 59), tzinfo=config.TZ).astimezone(UTC)
         regel += f";UNTIL={einde:%Y%m%dT%H%M%SZ}"
@@ -274,8 +285,87 @@ def _rrule(h):
 
 def _ms_herhaling(h, eerste):
     bereik = {"type": "endDate", "endDate": h["tot"]} if h.get("tot") else {"type": "noEnd"}
-    return {"pattern": {"type": "weekly", "interval": 1, "daysOfWeek": [DAGCODES[d][1] for d in h["dagen"]], "firstDayOfWeek": "monday"},
+    return {"pattern": {"type": "weekly", "interval": h.get("interval", 1), "daysOfWeek": [DAGCODES[d][1] for d in h["dagen"]], "firstDayOfWeek": "monday"},
             "range": {**bereik, "startDate": eerste.astimezone(config.TZ).date().isoformat(), "recurrenceTimeZone": "W. Europe Standard Time"}}
+
+
+def tot_uit_aantal(eerste, dagen, interval, aantal):
+    """De laatste dag van een reeks met een vast aantal keren."""
+    nummers = {list(DAGCODES).index(d) for d in dagen}
+    maandag = eerste - dt.timedelta(days=eerste.weekday())
+    d, n = eerste, 0
+    for _ in range(3700):
+        if d.weekday() in nummers and ((d - maandag).days // 7) % interval == 0:
+            n += 1
+            if n >= aantal:
+                return d
+        d += dt.timedelta(days=1)
+    return d
+
+
+def herhaal_uit_google(e, tz=config.TZ):
+    """De herhaling van een Google-reeks in Clara's vorm, of None als Clara die niet kan overnemen
+    (alleen dagelijks of wekelijks op vaste dagen; maandelijks en dergelijke niet)."""
+    regel = next((r[6:] for r in e.get("recurrence") or [] if r.upper().startswith("RRULE:")), "")
+    delen = dict(x.split("=", 1) for x in regel.upper().split(";") if "=" in x)
+    start, _ = _google_tijd(e.get("start") or {}, tz)
+    interval = int(delen.get("INTERVAL", "1") or 1)
+    codes = {v[0]: k for k, v in DAGCODES.items()}
+    if delen.get("FREQ") == "WEEKLY":
+        byday = [x.strip() for x in delen.get("BYDAY", "").split(",") if x.strip()]
+        if any(x not in codes for x in byday):
+            return None
+        dagen = [codes[x] for x in byday] or [list(DAGCODES)[start.weekday()]]
+    elif delen.get("FREQ") == "DAILY" and interval == 1:
+        dagen, interval = list(DAGCODES), 1
+    else:
+        return None
+    tot = ""
+    if delen.get("UNTIL"):
+        u = delen["UNTIL"]
+        try:
+            tot = (dt.datetime.strptime(u[:16], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC).astimezone(tz).date() if "T" in u
+                   else dt.datetime.strptime(u[:8], "%Y%m%d").date()).isoformat()
+        except ValueError:
+            return None
+    elif delen.get("COUNT"):
+        tot = tot_uit_aantal(start.astimezone(tz).date(), dagen, interval, int(delen["COUNT"])).isoformat()
+    return herhaal_normaal({"dagen": dagen, "tot": tot, "interval": interval})
+
+
+def herhaal_uit_ms(e, tz=config.TZ):
+    r = e.get("recurrence") or {}
+    p, bereik = r.get("pattern") or {}, r.get("range") or {}
+    namen = {v[1]: k for k, v in DAGCODES.items()}
+    interval = int(p.get("interval") or 1)
+    if p.get("type") == "weekly":
+        dagen = [namen[x] for x in p.get("daysOfWeek") or [] if x in namen]
+    elif p.get("type") == "daily" and interval == 1:
+        dagen = list(DAGCODES)
+    else:
+        return None
+    if not dagen:
+        return None
+    tot = ""
+    if bereik.get("type") == "endDate":
+        tot = str(bereik.get("endDate") or "")[:10]
+    elif bereik.get("type") == "numbered":
+        try:
+            eerste = dt.date.fromisoformat(str(bereik.get("startDate"))[:10])
+        except ValueError:
+            return None
+        tot = tot_uit_aantal(eerste, dagen, interval, int(bereik.get("numberOfOccurrences") or 1)).isoformat()
+    return herhaal_normaal({"dagen": dagen, "tot": tot, "interval": interval})
+
+
+def google_reeks_ophalen(toegang, agenda_id, reeks_id):
+    return _http(f"{GOOGLE_API}/calendars/{urllib.parse.quote(agenda_id, safe='')}/events/{urllib.parse.quote(reeks_id, safe='')}",
+                 headers={"Authorization": f"Bearer {toegang}"}, soort="Google Agenda")
+
+
+def ms_reeks_ophalen(toegang, agenda_id, reeks_id):  # noqa: ARG001
+    return _http(f"{GRAPH}/me/events/{urllib.parse.quote(reeks_id, safe='')}?$select=id,start,end,recurrence",
+                 headers={"Authorization": f"Bearer {toegang}"}, soort="Outlook")
 
 
 def google_maak(toegang, agenda_id, titel, start, eind, omschrijving="", kleur=None, herhaal=None):

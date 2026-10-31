@@ -96,6 +96,8 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         per_afspraak.setdefault((r["afspraak"]["koppeling_id"], r["afspraak"]["extern_id"]), []).append(r)
     open_reis = [r for r in plan["regels"] if r.get("minuten") and not r["ingepland"] and r["start"] > nu]
     onbekend_ids = {(a["koppeling_id"], a["extern_id"]) for a in plan.get("onbekend", [])}
+    thuis_ids = {(a["koppeling_id"], a["extern_id"]) for a in plan.get("thuis_afspraken", [])}
+    thuis_ids |= {(a["koppeling_id"], a["extern_id"]) for a in lijst if reis.is_thuis_tekst(a, inst)}
     conf = analyse.conflicten(komend)
     in_conflict = {id(x["a"]) for x in conf} | {id(x["b"]) for x in conf}
     conflict_ids = {(a["koppeling_id"], a["extern_id"]) for a in komend if id(a) in in_conflict}
@@ -114,7 +116,7 @@ def clara(request: Request, week: int = 0, duur: int = 0, dagen: int = 7, g: int
         eerdere=eerdere, archief=archief, reeksen=reeksen, herhaal_tekst=bronnen.herhaal_tekst,
         kluis_ok=kluis.actief(), sleutel_ok=bool(config.ANTHROPIC_API_KEY), inst=inst,
         domeinnaam=dict(DOMEINEN), verborgen=verborgen, plan=plan, per_afspraak=per_afspraak, open_reis=open_reis,
-        reis_actief=reis.actief(), is_reisblok=reis.is_reisblok, onbekend_ids=onbekend_ids, reis_dienst=reis.dienst_naam()))
+        reis_actief=reis.actief(), is_reisblok=reis.is_reisblok, onbekend_ids=onbekend_ids, thuis_ids=thuis_ids, reis_dienst=reis.dienst_naam()))
 
 
 def _reis_als_bezet(plan):
@@ -664,7 +666,7 @@ async def reistijd_toevoegen(request: Request, item_id: int):
                 return a, f"Dit adres vindt {reis.dienst_naam()} niet. Probeer straat, huisnummer en plaats, of een bekende plek met plaatsnaam."
             eigen = "" if adres == (a.get("locatie") or "").strip() and not a.get("online") else adres
             herhalend = _herhalend(c, a)
-            reis.reisinfo_opslaan(c, a, adres=eigen, auto=elke and herhalend)
+            reis.reisinfo_opslaan(c, a, adres=eigen, auto=False)
             reis.kies(c, a, vervoer)
             doelen = _schrijfdoelen(sync.koppelingen(c))
             if not doelen:
@@ -676,6 +678,11 @@ async def reistijd_toevoegen(request: Request, item_id: int):
             if not regels:
                 return None, (f"Adres voor '{a['titel']}' opgeslagen. Er is geen reistijd nodig: het is (bijna) thuis, of je komt "
                               "van een afspraak op dezelfde plek.")
+            if elke and herhalend:
+                tekst = _reistijd_voor_reeks(c, a, regels, doelen, inst, nu)
+                if tekst:
+                    return None, tekst
+                reis.reisinfo_opslaan(c, a, auto=True)  # kan niet als reeks: dan steeds vier weken vooruit
             klaar, botst, gebruikt = [], [], set()
             for r in regels:
                 if not r.get("minuten") or r["ingepland"] or r["start"] < nu:
@@ -694,7 +701,8 @@ async def reistijd_toevoegen(request: Request, item_id: int):
             if botst:
                 tekst += f" Let op: dat botst met {botst[0]}."
             if elke and herhalend:
-                tekst += " Voor de volgende keren zet Clara de reistijd voortaan zelf in je agenda (tot vier weken vooruit)."
+                tekst += (" Deze reeks herhaalt op een manier die Clara niet als reeks kan overnemen (bijvoorbeeld maandelijks): "
+                          "ze zet de reistijd voor de volgende keren steeds vier weken vooruit zelf in je agenda.")
                 n = sync.reistijd_automatisch(c)
                 if n:
                     tekst += f" Nu al: {n.split(': ', 1)[1]}."
@@ -707,6 +715,51 @@ async def reistijd_toevoegen(request: Request, item_id: int):
         with db.pool.connection() as c:
             return _reistijd_scherm(request, c, a, week, fout=tekst, adres=adres, vervoer=vervoer, elke=elke)
     return _terug(f"/clara?week={week}", melding=tekst)
+
+
+def _reistijd_voor_reeks(c, a, regels, doelen, inst, nu):
+    """Reistijd voor de hele reeks: herhalende reistijdblokken met dezelfde herhaling als de afspraak, vanaf deze keer.
+    Geeft de melding, of None als het niet als reeks kan (dan plant Clara steeds vier weken vooruit)."""
+    k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (a["koppeling_id"],)).fetchone()
+    if not a.get("reeks") or not k or k["soort"] not in ("google", "microsoft"):
+        return None
+    tok = sync.toegang(c, k)
+    if k["soort"] == "google":
+        h = bronnen.herhaal_uit_google(bronnen.google_reeks_ophalen(tok, a["agenda_id"], a["reeks"]))
+    else:
+        h = bronnen.herhaal_uit_ms(bronnen.ms_reeks_ophalen(tok, a["agenda_id"], a["reeks"]))
+    if not h:
+        return None
+    doel = _doel_voor(doelen, a.get("domein"))
+    dk = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (int(doel.split("|")[0]),)).fetchone()
+    voor = next((x["naam"] for x in (dk["agendas"] or []) if f"{dk['id']}|{x['id']}" == doel), dk["naam"])
+    klaar = []
+    for r in regels:
+        if not r.get("minuten") or r["start"] < nu:
+            continue
+        titel = reis.blok_titel(r)
+        _, extern = _maak(c, doel, titel, r["start"], r["eind"], reis.blok_omschrijving(r), bijwerken=False,
+                          kleur=str(inst.get("reis_kleur", "8")), herhaal=h)
+        c.execute("""INSERT INTO agenda_reeksen (koppeling_id, agenda_id, extern_id, titel, start, eind, herhaal, voor, soort,
+                                                 bron_koppeling, bron_reeks)
+                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'reistijd', %s, %s)""",
+                  (dk["id"], doel.split("|", 1)[1], extern, titel, r["start"], r["eind"], json.dumps(h), voor, a["koppeling_id"], a["reeks"]))
+        klaar.append(f"{'heen' if r['richting'] == 'heen' else 'terug'} {r['minuten']} min {reis.VERVOER[r['vervoer']]}")
+        if r["ingepland"]:  # er stond al een los blok voor deze keer: dat haalt Clara weg (de reeks dekt het nu)
+            los = c.execute("""SELECT * FROM agenda_items WHERE omschrijving LIKE %s AND reeks = ''""",
+                            (reis.MARKER + r["sleutel"] + "]%",)).fetchone()
+            if los:
+                lk = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (los["koppeling_id"],)).fetchone()
+                try:
+                    (bronnen.google_verwijder if lk["soort"] == "google" else bronnen.ms_verwijder)(sync.toegang(c, lk), los["agenda_id"], los["extern_id"])
+                except bronnen.NietGevonden:
+                    pass
+    if not klaar:
+        return None
+    sync.synchroniseer(c, dk, forceer=True)
+    return (f"Reistijd voor elke keer van '{a['titel']}' staat in je agenda ({bronnen.herhaal_tekst(h)}, vanaf "
+            f"{a['start'].astimezone(config.TZ):%d-%m}): " + ", ".join(klaar) + ". Vervalt een keer, dan haalt Clara de reistijd "
+            "die dag ook weg. Je vindt de reistijdreeks bij Herhalende afspraken.")
 
 
 @router.post("/clara/reistijd/{item_id:int}/stop")

@@ -258,6 +258,24 @@ def buiten_de_deur(a):
     return not a.get("online") and bool((a.get("locatie") or "").strip())
 
 
+THUIS_WOORDEN = {"thuis", "home", "bij mij thuis", "thuiswerken", "thuiskantoor", "werken vanuit huis"}
+
+
+def is_thuis_tekst(a, inst=None):
+    """Staat er in de afspraak dat hij thuis is (of het eigen adres)?"""
+    t = _sleutel(plek_naam(a))
+    return bool(t) and (t in THUIS_WOORDEN or (bool(inst) and t == _sleutel((inst or {}).get("vertrekpunt", ""))))
+
+
+def gedekte_reeksen(c):
+    """Reeksen (koppeling, reeks-id) waarvoor al een herhalend reistijdblok van Clara staat."""
+    try:
+        return {(r["bron_koppeling"], r["bron_reeks"]) for r in c.execute(
+            "SELECT bron_koppeling, bron_reeks FROM agenda_reeksen WHERE soort = 'reistijd' AND status = 'actief'").fetchall()}
+    except Exception:  # noqa: BLE001  (zonder database, zoals in sommige tests: niets gedekt)
+        return set()
+
+
 def plek_naam(a):
     return (a.get("reisadres") or "").strip() or (a.get("locatie") or "").strip()
 
@@ -306,15 +324,23 @@ def plan(c, afspraken, inst, nu=None, alleen_cache=True):
             ingepland[m.group(1)] = a
     reis = sorted((a for a in afspraken if buiten_de_deur(a)), key=lambda a: a["start"])
     bezette = sorted((a for a in afspraken if analyse.bezet(a) and not is_reisblok(a)), key=lambda a: a["start"])
-    regels, onbekend = [], []
+    regels, onbekend, thuis_afspraken = [], [], []
     gekozen = keuzes(c)
+    gedekt = gedekte_reeksen(c)
+
+    def staat_er(a, richting):
+        return _sleutel_blok(a, richting) in ingepland or (bool(a.get("reeks")) and (a["koppeling_id"], a["reeks"]) in gedekt)
     marge, tussendoor = int(inst["marge"]), dt.timedelta(minutes=int(inst["thuis_tussendoor"]))
     for i, a in enumerate(reis):
+        if is_thuis_tekst(a, inst):
+            thuis_afspraken.append(a)
+            continue
         doel = adres(c, plek_tekst(a), focus=thuis["punt"], alleen_cache=alleen_cache)
         if not doel:
             onbekend.append(a)
             continue
         if km(thuis["punt"], doel["punt"]) < 0.15:
+            thuis_afspraken.append(a)
             continue  # afspraak thuis
         vorige = reis[i - 1] if i else None
         vorige_doel = adres(c, plek_tekst(vorige), focus=thuis["punt"], alleen_cache=True) if vorige else None
@@ -337,7 +363,7 @@ def plan(c, afspraken, inst, nu=None, alleen_cache=True):
             regels.append({"afspraak": a, "richting": "heen", "van": van_naam, "naar": plek_naam(a), "vervoer": soort,
                            "gekozen": bool(keuze), "minuten": minuten, "geschat": geschat, "start": start, "eind": a["start"], "past": not in_de_weg,
                            "botst": in_de_weg[0]["titel"] if in_de_weg else "",
-                           "sleutel": _sleutel_blok(a, "heen"), "ingepland": _sleutel_blok(a, "heen") in ingepland})
+                           "sleutel": _sleutel_blok(a, "heen"), "ingepland": staat_er(a, "heen")})
         else:
             regels.append({"afspraak": a, "richting": "heen", "van": van_naam, "naar": plek_naam(a), "vervoer": soort,
                            "gekozen": bool(keuze), "minuten": None, "sleutel": _sleutel_blok(a, "heen"), "ingepland": False, "past": True})
@@ -351,8 +377,8 @@ def plan(c, afspraken, inst, nu=None, alleen_cache=True):
                 regels.append({"afspraak": a, "richting": "terug", "van": plek_naam(a), "naar": "thuis", "vervoer": terug,
                                "gekozen": bool(keuze), "minuten": m2 + marge, "geschat": g2, "start": a["eind"],
                                "eind": a["eind"] + dt.timedelta(minutes=m2 + marge), "past": True, "botst": "",
-                               "sleutel": _sleutel_blok(a, "terug"), "ingepland": _sleutel_blok(a, "terug") in ingepland})
-    return {"fout": "", "regels": regels, "onbekend": onbekend, "thuis": thuis}
+                               "sleutel": _sleutel_blok(a, "terug"), "ingepland": staat_er(a, "terug")})
+    return {"fout": "", "regels": regels, "onbekend": onbekend, "thuis": thuis, "thuis_afspraken": thuis_afspraken}
 
 
 # Icoon vooraan in de titel, zodat reistijd in elke agenda (ook op de telefoon) meteen herkenbaar is.

@@ -294,6 +294,40 @@ def reistijd_automatisch(c, nu=None):
     return f"reistijd automatisch: {gemaakt} blokken" if gemaakt else None
 
 
+def reistijdreeksen_opruimen(c, nu=None):
+    """Valt een keer van de oorspronkelijke reeks weg (afgezegd, vakantie), dan haalt Clara de reistijd op die dag ook
+    weg. Alleen als de bron goed is bijgewerkt, zodat een storing nooit reistijd laat verdwijnen."""
+    nu = nu or dt.datetime.now(config.TZ)
+    reeksen = c.execute("""SELECT r.* FROM agenda_reeksen r JOIN agenda_koppelingen b ON b.id = r.bron_koppeling
+                           WHERE r.soort = 'reistijd' AND r.status = 'actief' AND b.actief AND b.fout IS NULL
+                             AND b.laatst > %s""", (nu - dt.timedelta(minutes=30),)).fetchall()
+    weg = 0
+    tot = venster(nu)[1]
+    for r in reeksen:
+        bron = {x["dag"] for x in c.execute("""SELECT (start AT TIME ZONE 'Europe/Amsterdam')::date AS dag FROM agenda_items
+                                                WHERE koppeling_id = %s AND reeks = %s AND status <> 'geannuleerd'""",
+                                             (r["bron_koppeling"], r["bron_reeks"])).fetchall()}
+        keren = c.execute("""SELECT * FROM agenda_items WHERE koppeling_id = %s AND reeks = %s AND start > %s AND start < %s""",
+                          (r["koppeling_id"], r["extern_id"], nu, tot - dt.timedelta(days=1))).fetchall()
+        vervallen = [i for i in keren if (i["start"] + (r["eind"] - r["start"])).astimezone(config.TZ).date() not in bron
+                     and i["start"].astimezone(config.TZ).date() not in bron]
+        if not vervallen:
+            continue
+        k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (r["koppeling_id"],)).fetchone()
+        try:
+            tok = toegang(c, k)
+            for i in vervallen:
+                try:
+                    (bronnen.google_verwijder if k["soort"] == "google" else bronnen.ms_verwijder)(tok, i["agenda_id"], i["extern_id"])
+                except bronnen.NietGevonden:
+                    pass
+                c.execute("DELETE FROM agenda_items WHERE id = %s", (i["id"],))
+                weg += 1
+        except (bronnen.BronFout, kluis.KluisFout) as e:
+            return f"reistijdreeksen: {e}"
+    return f"reistijdreeksen: {weg} vervallen keren weggehaald" if weg else None
+
+
 @planner.taak("agenda", elke=dt.timedelta(minutes=5))
 def taak_agenda(c, forceer=False):
     uitslag = [u for k in koppelingen(c, alleen_actief=True) if (u := synchroniseer(c, k, forceer=forceer))]
@@ -303,6 +337,9 @@ def taak_agenda(c, forceer=False):
         if r:
             uitslag.append(r)
         r = reistijd_automatisch(c)
+        if r:
+            uitslag.append(r)
+        r = reistijdreeksen_opruimen(c)
         if r:
             uitslag.append(r)
         r = spiegel.bijwerken(c)

@@ -167,6 +167,10 @@ MIGRATIES = [
         voor text NOT NULL DEFAULT '',
         status text NOT NULL DEFAULT 'actief',
         aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    # Een reeks van Clara kan ook de reistijd bij een reeks van iemand anders zijn (soort 'reistijd', met de bron erbij).
+    "ALTER TABLE agenda_reeksen ADD COLUMN IF NOT EXISTS soort text NOT NULL DEFAULT 'eigen'",
+    "ALTER TABLE agenda_reeksen ADD COLUMN IF NOT EXISTS bron_koppeling int",
+    "ALTER TABLE agenda_reeksen ADD COLUMN IF NOT EXISTS bron_reeks text NOT NULL DEFAULT ''",
     # Voorstellen: een nieuwe afspraak (eventueel herhalend, eventueel ter vervanging van een reeks), of een reeks
     # stoppen, een keer overslaan of verwijderen.
     "ALTER TABLE agenda_voorstellen ADD COLUMN IF NOT EXISTS soort text NOT NULL DEFAULT 'nieuw'",

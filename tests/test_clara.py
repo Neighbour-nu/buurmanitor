@@ -1279,23 +1279,114 @@ def test_reistijd_per_afspraak_en_elke_keer(klant, monkeypatch):
         assert c.execute("SELECT adres, auto FROM agenda_reisinfo WHERE sleutel = %s", (f"id:{kid}:los1",)).fetchone() == {
             "adres": "Stadhuisplein 1, Eindhoven", "auto": False}
 
-    # Reeks: elke keer.
+    # Reeks: elke keer, als herhalende reistijd voor de hele reeks.
     gemaakt.clear()
+    herhalingen = []
+    dag = list(bronnen.DAGCODES)[(morgen + dt.timedelta(hours=5)).weekday()]
+    monkeypatch.setattr(bronnen, "google_reeks_ophalen", lambda tok, agenda, rid: {
+        "recurrence": [f"RRULE:FREQ=WEEKLY;BYDAY={bronnen.DAGCODES[dag][0]};COUNT=10"],
+        "start": {"dateTime": (morgen + dt.timedelta(hours=5)).isoformat()}})
+
+    def maak_reeks(tok, agenda_id, titel, s, e, o="", kleur=None, herhaal=None):
+        herhalingen.append(herhaal)
+        return maak(tok, agenda_id, titel, s, e, o, kleur)
+    monkeypatch.setattr(bronnen, "google_maak", maak_reeks)
     r = klant.get(f"/clara/reistijd/{reeks_ids[0]}", headers=KOP)
     assert 'name="elke"' in r.text and "herhalende afspraak" in r.text and 'value="Stadhuisplein 1, Eindhoven"' in r.text
     r = klant.post(f"/clara/reistijd/{reeks_ids[0]}", headers=FORM, follow_redirects=False,
                    data={"adres": "Stadhuisplein 1, Eindhoven", "vervoer": "automatisch", "elke": "1", "week": "0"})
-    assert "voortaan+zelf" in r.headers["location"], r.headers["location"]
-    assert len(gemaakt) == 6  # drie keer heen en terug (binnen vier weken)
+    assert "elke+keer" in r.headers["location"] and "Herhalende+afspraken" in r.headers["location"], r.headers["location"]
+    laatste = (morgen + dt.timedelta(hours=5, days=63)).date().isoformat()
+    assert len(gemaakt) == 2 and herhalingen == [{"dagen": [dag], "tot": laatste}] * 2  # heen en terug, tien keer
     with db.pool.connection() as c:
-        assert c.execute("SELECT adres, auto FROM agenda_reisinfo WHERE sleutel = 'uid:les@x'").fetchone() == {"adres": "", "auto": True}
-        assert sync.reistijd_automatisch(c) is None and len(gemaakt) == 6  # niets dubbel
-        assert "reistijd wordt elke keer automatisch ingepland" in gesprek.context(c)
-    assert "🔁 elke keer" in klant.get("/clara?week=1", headers=KOP).text or "🔁 elke keer" in klant.get("/clara?week=2", headers=KOP).text
+        rr = c.execute("SELECT * FROM agenda_reeksen WHERE soort = 'reistijd' ORDER BY id").fetchall()
+        assert len(rr) == 2 and all(x["bron_koppeling"] == kid and x["bron_reeks"] == "les" for x in rr)
+        assert not c.execute("SELECT auto FROM agenda_reisinfo WHERE sleutel = 'uid:les@x'").fetchone()["auto"]
+        # De keren van de reeks gelden nu als ingepland: geen losse blokken, ook niet automatisch.
+        p = sync.reisplan(c, morgen, morgen + dt.timedelta(days=20))
+        assert all(x["ingepland"] for x in p["regels"] if x["afspraak"].get("reeks") == "les")
+        assert sync.reistijd_automatisch(c) is None and len(gemaakt) == 2
+        # Valt een keer weg, dan gaat de reistijd die dag ook weg (alleen als de bron goed is bijgewerkt).
+        heen = rr[0]
+        for n in range(3):
+            s0 = heen["start"] + dt.timedelta(days=7 * n)
+            c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind, reeks, omschrijving)
+                         VALUES (%s, 'primary', %s, %s, %s, %s, %s, '[clara-reistijd:x] reeks')""",
+                      (kid, f"{heen['extern_id']}_{n}", heen["titel"], s0, s0 + (heen["eind"] - heen["start"]), heen["extern_id"]))
+        c.execute("DELETE FROM agenda_items WHERE extern_id = 'les_1'")
+        weggehaald = []
+        monkeypatch.setattr(bronnen, "google_verwijder", lambda tok, a, eid: weggehaald.append(eid))
+        c.execute("UPDATE agenda_koppelingen SET laatst = now() - interval '2 hours' WHERE id = %s", (kid,))
+        assert sync.reistijdreeksen_opruimen(c) is None and not weggehaald  # bron niet vers bijgewerkt: niets weg
+        c.execute("UPDATE agenda_koppelingen SET laatst = now() WHERE id = %s", (kid,))
+        assert "1 vervallen" in sync.reistijdreeksen_opruimen(c) and weggehaald == [f"{heen['extern_id']}_1"]
+    assert "Herhalende afspraken" in klant.get("/clara", headers=KOP).text
+
+    # Een reeks die maandelijks herhaalt: dan steeds vier weken vooruit.
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM agenda_reeksen")
+        c.execute("DELETE FROM agenda_items WHERE omschrijving LIKE '[clara-reistijd%%'")
+    gemaakt.clear()
+    monkeypatch.setattr(bronnen, "google_reeks_ophalen", lambda tok, agenda, rid: {
+        "recurrence": ["RRULE:FREQ=MONTHLY;BYMONTHDAY=4"], "start": {"dateTime": (morgen + dt.timedelta(hours=5)).isoformat()}})
+    r = klant.post(f"/clara/reistijd/{reeks_ids[0]}", headers=FORM, follow_redirects=False,
+                   data={"adres": "Stadhuisplein 1, Eindhoven", "vervoer": "automatisch", "elke": "1", "week": "0"})
+    assert "vier+weken+vooruit" in r.headers["location"], r.headers["location"]
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM agenda_items WHERE extern_id = 'les_1'")
+    assert len(gemaakt) >= 4
+    with db.pool.connection() as c:
+        assert c.execute("SELECT auto FROM agenda_reisinfo WHERE sleutel = 'uid:les@x'").fetchone()["auto"]
     klant.post(f"/clara/reistijd/{reeks_ids[0]}/stop", headers=FORM, data={"week": "0"})
     with db.pool.connection() as c:
         assert not c.execute("SELECT auto FROM agenda_reisinfo WHERE sleutel = 'uid:les@x'").fetchone()["auto"]
         c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (kid,))
         c.execute("UPDATE agenda_koppelingen SET schrijven = true WHERE soort = 'google'")
         c.execute("DELETE FROM agenda_reisinfo")
+        c.execute("DELETE FROM instellingen WHERE sleutel LIKE 'clara%%'")
+
+
+def test_herhaling_overnemen_van_google_en_outlook():
+    e = {"recurrence": ["EXDATE;TZID=Europe/Amsterdam:20261111T190000", "RRULE:FREQ=WEEKLY;BYDAY=WE,SA;UNTIL=20270101T225959Z"],
+         "start": {"dateTime": "2026-11-04T19:00:00+01:00"}}
+    assert bronnen.herhaal_uit_google(e) == {"dagen": ["wo", "za"], "tot": "2027-01-01"}
+    e2 = {"recurrence": ["RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=3"], "start": {"dateTime": "2026-11-04T19:00:00+01:00"}}
+    assert bronnen.herhaal_uit_google(e2) == {"dagen": ["wo"], "tot": "2026-12-02", "interval": 2}
+    assert bronnen.herhaal_uit_google({"recurrence": ["RRULE:FREQ=DAILY"], "start": {"dateTime": "2026-11-04T19:00:00+01:00"}})["dagen"] == list(bronnen.DAGCODES)
+    assert bronnen.herhaal_uit_google({"recurrence": ["RRULE:FREQ=MONTHLY;BYDAY=1WE"], "start": {"dateTime": "2026-11-04T19:00:00+01:00"}}) is None
+    assert bronnen.herhaal_uit_google({"recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=1WE"], "start": {"dateTime": "2026-11-04T19:00:00+01:00"}}) is None
+    m = {"recurrence": {"pattern": {"type": "weekly", "interval": 1, "daysOfWeek": ["thursday"]},
+                        "range": {"type": "numbered", "startDate": "2026-11-05", "numberOfOccurrences": 4}}}
+    assert bronnen.herhaal_uit_ms(m) == {"dagen": ["do"], "tot": "2026-11-26"}
+    m["recurrence"]["range"] = {"type": "noEnd", "startDate": "2026-11-05"}
+    assert bronnen.herhaal_uit_ms(m) == {"dagen": ["do"], "tot": ""}
+    m["recurrence"]["pattern"] = {"type": "absoluteMonthly", "interval": 1, "dayOfMonth": 5}
+    assert bronnen.herhaal_uit_ms(m) is None
+    assert bronnen.herhaal_tekst({"dagen": ["wo"], "tot": "", "interval": 2}) == "om de 2 weken op woensdag"
+    assert ";INTERVAL=2" in bronnen._rrule({"dagen": ["wo"], "tot": "", "interval": 2})  # pylint: disable=protected-access
+
+
+def test_geen_reistijdknop_bij_online_of_thuis(klant, monkeypatch):
+    from app.clara import reis, sync  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(reis, "actief", lambda: True)
+    monkeypatch.setattr(reis, "adres", lambda c, tekst, focus=None, alleen_cache=False: (
+        {"punt": THUIS, "label": "thuis"} if "strik" in tekst.lower() else None))
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM agenda_items")
+        sync.instellingen_opslaan(c, {**sync.instellingen(c), "vertrekpunt": "Meester Strikstraat 25, Helmond"})
+        k = c.execute("SELECT id FROM agenda_koppelingen WHERE soort = 'google' LIMIT 1").fetchone()["id"]
+        s = _nu_dag(1, 10)
+        ids = {}
+        for n, (titel, locatie, online) in enumerate([("Teams-overleg", "Microsoft Teams-vergadering", True), ("Thuiswerken", "Thuis", False),
+                                                        ("Bij mij", "Meester Strikstraat 25, Helmond", False), ("Zonder plek", "", False)]):
+            ids[titel] = c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, locatie, online, start, eind)
+                                      VALUES (%s, 'primary', %s, %s, %s, %s, %s, %s) RETURNING id""",
+                                   (k, f"o{n}", titel, locatie, online, s + dt.timedelta(hours=n), s + dt.timedelta(hours=n, minutes=30))).fetchone()["id"]
+    pagina = klant.get("/clara", headers=KOP).text
+    for titel in ("Teams-overleg", "Thuiswerken", "Bij mij"):
+        assert f"/clara/reistijd/{ids[titel]}?" not in pagina, titel
+    assert f"/clara/reistijd/{ids['Zonder plek']}?week=0\">＋ Reistijd" in pagina
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM agenda_items")
         c.execute("DELETE FROM instellingen WHERE sleutel LIKE 'clara%%'")

@@ -23,8 +23,8 @@
       {% for w, t in [('automatisch', 'automatisch (fiets dichtbij, OV in een grote stad, anders auto)'), ('fiets', 'fiets'), ('auto', 'auto'), ('ov', 'openbaar vervoer'), ('lopen', 'lopen')] %}
       <option value="{{ w }}" {{ 'selected' if vervoer == w }}>{{ t }}</option>{% endfor %}</select></label>
     {% if herhalend %}
-    <label class="vink breed"><input type="checkbox" name="elke" value="1" {{ 'checked' if elke }}> Elke keer: Clara zet de reistijd voor
-      alle volgende keren van deze reeks zelf in je agenda (tot vier weken vooruit, alleen als de reis past)</label>
+    <label class="vink breed"><input type="checkbox" name="elke" value="1" {{ 'checked' if elke }}> Elke keer: Clara zet de reistijd
+      als herhalende afspraak in je agenda, voor de hele reeks vanaf deze keer. Vervalt een keer, dan haalt ze de reistijd die dag ook weg.</label>
     {% endif %}
     <button class="knop vol" type="submit">Reistijd berekenen en inplannen</button>
   </form>
