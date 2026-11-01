@@ -262,8 +262,6 @@ MIGRATIES = [
     # Gesprek met Bram over de hele postkamer (kader 'postkamer'), los van de gesprekken over één bericht. Daarin kan Bram
     # ook voorstellen om meer berichten tegelijk op te ruimen (soort 'bulk').
     "ALTER TABLE gesprekken ADD COLUMN IF NOT EXISTS kader text NOT NULL DEFAULT ''",
-    "ALTER TABLE post_voorstellen DROP CONSTRAINT IF EXISTS post_voorstellen_soort_check",
-    "ALTER TABLE post_voorstellen ADD CONSTRAINT post_voorstellen_soort_check CHECK (soort IN ('antwoord', 'afspraak', 'herinnering', 'bulk'))",
     "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS uitgeschreven timestamptz",
     "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS uitschrijf_link text NOT NULL DEFAULT ''",
     # Zelf verplaatst (actie, lezen of weg) gaat voor het oordeel van Bram. Een afzenderregel doet dat voortaan
@@ -282,4 +280,7 @@ MIGRATIES = [
         status text NOT NULL DEFAULT 'open',
         uitslag text NOT NULL DEFAULT '',
         aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    # (na het aanmaken, zodat het ook op een lege database werkt) soort 'bulk' erbij
+    "ALTER TABLE post_voorstellen DROP CONSTRAINT IF EXISTS post_voorstellen_soort_check",
+    "ALTER TABLE post_voorstellen ADD CONSTRAINT post_voorstellen_soort_check CHECK (soort IN ('antwoord', 'afspraak', 'herinnering', 'bulk'))",
 ]

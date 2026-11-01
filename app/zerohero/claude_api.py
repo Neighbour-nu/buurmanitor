@@ -108,7 +108,8 @@ def gesprek(system, berichten, model=None, max_tokens=16000, zoeken=0, timeout=6
             body = dict(body, messages=body["messages"] + [{"role": "assistant", "content": _als_voorzet(r.get("content") or [])}])
         else:
             body = dict(body, messages=basis + ([{"role": "assistant", "content": voorzet}] if voorzet else []))
-    tekst = "".join(b.get("text", "") for b in inhoud if b.get("type") == "text")
+    from .opmaak import zonder_cite  # pylint: disable=import-outside-toplevel
+    tekst = zonder_cite("".join(b.get("text", "") for b in inhoud if b.get("type") == "text"))
     bronnen, gezien = [], set()
     for b in inhoud:
         for c in b.get("citations") or []:

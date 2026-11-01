@@ -15,6 +15,12 @@ KOP = re.compile(r"^#{1,4}\s+(.*)$")
 PLEK = re.compile(r"^\[\[blok (\d+)(?::\s*([^\]]*))?\]\]$")
 LIJST = re.compile(r"^\s*[-*•]\s+(.*)$")
 GENUMMERD = re.compile(r"^\s*\d+[.)]\s+(.*)$")
+# Bronvermeldingen die Claude bij zoeken soms als <cite index="1-2">...</cite> in de tekst zet: de tekst blijft, de tags gaan weg.
+CITE = re.compile(r"</?\s*cite\b[^>]*>", re.I)
+
+
+def zonder_cite(tekst):
+    return CITE.sub("", tekst or "")
 
 
 def _inline(t):
@@ -36,7 +42,7 @@ def _cellen(regel):
 
 def blokken(tekst):
     """Deelt de tekst op in blokken: ('kop', t), ('p', t), ('ul'|'ol', [items]), ('tabel', [rijen])."""
-    regels = (tekst or "").replace("\r\n", "\n").split("\n")
+    regels = zonder_cite(tekst).replace("\r\n", "\n").split("\n")
     uit, alinea = [], []
 
     def sluit():
