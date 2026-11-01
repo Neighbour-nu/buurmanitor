@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block titel %}Bronnen · Socials · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Waar Jesse naar luistert</h1>
+    <p class="motto">Jesse leest mee op open bronnen en kijkt naar de reacties op je eigen posts. Hij post, reageert of liket nooit zelf.</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="/jesse">Terug naar Socials</a>
+    <form method="post" action="/jesse/vernieuwen" class="inline"><button class="knop vol" type="submit">Nu ophalen</button></form></div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+
+<section class="kaart">
+  <h2>Reacties op je eigen posts</h2>
+  {% if not doellijn %}<p class="noot">De Doellijn draait hier nog niet als werkruimte; via haar koppelingen komen de reacties binnen.</p>
+  {% else %}
+    <p>Via de koppelingen van de Doellijn: reacties op je posts van de laatste twee weken op Instagram en Facebook (Meta) en Threads.
+      Deze week binnen: {% for r in reacties %}{{ r.n }} van {{ r.platform | capitalize }}{{ ', ' if not loop.last }}{% else %}nog niets{% endfor %}.</p>
+    {% if stand and stand.resultaat %}<p class="noot">Laatste keer ({{ geleden(stand.laatst) }}): {{ stand.resultaat }}</p>{% endif %}
+    <p class="noot">Komt er niets binnen terwijl er wel reacties zijn, dan mist de koppeling waarschijnlijk de toestemming om reacties te lezen
+      (bij Meta: instagram_manage_comments en pages_read_user_content; bij Threads: threads_read_replies). Die zet je in de Doellijn bij de koppeling.</p>
+  {% endif %}
+</section>
+
+<section class="kaart">
+  <h2>Open bronnen</h2>
+  <div class="tabel-scroll"><table class="tabel">
+    <thead><tr><th>Naam</th><th>Voor</th><th>Soort</th><th>Laatste keer</th><th>Week</th><th></th></tr></thead>
+    <tbody>
+    {% for b in bronnen %}
+      <tr class="{{ 'uit' if not b.actief }}">
+        <td><b>{{ b.naam }}</b><br><span class="noot breekbaar">{{ b.adres }}</span></td>
+        <td>{{ stromen[b.stroom] }}</td>
+        <td>{{ soorten[b.soort] }}</td>
+        <td>{% if b.fout %}<span class="label rood" title="{{ b.fout }}">fout</span> <span class="noot">{{ b.fout[:110] }}</span>{% elif b.laatst %}{{ geleden(b.laatst) }}<br><span class="noot">{{ b.status }}</span>{% else %}<span class="noot">nog niet</span>{% endif %}</td>
+        <td>{{ b.week }}</td>
+        <td><form method="post" class="knoppenrij">
+          {% if b.actief %}<button class="knop klein" formaction="/jesse/bronnen/{{ b.id }}/uit">Uitzetten</button>{% else %}<button class="knop klein" formaction="/jesse/bronnen/{{ b.id }}/aan">Aanzetten</button>{% endif %}
+          <button class="knop klein" formaction="/jesse/bronnen/{{ b.id }}/weg" onclick="return confirm('Deze bron verwijderen?')">Verwijderen</button></form></td>
+      </tr>
+    {% else %}<tr><td colspan="6" class="noot">Nog geen bronnen.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="kaart">
+  <h2>Bron toevoegen</h2>
+  <form method="post" action="/jesse/bronnen" class="velden">
+    <label>Naam <input type="text" name="naam" maxlength="100" required placeholder="bijvoorbeeld Reddit r/Bossball"></label>
+    <label>Voor <select name="stroom">{% for s in bron_stromen %}<option value="{{ s }}">{{ stromen[s] }}</option>{% endfor %}</select></label>
+    <label>Soort <select name="soort">{% for w, n in soorten.items() %}<option value="{{ w }}">{{ n }}</option>{% endfor %}</select></label>
+    <label class="breed">Adres of zoekopdracht <input type="text" name="adres" maxlength="500" required placeholder="subreddit, server/hashtag, zoekwoorden of https://…"></label>
+    <div class="knoppenrij breed"><button class="knop vol" type="submit">Toevoegen</button></div>
+  </form>
+  <ul class="noot">
+    <li><b>Reddit:</b> de naam van een subreddit (<code>Goalkeeping</code>), of <code>search:</code> met zoekwoorden (<code>search:Helmond</code>).</li>
+    <li><b>Mastodon:</b> server en hashtag (<code>mastodon.social/keeper</code>).</li>
+    <li><b>Bluesky:</b> zoekwoorden, eventueel met taal (<code>keeper lang:nl</code>).</li>
+    <li><b>YouTube:</b> zoekwoorden; gebruikt de YouTube-sleutel van de Doellijn{% if not youtube %} (die is er nog niet: deploy/youtube.sh){% endif %}.</li>
+    <li><b>RSS-feed:</b> het adres van een feed, bijvoorbeeld van een blog of forum.</li>
+    <li>LinkedIn en X laten niet meekijken (geen open toegang); die kunnen er dus niet bij.</li>
+  </ul>
+</section>
+
+<section class="kaart">
+  <h2>Wegen</h2>
+  <p>Jesse weegt nieuwe berichten met Claude (het lichte model), tot {{ euro(plafond) }} per dag. Vandaag besteed: {{ euro(besteed) }}.
+    {% if not sleutel_ok %}Er is nog geen Claude-sleutel: tot die er is, staat het nieuwste bovenaan.{% endif %}</p>
+  <p class="noot">Berichten onder de 40 laat Jesse weg (met "Nog N laten zien" zie je ze toch); reacties op je eigen posts zie je altijd.</p>
+</section>
+{% endblock %}

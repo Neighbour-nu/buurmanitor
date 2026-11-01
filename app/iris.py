@@ -9,7 +9,8 @@ from .kern.web import datum_lang
 PLANNING = """Stand van de bouw:
 - Klaar: de kern van Buurmanitor, de werkruimtes Politiek (Promonitor) en ZEROHERO (de Doellijn), en het hele team:
   Clara (agenda), Bram (mail uit Gmail en Outlook), Noor (het takenbord en de planning van taken), Vera (nieuws:
-  keepers, lokale en landelijke politiek, overig) en Jesse (socials: cijfers per kanaal, posts, concepten, voorstellen).
+  keepers, lokale en landelijke politiek, overig) en Jesse (luistert mee op de socials: reacties op Martijns posts,
+  en wat er over keepers en Helmond gezegd wordt).
 - Volgende stap: Bram verder (Teams, WhatsApp en Signal).
 Teams, WhatsApp en Signal kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt.
 Voor de agenda is Clara er, voor mail Bram, voor taken Noor (onder Taken), voor nieuws Vera (onder Nieuws), voor
@@ -30,7 +31,7 @@ def context(c):
         delen.append(post)
     delen.append(_taken(c, nu))
     delen.append(_nieuws(c, nu))
-    delen.append(_socials())
+    delen.append(_socials(c))
     g, s = gezondheid.geheugen(), gezondheid.schijf()
     if g and s:
         delen.append(f"Server: geheugen {g['procent']} procent in gebruik, schijf {s['procent']} procent vol.")
@@ -98,20 +99,17 @@ def _nieuws(c, nu):
         f"- [{nieuws.SOORT_NAMEN[b['soort']]}] {b['titel']} ({b['bron']}){': ' + b['waarom'] if b['waarom'] else ''}" for b in koppen)
 
 
-def _socials():
-    """Wat Jesse ziet, kort: volgers per kanaal met de groei van deze week, de beste post en wat klaarstaat."""
-    from .jesse import socials  # pylint: disable=import-outside-toplevel
-    o = socials.overzicht(7)
-    if o["kanalen"] is None:
-        return "Socials (van Jesse): de Doellijn draait hier niet, dus geen cijfers."
-    regels = [f"- {k['naam']}: {k['volgers']} volgers" + (f" ({'+' if (k['volgers_delta'] or 0) >= 0 else ''}{k['volgers_delta']} deze week)" if k["volgers_delta"] is not None else "")
-              for k in o["kanalen"] if k["heeft_cijfers"] and k["volgers"] is not None]
-    uit = ["Socials (van Jesse):"] + (regels or ["- nog geen cijfers"])
-    if o["beste"]:
-        uit.append(f"Beste post deze week: {o['beste']['naam']}, {(o['beste']['tekst'] or 'LinkedIn-post')[:100]} ({o['beste']['interacties']} interacties).")
-    if o["pijplijn"]:
-        uit.append(f"{len(o['pijplijn'])} concepten in de Doellijn staan klaar om te posten.")
-    return "\n".join(uit)
+def _socials(c):
+    """Wat Jesse hoort, kort: reacties op Martijns posts en de interessantste berichten over keepers en Helmond."""
+    from .jesse import luisteren  # pylint: disable=import-outside-toplevel
+    try:
+        per = luisteren.voor_vandaag(c, per=4)
+    except Exception:  # noqa: BLE001  (socials zijn een extra; het gesprek gaat altijd door)
+        return ""
+    regels = [f"- [{luisteren.STROOM_NAMEN[s]}] {b['platformnaam']}, {b['auteur'] or 'onbekend'}: {b['titel'][:140]}"
+              + (f" ({b['toon']})" if b["toon"] else "") + (f": {b['waarom']}" if b["waarom"] else "")
+              for s, lijst in per.items() for b in lijst]
+    return "Socials (van Jesse, die meeluistert):\n" + ("\n".join(regels) or "- niets bijzonders")
 
 
 def antwoord(c, gesprek_id):

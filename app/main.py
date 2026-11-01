@@ -16,7 +16,7 @@ from . import iris, personas
 from .bram import sync as bram_sync, web as bram_web  # noqa: F401  (sync registreert de planner-taak 'post')
 from .clara import sync as clara_sync, web as clara_web  # noqa: F401  (sync registreert de planner-taak)
 from .taken import noor, web as taken_web
-from .jesse import socials as jesse_socials, web as jesse_web
+from .jesse import luisteren as jesse_luisteren, web as jesse_web  # noqa: F401  (luisteren registreert de planner-taak)
 from .vera import nieuws as vera_nieuws, web as vera_web  # noqa: F401  (nieuws registreert de planner-taak)
 from .kern import claude, config, db, gezondheid, meldingen, planner, prefix, web
 from .kern.db import q, q1, uitvoeren
@@ -127,22 +127,22 @@ def vandaag(request: Request):
         post = bram_vandaag(c)
         taken = noor.vandaag_overzicht(c, nu)
         stromen, _ = vera_nieuws.verzamel(c, 2)
-        social = jesse_socials.overzicht(7)
+        luister = jesse_luisteren.voor_vandaag(c)
         koppen = vera_nieuws.koppen_per_soort(stromen, nu, per={"keepers": 4, "politiek": 3, "landelijk": 2, "overig": 4})
     urgent = [m for m in open_ if m["niveau"] == "urgent"]
     return templates.TemplateResponse("vandaag.html", ctx(
         request, "vandaag", nu=nu, meldingen=open_, urgent=urgent, werkruimtes=config.werkruimtes(), agenda=agenda,
         lijst_meldingen=lijst_meldingen, meldingmap=meldingmap, meldingmappen=meldingen.MAPPEN, aantallen=aantallen,
-        post=post, taken=taken, koppen=koppen, social=social, categorieen=vera_nieuws.CATEGORIEEN, deelnamen=vera_nieuws.DEEL_NAMEN,
+        post=post, taken=taken, koppen=koppen, luister=luister, socialstromen=[x for x in jesse_luisteren.STROMEN if x[0] in luister], categorieen=vera_nieuws.CATEGORIEEN, deelnamen=vera_nieuws.DEEL_NAMEN,
         taakmelding=request.query_params.get("melding", "")[:300]))
 
 
-VERNIEUW_TAKEN = ("agenda", "post", "nieuws")  # wat de knop Vernieuwen op Vandaag meteen ophaalt
+VERNIEUW_TAKEN = ("agenda", "post", "nieuws", "socials")  # wat de knop Vernieuwen op Vandaag meteen ophaalt
 
 
 @app.post("/vandaag/vernieuwen")
 def vandaag_vernieuwen(request: Request):
-    """Mail, agenda's en nieuws nu ophalen (op de achtergrond); de pagina wacht met /api/vernieuwen tot het klaar is."""
+    """Mail, agenda's, nieuws en socials nu ophalen (op de achtergrond); de pagina wacht met /api/vernieuwen tot het klaar is."""
     controleer_herkomst(request)
     gestart = [n for n in VERNIEUW_TAKEN if n in planner.TAKEN]
     for naam in gestart:

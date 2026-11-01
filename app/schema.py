@@ -16,6 +16,16 @@ def _vera_bronnen(stroom="overig"):
                WHERE EXISTS (SELECT 1 FROM vlag)"""
 
 
+def _jesse_bronnen():
+    """De standaardbronnen van Jesse één keer klaarzetten."""
+    from .jesse.luisteren import STANDAARD_BRONNEN  # pylint: disable=import-outside-toplevel
+    waarden = ", ".join("(" + ", ".join("'" + x.replace("'", "''") + "'" for x in b) + ")" for b in STANDAARD_BRONNEN)
+    return f"""WITH vlag AS (INSERT INTO instellingen (sleutel, waarde) VALUES ('jesse_bronnen_klaargezet', '1')
+                             ON CONFLICT (sleutel) DO NOTHING RETURNING 1)
+               INSERT INTO jesse_bronnen (naam, soort, adres, stroom) SELECT * FROM (VALUES {waarden}) AS v(naam, soort, adres, stroom)
+               WHERE EXISTS (SELECT 1 FROM vlag)"""
+
+
 MIGRATIES = [
     """CREATE TABLE IF NOT EXISTS instellingen (
         sleutel text PRIMARY KEY,
@@ -397,4 +407,37 @@ MIGRATIES = [
         tekst text NOT NULL,
         status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'bewaard', 'weg')),
         aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    # Jesse luistert mee op de socials: eigen bronnen (Reddit, Mastodon, Bluesky, YouTube, RSS), de berichten en wat gelezen is.
+    """CREATE TABLE IF NOT EXISTS jesse_bronnen (
+        id serial PRIMARY KEY,
+        naam text NOT NULL,
+        soort text NOT NULL CHECK (soort IN ('reddit', 'mastodon', 'bluesky', 'youtube', 'rss')),
+        adres text NOT NULL,
+        stroom text NOT NULL DEFAULT 'keepers' CHECK (stroom IN ('keepers', 'politiek', 'overig')),
+        actief boolean NOT NULL DEFAULT true,
+        laatst timestamptz,
+        status text NOT NULL DEFAULT '',
+        fout text NOT NULL DEFAULT '')""",
+    """CREATE TABLE IF NOT EXISTS jesse_berichten (
+        id serial PRIMARY KEY,
+        bron_id int REFERENCES jesse_bronnen(id) ON DELETE SET NULL,
+        platform text NOT NULL,
+        stroom text NOT NULL,
+        guid text NOT NULL UNIQUE,
+        auteur text NOT NULL DEFAULT '',
+        tekst text NOT NULL,
+        url text NOT NULL,
+        tijd timestamptz,
+        binnen timestamptz NOT NULL DEFAULT now(),
+        interacties int,
+        score int,
+        toon text NOT NULL DEFAULT '',
+        waarom text NOT NULL DEFAULT '',
+        verborgen boolean NOT NULL DEFAULT false)""",
+    "CREATE INDEX IF NOT EXISTS jesse_berichten_binnen ON jesse_berichten (binnen DESC)",
+    """CREATE TABLE IF NOT EXISTS jesse_gelezen (
+        bericht int PRIMARY KEY,
+        tijd timestamptz NOT NULL DEFAULT now())""",
+    _jesse_bronnen(),
 ]
+

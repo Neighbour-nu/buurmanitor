@@ -1,19 +1,15 @@
 {% extends "base.html" %}
 {% block titel %}Socials · Buurmanitor{% endblock %}
 {% block main_klasse %}breed{% endblock %}
-{% macro getal(v) -%}{{ '–' if v is none else ('{:,}'.format(v) | replace(',', '.') if v is number else v) }}{%- endmacro %}
-{% macro delta(d) -%}
-  {%- if d is not none and d != 0 %}<span class="sdelta {{ 'op' if d > 0 else 'neer' }}">{{ '+' if d > 0 }}{{ getal(d) }}</span>{% endif -%}
+{% macro score(b) -%}
+  {%- if b.score is none %}<span class="nscore nieuw" title="nog niet gewogen">nieuw</span>
+  {%- else %}<span class="nscore {{ 'hoog' if b.score >= 80 else ('midden' if b.score >= 60 else 'laag') }}" title="belang volgens de weging">{{ b.score }}</span>{% endif -%}
 {%- endmacro %}
-{% macro postkaart(v, bewaard=false) -%}
-<form method="post" action="/jesse/voorstel/{{ v.id }}/tekst" class="voorstel spostvoorstel" data-id="{{ v.id }}">
-  <span class="breed"><span class="schip {{ v.kanaal }}">{{ kanaal_namen[v.kanaal] }}</span>{% if v.voor %} <span class="noot">voor {{ voor_namen[v.voor] }}</span>{% endif %}</span>
-  <textarea name="tekst" rows="6" aria-label="Tekst van de post">{{ v.tekst }}</textarea>
-  <span class="knoppenrij"><button class="knop klein vol kopieer" type="button">Kopiëren</button>
-    <button class="knop klein" type="submit">Tekst opslaan</button>
-    {% if not bewaard %}<button class="knop klein" type="submit" formaction="/jesse/voorstel/{{ v.id }}/bewaar">Bewaren</button>{% endif %}
-    <button class="knop klein" type="submit" formaction="/jesse/voorstel/{{ v.id }}/weg">Weg</button></span>
-</form>
+{% macro leesknop(b) -%}
+  <form method="post" action="/jesse/gelezen/{{ b.id }}" class="nlees">
+    <input type="hidden" name="aan" value="{{ '0' if b.gelezen else '1' }}"><input type="hidden" name="terug" value="/jesse?stroom={{ stroom }}&dagen={{ dagen }}{{ '&alles=1' if alles }}">
+    <button type="submit" title="{{ 'Weer als ongelezen' if b.gelezen else 'Markeer als gelezen' }}" aria-label="{{ 'weer als ongelezen' if b.gelezen else 'markeer als gelezen' }}" aria-pressed="{{ 'true' if b.gelezen else 'false' }}">✓</button>
+  </form>
 {%- endmacro %}
 {% block inhoud %}
 <section class="kopregel">
@@ -21,118 +17,68 @@
     <h1>Socials</h1>
     <p class="motto"><b>Jesse:</b> {{ p.motto }}</p>
   </div>
-  <div class="knoppen"><a class="knop" href="#jesse">💬 Vraag Jesse</a></div>
+  <div class="knoppen"><a class="knop" href="/jesse/bronnen">Bronnen</a> <a class="knop" href="/zerohero/dashboard">Je kanalen in de Doellijn</a></div>
 </section>
-{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
-{% for f in o.fouten %}<p class="item urgent">Kon niet alles lezen: {{ f }}</p>{% endfor %}
+{% if stand and stand.fout %}<p class="item belangrijk">Het luisteren gaf de laatste keer een fout: {{ stand.fout.splitlines()[0][:200] }}</p>{% endif %}
+{% if bronnen and bronnen.fout %}<p class="noot">{{ bronnen.fout }} bron{{ 'nen' if bronnen.fout != 1 }} gaf{{ 'en' if bronnen.fout != 1 }} de laatste keer een fout. <a href="/jesse/bronnen">Bekijk de bronnen</a>.</p>{% endif %}
 
-{% if o.kanalen is none %}
-  <p class="item">De Doellijn draait hier nog niet als werkruimte. Daar komen de cijfers en posts van je kanalen vandaan.</p>
-{% else %}
-<nav class="nfilter" aria-label="Periode">
-  <h2 class="sectiekop">Kanalen</h2>
-  <div class="nschakel klein">{% for d, naam in periodes %}<a href="/jesse?dagen={{ d }}" class="{{ 'actief' if d == dagen }}">{{ naam }}</a>{% endfor %}</div>
+<nav class="nfilter" aria-label="Filter">
+  <div class="nschakel">
+    {% for s, naam in tabs %}<a href="/jesse?stroom={{ s }}&dagen={{ dagen }}" class="{{ s }} {{ 'actief' if s == stroom }}" {% if s == stroom %}aria-current="page"{% endif %}>{{ naam }}</a>{% endfor %}
+  </div>
+  <div class="nschakel klein">
+    {% for d, naam in periodes %}<a href="/jesse?stroom={{ stroom }}&dagen={{ d }}" class="{{ 'actief' if d == dagen }}">{{ naam }}</a>{% endfor %}
+  </div>
 </nav>
-<div class="skanalen">
-  {% for k in o.kanalen %}
-  <a class="skanaal {{ k.id }} {{ 'leeg' if not k.heeft_cijfers }}" href="/zerohero/bereik/{{ k.id }}?periode={{ 90 if dagen > 30 else dagen }}">
-    <span class="snaam">{{ k.naam }}</span>
-    {% if k.heeft_cijfers %}
-      <span class="sgroot">{{ getal(k.volgers) }} {{ delta(k.volgers_delta) }}</span>
-      <span class="slabel">{{ 'abonnees' if k.id == 'youtube' else 'volgers' }}</span>
-      {% if k.hoofd is not none %}<span class="sklein">{{ getal(k.hoofd) }} {{ delta(k.hoofd_delta) }} <span class="slabel">{{ (k.hoofd_label or '') | lower }}</span></span>{% endif %}
-    {% else %}<span class="slabel">nog geen cijfers</span>{% endif %}
-  </a>
+
+<div class="nraster jraster {{ 'enkel' if stroom != 'alles' }}">
+  {% for k in kolommen %}
+  <section class="nkolom {{ k.stroom }}" aria-label="{{ k.naam }}">
+    <h2><span>{{ k.naam }}</span> <span class="aantal" title="berichten in deze periode">{{ k.totaal }}</span></h2>
+    <div class="nlijst">
+    {% for b in k.lijst %}
+      <article class="nitem {{ 'gelezen' if b.gelezen }}">
+        {{ score(b) }}
+        <div class="ninhoud">
+          <a href="/jesse/lees/{{ b.id }}" target="_blank" rel="noopener" class="nlink" title="{{ b.tekst[:400] }}">{{ b.titel }}</a>
+          <span class="nmeta"><span class="schip {{ b.platform }}">{{ b.platformnaam }}</span> {{ b.auteur }}{% if b.tijd %} · {{ geleden(b.tijd) }}{% endif %}{% if b.interacties %} · {{ b.interacties }} interacties{% endif %}{% if b.toon %} · <span class="jtoon {{ b.toon }}">{{ b.toon }}</span>{% endif %}</span>
+          {% if b.waarom %}<p class="nwaarom">{{ b.waarom }}</p>{% endif %}
+        </div>
+        <div class="nacties">{{ leesknop(b) }}
+          <form method="post" action="/jesse/verberg/{{ b.id }}" class="nweg"><input type="hidden" name="terug" value="/jesse?stroom={{ stroom }}&dagen={{ dagen }}">
+            <button type="submit" title="Niet interessant: weg" aria-label="verbergen">×</button></form></div>
+      </article>
+    {% else %}<p class="noot">{% if k.stroom == 'reacties' %}Geen nieuwe reacties op je posts.{% else %}Niets interessants in deze periode.{% endif %}</p>{% endfor %}
+    </div>
+    <p class="noot nvoet">
+      {%- if k.meer and not alles %}<a href="/jesse?stroom={{ k.stroom }}&dagen={{ dagen }}&alles=1">Nog {{ k.meer }} laten zien</a>
+      {%- elif alles and loop.first %}<a href="/jesse?stroom={{ stroom }}&dagen={{ dagen }}">Alleen het belangrijkste</a>{% endif %}
+      {%- if k.ongewogen and not sleutel_ok %} · nog niet gewogen (geen Claude-sleutel){% endif %}
+    </p>
+  </section>
   {% endfor %}
 </div>
-{% endif %}
-
-<div class="sraster">
-  <section class="kaart">
-    <h2>Laatste posts <span class="noot">twee weken</span></h2>
-    {% if o.beste %}
-      <div class="sbeste"><span class="slabel">Beste post {{ 'deze week' if dagen == 7 else 'van de periode' }}</span>
-        <div class="spost {{ o.beste.kanaal }}"><span class="schip {{ o.beste.kanaal }}">{{ o.beste.naam }}</span>
-          <span class="stekst">{{ o.beste.tekst or 'LinkedIn-post van ' ~ o.beste.tijd.strftime('%d-%m') }}</span>
-          <span class="smeta">{{ getal(o.beste.interacties) }} interacties{% if o.beste.weergaven is not none %} · {{ getal(o.beste.weergaven) }} weergaven{% endif %}{% if o.beste.link %} · <a href="{{ o.beste.link }}" target="_blank" rel="noopener">bekijk</a>{% endif %}</span></div>
-      </div>
-    {% endif %}
-    {% for pst in (o.posts or [])[:20] %}
-      <div class="spost {{ pst.kanaal }}">
-        <span class="schip {{ pst.kanaal }}">{{ pst.naam }}</span>
-        <span class="stekst">{{ pst.tekst or 'LinkedIn-post' }}</span>
-        <span class="smeta">{{ pst.tijd.strftime('%d-%m') if pst.tijd }}{% if pst.weergaven is not none %} · {{ getal(pst.weergaven) }} weergaven{% endif %}{% if pst.interacties is not none %} · {{ getal(pst.interacties) }} interacties{% endif %}{% if pst.link %} · <a href="{{ pst.link }}" target="_blank" rel="noopener">bekijk</a>{% endif %}</span>
-      </div>
-    {% else %}<p class="noot">Geen posts in de laatste twee weken (of de kanalen zijn nog niet gekoppeld).</p>{% endfor %}
-    <p class="noot">LinkedIn komt uit de exports die je in de Doellijn uploadt; de andere kanalen worden elke drie uur bijgewerkt.</p>
-  </section>
-
-  <div class="vkolom">
-    <section class="kaart">
-      <h2>Klaar om te posten <a class="klein" href="/zerohero/concepten">concepten</a></h2>
-      {% if o.pijplijn is none %}<p class="noot">De Doellijn draait hier nog niet als werkruimte.</p>{% endif %}
-      {% for cp in o.pijplijn or [] %}
-        <div class="sconcept"><a href="/zerohero/concepten/{{ cp.id }}">{{ cp.titel }}</a>
-          <span class="smeta">{{ cp.sport }}{{ ' · ' if cp.sport }}klaar {{ geleden(cp.klaar) }}{% if cp.linkedin %} · LinkedIn-tekst{% endif %}{% if cp.instagram %} · Instagram-tekst{% endif %}</span></div>
-      {% else %}{% if o.pijplijn is not none %}<p class="noot">Geen concepten die klaarstaan.</p>{% endif %}{% endfor %}
-    </section>
-    <section class="kaart">
-      <h2>In het nieuws</h2>
-      {% if o.vermeldingen is none %}<p class="noot">Promonitor draait hier nog niet als werkruimte.</p>
-      {% else %}
-        {% for v in o.vermeldingen %}
-          <a class="kopregel-nieuws" href="{{ v.url }}" target="_blank" rel="noopener"><span class="nkoptekst">{{ v.titel }}</span>
-            <span class="bron">{{ v.bron }} · {{ geleden(v.tijd) }}</span></a>
-        {% else %}<p class="noot">PRO Helmond en jij kwamen de laatste twee weken niet in het nieuws.</p>{% endfor %}
-      {% endif %}
-    </section>
-  </div>
-</div>
-
-<section class="kaart noorgesprek" id="jesse">
-  <div class="noor-praat">
-    <h2><span>Vraag het Jesse <span class="noot">· socials</span></span>
-      <form method="post" action="/jesse/gesprek/nieuw" class="inline"><button class="knop klein" type="submit">Nieuw gesprek</button></form></h2>
-    {% if not sleutel_ok %}<p class="item urgent">Er is nog geen Claude-sleutel ingesteld.</p>{% endif %}
-    <div class="berichten" id="berichten">
-    {% for m in paneel.berichten %}
-      <div class="bericht {{ m.rol }}"><span class="noot">{{ 'Jij' if m.rol == 'user' else 'Jesse' }} · {{ geleden(m.tijd) }}</span>
-        <div class="tekst">{{ m.tekst }}</div></div>
-    {% else %}
-      <p class="noot">Jesse kent je cijfers per kanaal, je laatste posts, de concepten die klaarstaan en het belangrijkste nieuws.
-        Vraag bijvoorbeeld: "Wat werkte deze week het best?", "Maak een LinkedIn-post van het concept over Bijlow",
-        "Schrijf een Instagram-versie voor ZEROHERO" of "Hoe reageer ik op het nieuws over de sporthallen?"
-        Jesse post nooit zelf: je kopieert de tekst en plaatst hem.</p>
-    {% endfor %}
-    </div>
-    <form method="post" action="/jesse/gesprek/vraag">
-      <input type="hidden" name="gesprek" value="{{ paneel.gesprek.id if paneel.gesprek else '' }}">
-      <textarea name="vraag" required placeholder="Vraag Jesse iets over je socials"></textarea>
-      <p><button class="knop vol" type="submit">Stuur</button> <span class="noot">Jesse post, reageert of liket nooit zelf.</span></p>
-    </form>
-  </div>
-  <div class="noor-voorstellen">
-    <h3>Postvoorstellen</h3>
-    {% for v in paneel.voorstellen %}{{ postkaart(v) }}{% else %}<p class="noot">Vraag Jesse om een post; die verschijnt hier om te kopiëren.</p>{% endfor %}
-    {% if paneel.bewaard %}<h3>Bewaard</h3>{% for v in paneel.bewaard %}{{ postkaart(v, true) }}{% endfor %}{% endif %}
-    {% if paneel.eerdere %}
-    <details class="gesprekken"><summary>Eerdere gesprekken ({{ paneel.eerdere | length }})</summary>
-      {% for e in paneel.eerdere %}<div class="gesprekregel"><a href="/jesse?g={{ e.id }}#jesse">{{ e.titel or 'Gesprek' }}</a> <span class="noot">{{ geleden(e.bijgewerkt) }}</span></div>{% endfor %}
-    </details>
-    {% endif %}
-  </div>
-</section>
-
-
+<p class="noot">Jesse luistert elk kwartier naar je bronnen en naar de reacties op je eigen posts. LinkedIn en X laten niet meekijken.
+  Posten doe je in de Doellijn; Jesse post, reageert of liket nooit zelf.</p>
 
 <script>
 (function () {
-  const l = document.getElementById("berichten"); if (l) l.scrollTop = l.scrollHeight;
-  // Kopiëren naar het klembord, zodat je de post zelf kunt plaatsen.
-  document.querySelectorAll(".spostvoorstel .kopieer").forEach(k => k.addEventListener("click", async () => {
-    const t = k.closest("form").querySelector("textarea");
-    try { await navigator.clipboard.writeText(t.value); } catch (e) { t.select(); document.execCommand("copy"); }
-    const oud = k.textContent; k.textContent = "Gekopieerd ✓"; setTimeout(() => { k.textContent = oud; }, 1600);
+  function zet(blok, aan) {
+    blok.classList.toggle("gelezen", aan);
+    const f = blok.querySelector("form.nlees"); if (!f) return;
+    f.querySelector("[name=aan]").value = aan ? "0" : "1";
+    const k = f.querySelector("button");
+    k.title = aan ? "Weer als ongelezen" : "Markeer als gelezen"; k.setAttribute("aria-pressed", aan ? "true" : "false");
+  }
+  document.querySelectorAll("a.nlink").forEach(a => a.addEventListener("click", () => { const b = a.closest(".nitem"); if (b) zet(b, true); }));
+  document.querySelectorAll("form.nlees").forEach(f => f.addEventListener("submit", async e => {
+    e.preventDefault();
+    const blok = f.closest(".nitem"), aan = f.querySelector("[name=aan]").value === "1";
+    zet(blok, aan);
+    try {
+      const r = await fetch(f.action, { method: "POST", body: new FormData(f), headers: { "X-Jesse": "1" }, credentials: "same-origin" });
+      if (!r.ok) throw new Error(r.status);
+    } catch (fout) { zet(blok, !aan); }
   }));
 })();
 </script>

@@ -604,3 +604,15 @@ tr.uit td { opacity: .55; }
 @keyframes draaien { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { #vernieuwen button.bezig .draai { animation: none; } }
 @media (max-width: 700px) { .kop-rechts { align-items: flex-start; } }
+
+/* Jesse: meeluisteren */
+.nkolom.reacties { border-top-color: var(--instagram); } .nkolom.reacties > h2 { color: var(--instagram); }
+.nschakel a.reacties.actief { background: var(--instagram); }
+.nraster.jraster:not(.enkel) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1250px) { .nraster.jraster:not(.enkel) { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .nraster.jraster:not(.enkel) { grid-template-columns: 1fr; } }
+.schip.reddit { background: #FF4500; } .schip.mastodon { background: #6364FF; } .schip.bluesky { background: #1185FE; } .schip.rss { background: var(--zacht); }
+.jtoon { font-weight: 600; } .jtoon.kritisch { color: #B71C1C; } .jtoon.positief { color: #2E7D32; }
+.nieuwsblok.jesse-reacties h3 { color: var(--instagram); border-left-color: var(--instagram); }
+.nieuwsblok.jesse-keepers h3 { color: var(--keepers); border-left-color: var(--keepers); }
+.nieuwsblok.jesse-politiek h3 { color: var(--politiek); border-left-color: var(--politiek); }

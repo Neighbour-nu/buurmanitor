@@ -10,7 +10,7 @@
   </div>
   <div class="kop-rechts">
     <form method="post" action="/vandaag/vernieuwen" id="vernieuwen">
-      <button class="knop" type="submit" title="Mail, agenda's en nieuws nu ophalen en het scherm verversen"><span class="draai" aria-hidden="true">↻</span> <span class="tekst">Vernieuwen</span></button>
+      <button class="knop" type="submit" title="Mail, agenda's, nieuws en socials nu ophalen en het scherm verversen"><span class="draai" aria-hidden="true">↻</span> <span class="tekst">Vernieuwen</span></button>
     </form>
     <div class="chips">{% for k, naam in domeinen %}<span class="chip {{ k }}">{{ naam }}</span>{% endfor %}</div>
   </div>
@@ -51,22 +51,6 @@
       {% else %}<p class="noot">Geen mail die op je wacht.</p>{% endfor %}
       </div>
     {% endif %}
-  </section>
-  <section class="kaart" id="socials">
-    <h2>Socials <a class="klein" href="/jesse">alle kanalen</a></h2>
-    {% if social.kanalen is none %}<p class="noot">De Doellijn draait hier nog niet als werkruimte; daar komen de cijfers vandaan.</p>
-    {% else %}
-      {% for k in social.kanalen if k.heeft_cijfers %}
-        <a class="minisocial {{ k.id }}" href="/zerohero/bereik/{{ k.id }}?periode=7"><span class="snaamk">{{ k.naam }}</span>
-          <span class="sgetal">{{ '–' if k.volgers is none else '{:,}'.format(k.volgers) | replace(',', '.') }}</span>
-          {% if k.volgers_delta %}<span class="sdelta {{ 'op' if k.volgers_delta > 0 else 'neer' }}">{{ '+' if k.volgers_delta > 0 }}{{ k.volgers_delta }}</span>{% endif %}</a>
-      {% else %}<p class="noot">Nog geen cijfers van je kanalen.</p>{% endfor %}
-      {% if social.beste %}<p class="noot sbestekort">Beste post deze week: <span class="schip {{ social.beste.kanaal }}">{{ social.beste.naam }}</span>
-        {% if social.beste.link %}<a href="{{ social.beste.link }}" target="_blank" rel="noopener">{{ (social.beste.tekst or 'LinkedIn-post') | truncate(70, false, '…', 0) }}</a>{% else %}{{ (social.beste.tekst or 'LinkedIn-post') | truncate(70, false, '…', 0) }}{% endif %}
-        · {{ social.beste.interacties }} interacties</p>{% endif %}
-      {% if social.pijplijn %}<p class="noot"><a href="/jesse">{{ social.pijplijn | length }} concept{{ 'en' if social.pijplijn | length != 1 }}</a> klaar om te posten.</p>{% endif %}
-    {% endif %}
-    <p class="noot"><a href="/jesse#jesse">Vraag Jesse</a> om een post of wat er werkte.</p>
   </section>
   </div>
   <div class="vkolom">
@@ -152,8 +136,24 @@
     {% endfor %}
     </div>
   </section>
+  <section class="kaart nieuwsbreed" id="socials">
+    <h2>Socials <a class="klein" href="/jesse">alles van Jesse</a></h2>
+    <div class="nieuwsgrid">
+    {% for stroom, naam in socialstromen %}
+      <div class="nieuwsblok jesse-{{ stroom }}">
+        <h3><a href="/jesse?stroom={{ stroom }}">{{ naam }}</a></h3>
+        {% for b in luister[stroom] %}
+        <a class="kopregel-nieuws {{ 'gelezen' if b.gelezen }}" href="/jesse/lees/{{ b.id }}" target="_blank" rel="noopener" title="{{ b.waarom or b.tekst[:300] }}">
+          <span class="nkoptekst">{{ b.titel }}</span>
+          <span class="bron">{{ b.platformnaam }} · {{ b.auteur }}{% if b.tijd %} · {{ geleden(b.tijd) }}{% endif %}{% if b.toon == 'kritisch' %} · kritisch{% endif %}</span></a>
+        {% else %}<p class="noot">{% if stroom == 'reacties' %}Geen nieuwe reacties op je posts.{% else %}Nog niets interessants.{% endif %}</p>{% endfor %}
+      </div>
+    {% endfor %}
+    </div>
+  </section>
+
 <script>
-// Vernieuwen: eerst mail, agenda's en nieuws ophalen (op de server), dan het scherm verversen.
+// Vernieuwen: eerst mail, agenda's, nieuws en socials ophalen (op de server), dan het scherm verversen.
 (function () {
   const vorm = document.getElementById("vernieuwen"); if (!vorm) return;
   const knop = vorm.querySelector("button"), tekst = knop.querySelector(".tekst");

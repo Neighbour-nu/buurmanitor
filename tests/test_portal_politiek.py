@@ -102,17 +102,3 @@ def test_vera_leest_politiek_nieuws(klant):
         assert not c.execute("SELECT gezien FROM stukken WHERE id = %s", (sid,)).fetchone()["gezien"]  # Promonitor blijft ongemoeid
         c.execute("DELETE FROM stukken WHERE extern_id LIKE 'nieuws-vera-%'")
 
-
-def test_jesse_ziet_vermeldingen(klant):
-    """Jesse toont nieuws uit Promonitor waarin PRO Helmond of Martijn genoemd wordt."""
-    from app.politiek import main as pm  # pylint: disable=import-outside-toplevel
-    with pm.pool.connection() as c:
-        c.execute("DELETE FROM stukken WHERE extern_id LIKE 'nieuws-jesse-%'")
-        c.execute("""INSERT INTO stukken (bron, extern_id, soort, titel, datum, document_url, context, bronnaam) VALUES
-                     ('nieuws', 'nieuws-jesse-1', 'nieuws', 'Oppositie wil sporthallen terug', current_date, 'https://ed.nl/j1',
-                      'Raadslid Martijn Buurman (PRO Helmond) stelt vragen.', 'ED Helmond'),
-                     ('nieuws', 'nieuws-jesse-2', 'nieuws', 'Kermis begint', current_date, 'https://ed.nl/j2', 'Gezellig.', 'ED Helmond')""")
-    pagina = klant.get("/jesse", headers=KOP).text
-    assert "Oppositie wil sporthallen terug" in pagina and "Kermis begint" not in pagina
-    with pm.pool.connection() as c:
-        c.execute("DELETE FROM stukken WHERE extern_id LIKE 'nieuws-jesse-%'")

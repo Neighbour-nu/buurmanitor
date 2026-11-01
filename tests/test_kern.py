@@ -161,11 +161,11 @@ def test_schermen_starten():
             assert k.post("/vandaag/vernieuwen", headers=KOP).status_code == 403
             vorm = KOP | {"Origin": "https://buurmanitor.neighbour.nu"}
             r = k.post("/vandaag/vernieuwen", headers=vorm | {"X-Vandaag": "1"})
-            assert r.json() == {"gestart": ["agenda", "post", "nieuws"]} and gestart == ["agenda", "post", "nieuws"]
+            assert r.json() == {"gestart": ["agenda", "post", "nieuws", "socials"]} and gestart == ["agenda", "post", "nieuws", "socials"]
             r = k.post("/vandaag/vernieuwen", headers=vorm, follow_redirects=False)
             assert r.status_code == 303 and r.headers["location"] == "/"
             stand = k.get("/api/vernieuwen?sinds=0", headers=KOP).json()["taken"]
-            assert set(stand) == {"agenda", "post", "nieuws"} and set(stand.values()) <= {"klaar", "bezig", "wacht"}
+            assert set(stand) == {"agenda", "post", "nieuws", "socials"} and set(stand.values()) <= {"klaar", "bezig", "wacht"}
         finally:
             planner.nu_draaien = oud
         # Iris zonder sleutel: het gesprek wordt bewaard met een nette melding, geen fout.

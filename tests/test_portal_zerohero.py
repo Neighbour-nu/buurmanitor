@@ -121,32 +121,40 @@ def test_vera_leest_keepersnieuws(klant):
     assert r.status_code == 303 and r.headers["location"] == "https://voorbeeld.nl/1"
 
 
-def test_jesse_leest_de_doellijn(klant):
-    """Jesse leest cijfers, posts en concepten uit de echte tabellen van de Doellijn (alleen lezen)."""
-    from app.jesse import socials  # pylint: disable=import-outside-toplevel
-    from app.zerohero import main as zh  # pylint: disable=import-outside-toplevel
-    zh.q("""INSERT INTO metingen (kanaal, sleutel, datum, waarde, bron) VALUES
-            ('instagram', 'volgers', current_date - 10, 800, 'api'), ('instagram', 'volgers', current_date, 860, 'api'),
-            ('instagram', 'weergaven', current_date - 1, 2500, 'api'), ('instagram', 'weergaven', current_date - 9, 2000, 'api')
-            ON CONFLICT DO NOTHING RETURNING 1""")
-    zh.q("""INSERT INTO meta_posts (id, kanaal, tekst, gepubliceerd, link, likes, reacties, gedeeld, weergaven, interacties)
-            VALUES ('ig1', 'instagram', 'Bijlow en de kunst van het wachten', now() - interval '1 day', 'https://instagram.com/p/ig1', 180, 20, 10, 3100, NULL)
+
+def test_jesse_reacties_op_eigen_posts(klant, monkeypatch):
+    """Jesse haalt de reacties op je eigen posts op via de koppelingen van de Doellijn (Meta en Threads hier nagebootst)."""
+    from app.jesse import luisteren  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    from app.zerohero import main as zh, meta, threads  # pylint: disable=import-outside-toplevel
+    zh.q("""INSERT INTO meta_posts (id, kanaal, tekst, gepubliceerd, link) VALUES
+            ('ig7', 'instagram', 'Bijlow', now() - interval '1 day', 'https://instagram.com/p/ig7'),
+            ('fb7', 'facebook', 'Podcast', now() - interval '2 days', 'https://facebook.com/fb7'),
+            ('th7', 'threads', 'Keepers', now() - interval '1 day', 'https://threads.net/t/th7')
             ON CONFLICT (id) DO NOTHING RETURNING 1""")
-    zh.q("""INSERT INTO lp_posts (url, publicatie, interacties, impressies) VALUES ('https://linkedin.com/feed/1', current_date - 2, 95, 5400)
-            ON CONFLICT (url) DO NOTHING RETURNING 1""")
-    zh.q("""INSERT INTO yt_videos (id, titel, gepubliceerd, weergaven, likes, reacties) VALUES ('abc', 'Keepersjournaal 12', now() - interval '3 days', 400, 30, 5)
-            ON CONFLICT (id) DO NOTHING RETURNING 1""")
-    zh.q("""INSERT INTO concepten (item_ids, status, blog_titel, linkedin, klaar_op) VALUES ('{1}', 'klaar', 'De stilte van Verbruggen', 'Wat doet een keeper', now())
-            RETURNING id""")
-    k = {x["id"]: x for x in socials.kanalen(7)}
-    assert k["instagram"]["volgers"] == 860 and k["instagram"]["volgers_delta"] == 60 and k["instagram"]["hoofd"] == 2500
-    posts = socials.posts(14)
-    soorten = {p["kanaal"]: p for p in posts}
-    assert soorten["instagram"]["interacties"] == 210 and soorten["linkedin"]["weergaven"] == 5400
-    assert soorten["youtube"]["link"] == "https://www.youtube.com/watch?v=abc"
-    assert socials.beste(posts)["kanaal"] == "instagram"
-    assert any(p["titel"] == "De stilte van Verbruggen" for p in socials.pijplijn())
-    pagina = klant.get("/jesse", headers=KOP).text
-    assert "Bijlow en de kunst van het wachten" in pagina and "De stilte van Verbruggen" in pagina and "Keepersjournaal 12" in pagina
+    monkeypatch.setattr(meta, "actief", lambda: True)
+    monkeypatch.setattr(meta, "kies_pagina", lambda: {"id": "pag1", "access_token": "pt", "instagram_business_account": {"username": "zerohero.one"}})
+    antwoorden = {
+        "ig7/comments": {"data": [{"id": "c1", "text": "Waar kan ik je boek kopen?", "username": "keeperfan", "timestamp": "2026-11-01T10:00:00+0000"},
+                                  {"id": "c2", "text": "Dank je!", "username": "zerohero.one", "timestamp": "2026-11-01T11:00:00+0000"}]},
+        "fb7/comments": {"data": [{"id": "f1", "message": "Mooie aflevering", "from": {"id": "u9", "name": "Kees"}, "created_time": "2026-11-01T09:00:00+0000"}]}}
+    monkeypatch.setattr(meta, "_get", lambda pad, params=None, token=None: antwoorden[pad])
+    monkeypatch.setattr(threads, "_q_token", lambda q: ("tt", None))
+    monkeypatch.setattr(threads, "_get", lambda pad, params, token: {"username": "zerohero_one"} if pad == "me" else
+                        {"data": [{"id": "r1", "text": "Geldt dit ook voor handbal?", "username": "anna", "timestamp": "2026-11-01T12:00:00+0000",
+                                   "permalink": "https://threads.net/t/r1"}]})
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM jesse_berichten")
+        nieuw, meld = luisteren.reacties_ophalen(c)
+        assert (nieuw, meld) == (3, [])  # de eigen reactie van zerohero.one telt niet
+        rijen = {r["tekst"]: r for r in c.execute("SELECT * FROM jesse_berichten WHERE stroom = 'reacties'")}
+    assert rijen["Waar kan ik je boek kopen?"]["platform"] == "instagram" and rijen["Waar kan ik je boek kopen?"]["url"] == "https://instagram.com/p/ig7"
+    assert rijen["Geldt dit ook voor handbal?"]["url"] == "https://threads.net/t/r1" and rijen["Mooie aflevering"]["auteur"] == "Kees"
     blok = klant.get("/", headers=KOP).text.split('id="socials"')[1].split("</section>")[0]
-    assert "Instagram" in blok and "860" in blok and "+60" in blok
+    assert "Waar kan ik je boek kopen?" in blok and "Geldt dit ook voor handbal?" in blok
+    # Zonder toestemming bij Meta: een duidelijke melding, de rest gaat door.
+    monkeypatch.setattr(meta, "_get", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("(#10) Requires instagram_manage_comments")))
+    with db.pool.connection() as c:
+        _, meld = luisteren.reacties_ophalen(c)
+        assert meld and "instagram_manage_comments" in meld[0]
+        c.execute("DELETE FROM jesse_berichten")
