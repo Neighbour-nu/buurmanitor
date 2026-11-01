@@ -225,6 +225,7 @@ def keepers(dagen):
                              ORDER BY score DESC NULLS LAST, binnen DESC LIMIT 60""", (dagen, list(WEGGEFILTERD))).fetchall()
     return [{"soort": "keepers", "id": r["id"], "titel": r["titel"], "url": r["url"], "bron": r["bron"] or "", "tijd": r["tijd"],
              "score": r["score"], "samenvatting": r["samenvatting"] or "", "waarom": r["invalshoek"] or "",
+             "keepers": list(r["keepers"] or []),
              "labels": [x for x in (r["sport"], r["competitie"]) if x] + (["🧤 " + ", ".join(r["keepers"][:3])] if r["keepers"] else [])}
             for r in rijen]
 
@@ -270,7 +271,53 @@ def verzamel(c, dagen, lezers=None):
     return uit, fouten
 
 
-def selectie(lijst, drempel=40, aantal=12):
+STOPWOORDEN = set("""de het een en van in op te voor met bij aan om is zijn was wordt na naar over uit door als dat die dit
+    niet ook nog maar dan wel tegen tot onder the a an of to for on at by with from as is are was be his her its after""".split())
+
+
+def woorden(titel):
+    """De woorden die iets zeggen in een kop (zonder lidwoorden en voorzetsels). Pure functie."""
+    return {w for w in sleutel(titel).split() if len(w) > 2 and w not in STOPWOORDEN}
+
+
+def _achternamen(namen):
+    return {n.split()[-1].lower() for n in namen if n and len(n.split()[-1]) >= 4}
+
+
+def dubbel(a, b):
+    """Gaan twee berichten over hetzelfde? Pure functie.
+    Ja bij (bijna) dezelfde kop, bij een kop die voor het grootste deel uit dezelfde woorden bestaat, of (keepersnieuws)
+    als ze over dezelfde keeper gaan: in de lijst van de Doellijn of met de achternaam in de kop."""
+    ka, kb = sleutel(a["titel"]), sleutel(b["titel"])
+    if ka == kb or difflib.SequenceMatcher(None, ka, kb).ratio() > 0.85:
+        return True
+    wa, wb = woorden(a["titel"]), woorden(b["titel"])
+    if len(wa) >= 3 and len(wb) >= 3 and len(wa & wb) / min(len(wa), len(wb)) >= 0.7:
+        return True
+    na, nb = _achternamen(a.get("keepers") or []), _achternamen(b.get("keepers") or [])
+    if na & nb:
+        return True
+    return bool((na and na & set(kb.split())) or (nb and nb & set(ka.split())))
+
+
+def ontdubbel(lijst, al=()):
+    """Houd per onderwerp alleen het eerste bericht over (de lijst is al op belang gesorteerd). De bronnen van wat
+    wegvalt, komen bij het bewaarde bericht als 'ook' te staan. Berichten in 'al' tellen als al getoond. Pure functie."""
+    gezien, uit = list(al), []
+    for b in lijst:
+        eerder = next((x for x in gezien if dubbel(x, b)), None)
+        if eerder is not None:
+            bron = b.get("bron") or ""
+            if eerder in uit and bron and bron != eerder.get("bron") and bron not in eerder["ook"]:
+                eerder["ook"].append(bron)
+            continue
+        kopie = dict(b, ook=[])
+        gezien.append(kopie)
+        uit.append(kopie)
+    return uit
+
+
+def selectie(lijst, drempel=40, aantal=12, al=(), dubbels=False):
     """Wat Vera in een kolom laat zien: eerst wat gewogen is (hoogste score), ongewogen nieuw erna. Pure functie.
     Berichten onder de drempel vallen weg (minder nieuws, beter nieuws), tenzij er nog niets gewogen is."""
     if lijst is None:
@@ -278,7 +325,7 @@ def selectie(lijst, drempel=40, aantal=12):
     lijst = [b for b in lijst if b["score"] is None or b["score"] >= drempel]
     nul = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
     lijst.sort(key=lambda b: (b["score"] is None, -(b["score"] or 0), -(b["tijd"] or nul).timestamp()))
-    return lijst[:aantal]
+    return (lijst if dubbels else ontdubbel(lijst, al))[:aantal]
 
 
 def uitgelicht(stromen, nu, uren=36, drempel=65):
@@ -298,7 +345,7 @@ def koppen(c, nu, aantal=5):
     stromen, _ = verzamel(c, 2)
     alles = [b for lijst in stromen.values() for b in (lijst or []) if b["score"] is not None and b["score"] >= 60]
     alles.sort(key=lambda b: (-b["score"], -(b["tijd"] or nu).timestamp()))
-    return alles[:aantal]
+    return ontdubbel(alles)[:aantal]
 
 
 def koppen_per_soort(stromen, nu, per=3, uren=36, drempel=40):
@@ -313,7 +360,7 @@ def koppen_per_soort(stromen, nu, per=3, uren=36, drempel=40):
             continue
         recent = [b for b in lijst if b["tijd"] and b["tijd"] >= grens and (b["score"] is None or b["score"] >= drempel)]
         recent.sort(key=lambda b: (bool(b.get("gelezen")), b["score"] is None, -(b["score"] or 0), -(b["tijd"] or nul).timestamp()))
-        uit[soort] = recent[:per]
+        uit[soort] = ontdubbel(recent)[:per]
     return uit
 
 

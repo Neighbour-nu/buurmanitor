@@ -24,6 +24,8 @@ DB = bool(os.environ.get("TEST_DATABASE_URL"))
 KOP = {"Remote-User": "martijn", "X-Proxy-Geheim": "test-geheim"}
 FORM = KOP | {"Origin": "https://buurmanitor.neighbour.nu"}
 UTC = dt.timezone.utc
+TITELS = {1: "Kabinet valt over stikstof", 2: "Brand in de haven van Rotterdam", 3: "Nieuwe trainer bij Ajax gepresenteerd",
+          4: "Inflatie daalt verder in oktober", 5: "Storm treft de Waddenkust"}
 
 
 def rss(items):
@@ -47,7 +49,7 @@ def test_selectie_en_uitgelicht():
     nu = dt.datetime(2026, 11, 2, 12, tzinfo=TZ)
 
     def b(soort, i, score, uur=1, gelezen=False):
-        return {"soort": soort, "id": i, "titel": f"{soort} {i}", "score": score, "tijd": nu - dt.timedelta(hours=uur), "gelezen": gelezen}
+        return {"soort": soort, "id": i, "titel": TITELS[i], "score": score, "tijd": nu - dt.timedelta(hours=uur), "gelezen": gelezen}
     lijst = [b("overig", 1, 30), b("overig", 2, 70), b("overig", 3, None, 0), b("overig", 4, 90, 3), b("overig", 5, 55)]
     assert [x["id"] for x in nieuws.selectie(lijst)] == [4, 2, 5, 3]  # onder de 40 weg, ongewogen achteraan
     assert [x["id"] for x in nieuws.selectie(lijst, drempel=0, aantal=2)] == [4, 2]
@@ -58,11 +60,36 @@ def test_selectie_en_uitgelicht():
     assert [(x["soort"], x["id"]) for x in nieuws.uitgelicht(stromen, nu)] == [("keepers", 1), ("overig", 2)]
 
 
+def test_ontdubbelen():
+    def b(i, titel, bron, keepers=(), score=80):
+        return {"soort": "keepers", "id": i, "titel": titel, "bron": bron, "keepers": list(keepers), "score": score,
+                "tijd": dt.datetime(2026, 11, 1, 12, tzinfo=TZ)}
+    # Het geval van Martijn: vier keer Verbruggen bij Brighton, deels in het Engels, twee keer letterlijk hetzelfde.
+    lijst = [b(1, "Oranje-international grijpt absolute hoofdrol bij knappe zege Brighton", "FCUpdate", ["Bart Verbruggen"], 90),
+             b(2, "Koploper Manchester City bijt zich stuk op koning van de Amex", "AD Voetbal", ["Bart Verbruggen"], 85),
+             b(3, "Verbruggen spreads belief as impressive Brighton beat City", "BBC Sport Football", [], 80),
+             b(4, "Verbruggen spreads belief as impressive Brighton beat City", "BBC Sport Football", [], 80),
+             b(5, "Hellebuyck zet record neer met elfde shutout", "NHL.com", ["Connor Hellebuyck"], 78),
+             b(6, "Feyenoord wint opnieuw: Bijlow blinkt uit - VI", "VI", [], 70),
+             b(7, "Feyenoord wint opnieuw, Bijlow blinkt uit", "ESPN", [], 65)]
+    uit = nieuws.ontdubbel(lijst)
+    assert [x["id"] for x in uit] == [1, 5, 6]
+    assert uit[0]["ook"] == ["AD Voetbal", "BBC Sport Football"] and uit[2]["ook"] == ["ESPN"]
+    assert lijst[0].get("ook") is None  # de invoer blijft ongemoeid
+    # Verschillend nieuws blijft staan; wat al bovenaan staat (uitgelicht) telt mee.
+    overig = [{"soort": "overig", "id": 1, "titel": "Kabinet presenteert nieuwe Archiefwet", "bron": "NOS"},
+              {"soort": "overig", "id": 2, "titel": "Storing bij betaalverkeer opgelost", "bron": "NOS"},
+              {"soort": "overig", "id": 3, "titel": "Nieuwe Archiefwet door kabinet gepresenteerd", "bron": "Tweakers"}]
+    assert [x["id"] for x in nieuws.ontdubbel(overig)] == [1, 2]
+    assert [x["id"] for x in nieuws.ontdubbel(overig[1:], al=[overig[0]])] == [2]
+    assert nieuws.selectie(lijst, dubbels=True, aantal=10)[2]["id"] == 3  # 'alles laten zien': niets ontdubbeld
+
+
 def test_koppen_per_stroom():
     nu = dt.datetime(2026, 11, 2, 12, tzinfo=TZ)
 
     def b(soort, i, score, uur=1, gelezen=False):
-        return {"soort": soort, "id": i, "titel": f"{soort} {i}", "score": score, "tijd": nu - dt.timedelta(hours=uur), "gelezen": gelezen}
+        return {"soort": soort, "id": i, "titel": TITELS[i], "score": score, "tijd": nu - dt.timedelta(hours=uur), "gelezen": gelezen}
     stromen = {"keepers": [b("keepers", 1, 70), b("keepers", 2, 90, gelezen=True), b("keepers", 3, 80), b("keepers", 4, 60), b("keepers", 5, 99, 40)],
                "politiek": None,
                "overig": [b("overig", 1, 20), b("overig", 2, None)]}

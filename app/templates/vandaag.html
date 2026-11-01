@@ -117,7 +117,7 @@
           {% for b in lijst %}
           <a class="kopregel-nieuws {{ 'gelezen' if b.gelezen }}" href="/vera/lees/{{ b.soort }}/{{ b.id }}" target="_blank" rel="noopener" title="{{ b.waarom or b.titel }}">
             <span class="nkoptekst">{{ b.titel }}</span>
-            <span class="bron">{{ b.bron }}{% if b.tijd %} · {{ geleden(b.tijd) }}{% endif %}</span></a>
+            <span class="bron">{{ b.bron }}{% if b.ook %} +{{ b.ook | length }}{% endif %}{% if b.tijd %} · {{ geleden(b.tijd) }}{% endif %}</span></a>
           {% else %}<p class="noot">Nog niets belangrijks.</p>{% endfor %}
         {% endif %}
       </div>

@@ -112,6 +112,10 @@ def test_vera_leest_keepersnieuws(klant):
     with zh.pool.connection() as c:
         iid = c.execute("SELECT id FROM items WHERE titel = 'Keeper houdt stand 1'").fetchone()["id"]
     pagina = klant.get("/vera?soort=keepers&dagen=7", headers=KOP).text
-    assert "Keeper houdt stand 1" in pagina and "Test Keeper" in pagina and "De Doellijn draait hier nog niet" not in pagina
+    assert "Test Keeper" in pagina and "De Doellijn draait hier nog niet" not in pagina
+    # Vijf berichten over dezelfde keeper: ontdubbeld tot het belangrijkste; met 'alles laten zien' staan ze er allemaal.
+    assert "Keeper houdt stand 5" in pagina and "Keeper houdt stand 1<" not in pagina
+    alles = klant.get("/vera?soort=keepers&dagen=7&alles=1", headers=KOP).text
+    assert all(f"Keeper houdt stand {n}<" in alles for n in range(1, 6))
     r = klant.get(f"/vera/lees/keepers/{iid}", headers=KOP, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "https://voorbeeld.nl/1"

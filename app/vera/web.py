@@ -46,7 +46,8 @@ def overzicht(request: Request, soort: str = "alles", dagen: int = 1, alles: int
         if soort not in ("alles", s):
             continue
         rest = [b for b in stromen[s] if (s, b["id"]) not in gekozen] if stromen[s] is not None else None
-        lijst = nieuws.selectie(rest, drempel=0 if alles else 40, aantal=aantal)
+        # Ontdubbelen, ook tegen het uitgelichte bericht bovenaan; met 'alles laten zien' juist alles.
+        lijst = nieuws.selectie(rest, drempel=0 if alles else 40, aantal=aantal, al=[b for b in boven if b["soort"] == s], dubbels=bool(alles))
         kolommen.append({"soort": s, "naam": naam, "lijst": lijst, "totaal": len(stromen[s] or []),
                          "meer": len(rest) - len(lijst) if lijst is not None else 0, "fout": fouten.get(s), "link": WERKRUIMTE_LINK.get(s),
                          "ongewogen": any(b["score"] is None for b in lijst or [])})

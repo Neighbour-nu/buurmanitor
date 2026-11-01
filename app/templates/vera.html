@@ -6,7 +6,7 @@
   {%- else %}<span class="nscore {{ 'hoog' if b.score >= 80 else ('midden' if b.score >= 60 else 'laag') }}" title="belang volgens de weging">{{ b.score }}</span>{% endif -%}
 {%- endmacro %}
 {% macro meta(b) -%}
-  <span class="nmeta">{{ b.bron }}{% if b.tijd %} · {{ geleden(b.tijd) }}{% endif %}{% for l in b.labels %} · <span class="nlabel">{{ l }}</span>{% endfor %}</span>
+  <span class="nmeta">{{ b.bron }}{% if b.tijd %} · {{ geleden(b.tijd) }}{% endif %}{% for l in b.labels %} · <span class="nlabel">{{ l }}</span>{% endfor %}{% if b.ook %} · <span class="nlabel" title="Hetzelfde nieuws bij {{ b.ook | join(', ') }}">ook bij {{ b.ook[:2] | join(', ') }}{% if b.ook | length > 2 %} +{{ b.ook | length - 2 }}{% endif %}</span>{% endif %}</span>
 {%- endmacro %}
 {% block inhoud %}
 <section class="kopregel">
