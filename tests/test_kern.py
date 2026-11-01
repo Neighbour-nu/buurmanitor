@@ -200,6 +200,13 @@ def _meldingen_afvinken_archiveren_verwijderen(k):
     assert k.post("/meldingen/999999/opgelost", headers=form).status_code == 404
     assert k.post(f"/meldingen/{ids[3]}/opgelost", headers=KOP | {"Origin": "https://kwaadwillend.nl"}).status_code == 403
     assert k.get("/meldingen?map=onzin", headers=KOP).status_code == 200
+    # Ook op Vandaag: afvinken, archiveren en verwijderen, en daarna terug naar Vandaag.
+    vandaag = k.get("/", headers=KOP).text
+    assert f'formaction="/meldingen/{ids[3]}/opgelost"' in vandaag and f'formaction="/meldingen/{ids[3]}/archief"' in vandaag
+    assert f'formaction="/meldingen/{ids[3]}/verwijder"' in vandaag
+    r = k.post(f"/meldingen/{ids[3]}/opgelost", headers=form | {"Referer": "https://buurmanitor.neighbour.nu/"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "https://buurmanitor.neighbour.nu/"
+    assert "Melding 3" not in k.get("/", headers=KOP).text
 
 
 if __name__ == "__main__":

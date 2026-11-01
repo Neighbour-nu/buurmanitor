@@ -16,7 +16,12 @@
   <section class="kaart">
     <h2>Meldingen <a class="klein" href="/meldingen">alles</a></h2>
     {% for m in meldingen %}
-      <div class="item {{ m.niveau }}"><b>{{ m.titel }}</b><br><span class="noot">{{ m.bron }} · {{ geleden(m.tijd) }}{% if m.link %} · <a href="{{ m.link }}">bekijk</a>{% endif %}</span></div>
+      <div class="item {{ m.niveau }}"><b>{{ m.titel }}</b><br><span class="noot">{{ m.bron }} · {{ geleden(m.tijd) }}{% if m.link %} · <a href="{{ m.link }}">bekijk</a>{% endif %}</span>
+        <form method="post" class="knoppenrij melding-acties">
+          <button class="knop klein vol" formaction="/meldingen/{{ m.id }}/opgelost" title="Afvinken: je hebt het opgelost">✓ Opgelost</button>
+          <button class="knop klein" formaction="/meldingen/{{ m.id }}/archief">Archiveren</button>
+          <button class="knop klein" formaction="/meldingen/{{ m.id }}/verwijder">Verwijderen</button>
+        </form></div>
     {% else %}<p class="noot">Geen open meldingen.</p>{% endfor %}
   </section>
 
