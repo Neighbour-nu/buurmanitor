@@ -8,9 +8,10 @@ from .kern.web import datum_lang
 
 PLANNING = """Stand van de bouw:
 - Klaar: de kern van Buurmanitor, de werkruimtes Politiek (Promonitor) en ZEROHERO (de Doellijn), Clara (agenda),
-  het eerste deel van Bram (mail uit Gmail en Outlook sorteren) en Noor (het takenbord en de planning van taken).
-- Volgende fases: Bram verder (Teams, WhatsApp en Signal), Vera (nieuws), Jesse (socials).
-Teams, WhatsApp, Signal, nieuws en socials kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt.
+  het eerste deel van Bram (mail uit Gmail en Outlook sorteren), Noor (het takenbord en de planning van taken) en
+  Vera (nieuws: keepersnieuws uit de Doellijn, politiek nieuws uit Promonitor en overig nieuws, onder Nieuws).
+- Volgende fases: Bram verder (Teams, WhatsApp en Signal), Jesse (socials).
+Teams, WhatsApp, Signal en socials kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt.
 Voor de agenda is Clara er, voor mail Bram, voor taken en het inplannen ervan Noor (onder Taken), voor politiek en
 ZEROHERO de werkruimtes."""
 
@@ -28,6 +29,7 @@ def context(c):
     if post:
         delen.append(post)
     delen.append(_taken(c, nu))
+    delen.append(_nieuws(c, nu))
     g, s = gezondheid.geheugen(), gezondheid.schijf()
     if g and s:
         delen.append(f"Server: geheugen {g['procent']} procent in gebruik, schijf {s['procent']} procent vol.")
@@ -80,6 +82,19 @@ def _taken(c, nu):
     if o["wachtend"]:
         uit.append("Martijn wacht op: " + ", ".join(o["wachtend"]) + ".")
     return "\n".join(uit)
+
+
+def _nieuws(c, nu):
+    """Wat Vera ziet, kort: de belangrijkste koppen van vandaag, met bron."""
+    from .vera import nieuws  # pylint: disable=import-outside-toplevel
+    try:
+        koppen = nieuws.koppen(c, nu, 6)
+    except Exception:  # noqa: BLE001  (nieuws is een extra; het gesprek gaat altijd door)
+        return ""
+    if not koppen:
+        return "Nieuws (van Vera): nog geen belangrijk nieuws vandaag."
+    return "Nieuws (van Vera), de belangrijkste koppen:\n" + "\n".join(
+        f"- [{nieuws.SOORT_NAMEN[b['soort']]}] {b['titel']} ({b['bron']}){': ' + b['waarom'] if b['waarom'] else ''}" for b in koppen)
 
 
 def antwoord(c, gesprek_id):

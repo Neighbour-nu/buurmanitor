@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block titel %}Nieuws · Buurmanitor{% endblock %}
+{% block main_klasse %}breed{% endblock %}
+{% macro score(b) -%}
+  {%- if b.score is none %}<span class="nscore nieuw" title="nog niet gewogen">nieuw</span>
+  {%- else %}<span class="nscore {{ 'hoog' if b.score >= 80 else ('midden' if b.score >= 60 else 'laag') }}" title="belang volgens de weging">{{ b.score }}</span>{% endif -%}
+{%- endmacro %}
+{% macro meta(b) -%}
+  <span class="nmeta">{{ b.bron }}{% if b.tijd %} · {{ geleden(b.tijd) }}{% endif %}{% for l in b.labels %} · <span class="nlabel">{{ l }}</span>{% endfor %}</span>
+{%- endmacro %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Nieuws</h1>
+    <p class="motto"><b>Vera:</b> {{ p.motto }}</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="/vera/bronnen">Bronnen</a></div>
+</section>
+
+<nav class="nfilter" aria-label="Filter">
+  <div class="nschakel">
+    {% for s, naam in tabs %}
+      <a href="/vera?soort={{ s }}&dagen={{ dagen }}" class="{{ s }} {{ 'actief' if s == soort }}" {% if s == soort %}aria-current="page"{% endif %}>{{ naam }}</a>
+    {% endfor %}
+  </div>
+  <div class="nschakel klein">
+    {% for d, naam in periodes %}<a href="/vera?soort={{ soort }}&dagen={{ d }}" class="{{ 'actief' if d == dagen }}">{{ naam }}</a>{% endfor %}
+  </div>
+</nav>
+
+{% if uitgelicht %}
+<section class="nuitgelicht" aria-label="Uitgelicht">
+  {% for b in uitgelicht %}
+  <article class="ngroot {{ b.soort }}" data-soort="{{ b.soort }}">
+    <div class="nkop"><span class="nsoort">{{ soortnamen[b.soort] }}</span>{{ score(b) }}</div>
+    <h2><a href="/vera/lees/{{ b.soort }}/{{ b.id }}" target="_blank" rel="noopener" class="nlink">{{ b.titel }}</a></h2>
+    {% if b.samenvatting %}<p class="nsam">{{ b.samenvatting }}</p>{% endif %}
+    {% if b.waarom %}<p class="nwaarom">{{ b.waarom }}</p>{% endif %}
+    {{ meta(b) }}
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+<div class="nraster {{ 'enkel' if soort != 'alles' }}">
+  {% for k in kolommen %}{% set s, naam, lijst, totaal, fout, link = k.soort, k.naam, k.lijst, k.totaal, k.fout, k.link %}
+  <section class="nkolom {{ s }}" aria-label="{{ naam }}">
+    <h2><span>{{ naam }}</span>{% if lijst is not none %} <span class="aantal" title="berichten in deze periode">{{ totaal }}</span>{% endif %}</h2>
+    {% if fout %}<p class="item urgent">Kon dit nieuws niet lezen: {{ fout }}</p>{% endif %}
+    {% if lijst is none %}
+      <p class="noot">{{ 'De Doellijn' if s == 'keepers' else 'Promonitor' }} draait hier nog niet als werkruimte; daarom staat dit nieuws er nog niet.</p>
+    {% else %}
+      <div class="nlijst">
+      {% for b in lijst %}
+        <article class="nitem {{ 'gelezen' if b.gelezen }}">
+          {{ score(b) }}
+          <div class="ninhoud">
+            <a href="/vera/lees/{{ b.soort }}/{{ b.id }}" target="_blank" rel="noopener" class="nlink" title="{{ b.titel }}">{{ b.titel }}</a>
+            {{ meta(b) }}
+            {% if b.samenvatting %}<p class="nsam">{{ b.samenvatting }}</p>{% endif %}
+            {% if b.waarom %}<p class="nwaarom">{{ b.waarom }}</p>{% endif %}
+          </div>
+          {% if s == 'overig' %}<form method="post" action="/vera/verberg/{{ b.id }}" class="nweg"><input type="hidden" name="terug" value="/vera?soort={{ soort }}&dagen={{ dagen }}">
+            <button type="submit" title="Niet interessant: weg" aria-label="{{ b.titel }} verbergen">×</button></form>{% endif %}
+        </article>
+      {% else %}<p class="noot">Niets belangrijks in deze periode.</p>{% endfor %}
+      </div>
+      <p class="noot nvoet">
+        {%- set delen = [] %}
+        {%- if k.meer and not alles %}{% set _ = delen.append('<a href="/vera?soort=' ~ s ~ '&dagen=' ~ dagen ~ '&alles=1">Nog ' ~ k.meer ~ ' laten zien</a>') %}
+        {%- elif alles and loop.first %}{% set _ = delen.append('<a href="/vera?soort=' ~ soort ~ '&dagen=' ~ dagen ~ '">Alleen het belangrijkste</a>') %}{% endif %}
+        {%- if link %}{% set _ = delen.append('<a href="' ~ link[0] ~ '">' ~ link[1] ~ '</a>') %}{% endif %}
+        {%- if k.ongewogen and not sleutel_ok %}{% set _ = delen.append('nog niet gewogen (geen Claude-sleutel)') %}{% endif %}
+        {{ delen | join(' · ') | safe }}
+      </p>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+
+<script>
+// Doorgeklikt: meteen grijs (de pagina zelf blijft open).
+document.querySelectorAll("a.nlink").forEach(a => a.addEventListener("click", () => {
+  const blok = a.closest(".nitem, .ngroot"); if (blok) blok.classList.add("gelezen");
+}));
+</script>
+{% endblock %}

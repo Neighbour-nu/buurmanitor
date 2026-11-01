@@ -104,3 +104,14 @@ def test_portal_linkt_naar_zerohero(klant):
     assert 'href="/zerohero"' in klant.get("/", headers=KOP).text
     for pad in ["/", "/iris", "/meldingen", "/gezondheid"]:
         assert klant.get(pad, headers=KOP).status_code == 200, pad
+
+
+def test_vera_leest_keepersnieuws(klant):
+    """Vera laat het keepersnieuws uit de Doellijn zien (alleen lezen) en klikt door naar de bron."""
+    from app.zerohero import main as zh  # pylint: disable=import-outside-toplevel
+    with zh.pool.connection() as c:
+        iid = c.execute("SELECT id FROM items WHERE titel = 'Keeper houdt stand 1'").fetchone()["id"]
+    pagina = klant.get("/vera?soort=keepers&dagen=7", headers=KOP).text
+    assert "Keeper houdt stand 1" in pagina and "Test Keeper" in pagina and "De Doellijn draait hier nog niet" not in pagina
+    r = klant.get(f"/vera/lees/keepers/{iid}", headers=KOP, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "https://voorbeeld.nl/1"

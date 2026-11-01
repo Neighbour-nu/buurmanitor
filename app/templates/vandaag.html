@@ -118,9 +118,18 @@
     <h2>Het team</h2>
     {% for p in team %}
       {% set actief = p.fase <= fase %}
-      <div class="persoon"><b>{% set pad = {'iris': '/iris', 'clara': '/clara', 'bram': '/bram', 'noor': '/taken?praat=1#noor'}.get(p.sleutel) %}{% if pad and actief %}<a href="{{ pad }}">{{ p.naam }}</a>{% else %}{{ p.naam }}{% endif %}</b> <span class="noot">{{ p.rol }}</span>
+      <div class="persoon"><b>{% set pad = {'iris': '/iris', 'clara': '/clara', 'bram': '/bram', 'noor': '/taken?praat=1#noor', 'vera': '/vera'}.get(p.sleutel) %}{% if pad and actief %}<a href="{{ pad }}">{{ p.naam }}</a>{% else %}{{ p.naam }}{% endif %}</b> <span class="noot">{{ p.rol }}</span>
         <span class="label {{ 'groen' if actief }}">{{ 'actief' if actief else 'fase ' ~ p.fase }}</span></div>
     {% endfor %}
+  </section>
+
+  <section class="kaart" id="nieuws">
+    <h2>Nieuws <a class="klein" href="/vera">alles</a></h2>
+    {% for b in koppen %}
+      <div class="minikop {{ b.soort }}"><span class="stipje" title="{{ {'keepers': 'Keepersnieuws', 'politiek': 'Politiek nieuws', 'overig': 'Overig nieuws'}[b.soort] }}"></span>
+        <a href="/vera/lees/{{ b.soort }}/{{ b.id }}" target="_blank" rel="noopener" title="{{ b.waarom or b.titel }}">{{ b.titel }}</a>
+        <span class="bron" title="{{ b.bron }}">{{ b.bron }}</span></div>
+    {% else %}<p class="noot">Nog geen belangrijk nieuws vandaag.</p>{% endfor %}
   </section>
 
   <section class="kaart">

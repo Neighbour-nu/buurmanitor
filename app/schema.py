@@ -4,6 +4,15 @@ Politiek (Promonitor) en ZEROHERO (de Doellijn) hebben hun eigen database; die t
 Migraties draaien bij elke start en zijn veilig om opnieuw uit te voeren.
 """
 
+def _vera_bronnen():
+    from .vera.nieuws import STANDAARD_BRONNEN  # pylint: disable=import-outside-toplevel
+    waarden = ", ".join("(" + ", ".join("'" + x.replace("'", "''") + "'" for x in b) + ")" for b in STANDAARD_BRONNEN)
+    return f"""WITH vlag AS (INSERT INTO instellingen (sleutel, waarde) VALUES ('vera_bronnen_klaargezet', '1')
+                             ON CONFLICT (sleutel) DO NOTHING RETURNING 1)
+               INSERT INTO vera_bronnen (naam, url, soort, rubriek) SELECT * FROM (VALUES {waarden}) AS v(naam, url, soort, rubriek)
+               WHERE EXISTS (SELECT 1 FROM vlag)"""
+
+
 MIGRATIES = [
     """CREATE TABLE IF NOT EXISTS instellingen (
         sleutel text PRIMARY KEY,
@@ -324,4 +333,40 @@ MIGRATIES = [
         status text NOT NULL DEFAULT 'open',
         uitslag text NOT NULL DEFAULT '',
         aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    # ---------- Vera: nieuwsredactie ----------
+    # Eigen bronnen voor 'overig nieuws' (keepers- en politiek nieuws leest Vera uit de werkruimtes).
+    """CREATE TABLE IF NOT EXISTS vera_bronnen (
+        id serial PRIMARY KEY,
+        naam text NOT NULL,
+        url text NOT NULL,
+        soort text NOT NULL DEFAULT 'feed' CHECK (soort IN ('feed', 'google')),
+        rubriek text NOT NULL DEFAULT 'Algemeen',
+        actief boolean NOT NULL DEFAULT true,
+        laatst timestamptz,
+        status text NOT NULL DEFAULT '',
+        fout text NOT NULL DEFAULT '')""",
+    """CREATE TABLE IF NOT EXISTS vera_berichten (
+        id serial PRIMARY KEY,
+        bron_id int REFERENCES vera_bronnen(id) ON DELETE SET NULL,
+        guid text NOT NULL UNIQUE,
+        titel text NOT NULL,
+        url text NOT NULL,
+        samenvatting text NOT NULL DEFAULT '',
+        bron text NOT NULL DEFAULT '',
+        rubriek text NOT NULL DEFAULT '',
+        gepubliceerd timestamptz,
+        binnen timestamptz NOT NULL DEFAULT now(),
+        score int,
+        waarom text NOT NULL DEFAULT '',
+        ook_bij text NOT NULL DEFAULT '',
+        verborgen boolean NOT NULL DEFAULT false)""",
+    "CREATE INDEX IF NOT EXISTS vera_berichten_binnen ON vera_berichten (binnen DESC)",
+    """CREATE TABLE IF NOT EXISTS vera_gelezen (
+        soort text NOT NULL,
+        bericht int NOT NULL,
+        tijd timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (soort, bericht))""",
+    # De standaardbronnen één keer klaarzetten (daarna beheer je ze zelf op Nieuws › Bronnen).
+    _vera_bronnen(),
 ]
+

@@ -45,7 +45,8 @@ def geleden(t):
         return f"{int(s // 60)} minuten geleden"
     if s < 86400:
         return f"{int(s // 3600)} uur geleden"
-    return f"{int(s // 86400)} dagen geleden"
+    d = int(s // 86400)
+    return "1 dag geleden" if d == 1 else f"{d} dagen geleden"
 
 
 def euro(x):

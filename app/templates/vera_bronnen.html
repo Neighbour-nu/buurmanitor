@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block titel %}Bronnen · Nieuws · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Bronnen voor overig nieuws</h1>
+    <p class="motto">Keepersnieuws komt uit de Doellijn en politiek nieuws uit Promonitor; hun bronnen beheer je daar. Hier staan de bronnen die Vera zelf leest.</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="/vera">Terug naar Nieuws</a>
+    <form method="post" action="/vera/vernieuwen" class="inline"><button class="knop vol" type="submit">Nu ophalen</button></form></div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+
+<section class="kaart">
+  <h2>Bronnen</h2>
+  <div class="tabel-scroll"><table class="tabel">
+    <thead><tr><th>Naam</th><th>Rubriek</th><th>Soort</th><th>Laatste keer</th><th>Week</th><th></th></tr></thead>
+    <tbody>
+    {% for b in bronnen %}
+      <tr class="{{ 'uit' if not b.actief }}">
+        <td><b>{{ b.naam }}</b><br><span class="noot breekbaar">{{ b.url }}</span></td>
+        <td>{{ b.rubriek }}</td>
+        <td>{{ 'Google News' if b.soort == 'google' else 'RSS-feed' }}</td>
+        <td>{% if b.fout %}<span class="label rood" title="{{ b.fout }}">fout</span> <span class="noot">{{ b.fout[:80] }}</span>{% elif b.laatst %}{{ geleden(b.laatst) }}<br><span class="noot">{{ b.status }}</span>{% else %}<span class="noot">nog niet</span>{% endif %}</td>
+        <td>{{ b.week }}</td>
+        <td><form method="post" class="knoppenrij">
+          {% if b.actief %}<button class="knop klein" formaction="/vera/bronnen/{{ b.id }}/uit">Uitzetten</button>{% else %}<button class="knop klein" formaction="/vera/bronnen/{{ b.id }}/aan">Aanzetten</button>{% endif %}
+          <button class="knop klein" formaction="/vera/bronnen/{{ b.id }}/weg" onclick="return confirm('Deze bron verwijderen?')">Verwijderen</button></form></td>
+      </tr>
+    {% else %}<tr><td colspan="6" class="noot">Nog geen bronnen.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="kaart">
+  <h2>Bron toevoegen</h2>
+  <form method="post" action="/vera/bronnen" class="velden">
+    <label>Naam <input type="text" name="naam" maxlength="100" required placeholder="bijvoorbeeld Computable"></label>
+    <label>Rubriek <input type="text" name="rubriek" maxlength="40" value="Algemeen" list="rubrieken"></label>
+    <datalist id="rubrieken"><option value="Algemeen"><option value="Tech"><option value="FB/IM"><option value="Nijmegen"><option value="Sport"></datalist>
+    <label>Soort <select name="soort"><option value="feed">RSS- of Atom-feed (adres)</option><option value="google">Google News (zoekopdracht)</option></select></label>
+    <label class="breed">Adres of zoekopdracht <input type="text" name="url" maxlength="500" required placeholder='https://… of bijvoorbeeld "archiefwet" OR "Woo"'></label>
+    <div class="knoppenrij breed"><button class="knop vol" type="submit">Toevoegen</button></div>
+  </form>
+</section>
+
+<section class="kaart">
+  <h2>Wegen</h2>
+  <p>Vera haalt elk kwartier op en weegt nieuwe berichten met Claude (het lichte model), tot {{ euro(plafond) }} per dag.
+     Vandaag besteed: {{ euro(besteed) }}.{% if not sleutel_ok %} Er is nog geen Claude-sleutel: tot die er is, staat het nieuwste bovenaan.{% endif %}</p>
+  <p class="noot">Berichten onder de 40 laat Vera weg op Nieuws (met "Alles laten zien" zie je ze toch). Berichten die je wegklikt met × komen niet terug.</p>
+</section>
+{% endblock %}

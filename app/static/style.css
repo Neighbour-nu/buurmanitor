@@ -419,3 +419,71 @@ details.afspraak.voorbij[open] { opacity: .8; }
 .meldingstatus { margin-top: 10px; border-top: 1px solid var(--lijn); padding-top: 8px; }
 .meldingstatus p { margin: 4px 0; }
 .meldingstatus [hidden] { display: none !important; }
+
+/* Vera: Nieuws */
+:root { --keepers: var(--zerohero); --overig: #0F766E; }
+.nfilter { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; margin: -4px 0 14px; }
+.nschakel { display: inline-flex; background: var(--wit); border: 1px solid var(--lijn); border-radius: 999px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.nschakel a { font-family: var(--kop); font-weight: 600; text-transform: uppercase; letter-spacing: .02em; font-size: 15px; text-decoration: none;
+              color: var(--zacht); padding: 4px 14px; border-radius: 999px; }
+.nschakel.klein a { font-size: 13px; padding: 3px 11px; }
+.nschakel a:hover { color: var(--blauwdonker); background: var(--ijs); }
+.nschakel a.actief { background: var(--blauwdonker); color: var(--wit); }
+.nschakel a.keepers.actief { background: var(--keepers); } .nschakel a.politiek.actief { background: var(--politiek); } .nschakel a.overig.actief { background: var(--overig); }
+
+.nuitgelicht { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 18px; }
+.ngroot { background: var(--wit); border: 1px solid var(--lijn); border-top: 5px solid var(--blauw); border-radius: 6px; padding: 14px 18px 12px;
+          display: flex; flex-direction: column; gap: 6px; }
+.ngroot.keepers { border-top-color: var(--keepers); } .ngroot.politiek { border-top-color: var(--politiek); } .ngroot.overig { border-top-color: var(--overig); }
+.ngroot h2 { font-family: Barlow, sans-serif; text-transform: none; font-size: 21px; line-height: 1.25; margin: 0; letter-spacing: 0; }
+.ngroot h2 a { color: var(--inkt); text-decoration: none; }
+.ngroot h2 a:hover { text-decoration: underline; }
+.ngroot .nsam { -webkit-line-clamp: 4; }
+.ngroot .nmeta { margin-top: auto; padding-top: 4px; }
+.nkop { display: flex; justify-content: space-between; align-items: center; }
+.nsoort { font-family: var(--kop); font-weight: 600; text-transform: uppercase; font-size: 13px; letter-spacing: .05em; color: var(--blauwdonker); }
+.ngroot.keepers .nsoort { color: var(--keepers); } .ngroot.politiek .nsoort { color: var(--politiek); } .ngroot.overig .nsoort { color: var(--overig); }
+
+.nraster { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .nraster { grid-template-columns: 1fr; } }
+.nkolom { background: var(--wit); border: 1px solid var(--lijn); border-top: 4px solid var(--blauw); border-radius: 6px; padding: 10px 14px 6px; }
+.nkolom.keepers { border-top-color: var(--keepers); } .nkolom.politiek { border-top-color: var(--politiek); } .nkolom.overig { border-top-color: var(--overig); }
+.nkolom > h2 { display: flex; justify-content: space-between; align-items: baseline; margin: 2px 0 6px; }
+.nkolom.keepers > h2 { color: var(--keepers); } .nkolom.politiek > h2 { color: var(--politiek); } .nkolom.overig > h2 { color: var(--overig); }
+.nkolom > h2 .aantal { font-size: 14px; color: var(--zacht); font-family: Barlow, sans-serif; }
+.nraster.enkel { grid-template-columns: 1fr; }
+.nraster.enkel .nlijst { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); column-gap: 24px; }
+.nitem { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid var(--lijn); position: relative; }
+.nlijst > .nitem:last-child { border-bottom: 0; }
+.ninhoud { flex: 1; min-width: 0; }
+.nlink { color: var(--inkt); font-weight: 600; text-decoration: none; line-height: 1.3;
+         display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.nlink:hover { text-decoration: underline; color: var(--blauwdonker); }
+.nlink:visited, .gelezen .nlink { color: var(--zacht); font-weight: 500; }
+.gelezen .nscore { opacity: .5; }
+.nmeta { display: block; font-size: 13px; color: var(--zacht); margin-top: 2px; }
+.nlabel { white-space: nowrap; }
+.nsam { margin: 4px 0 0; font-size: 14px; color: #3A3A3A; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.nwaarom { margin: 3px 0 0; font-size: 13px; color: var(--blauwdonker); font-style: italic; }
+.nscore { flex: 0 0 auto; min-width: 34px; text-align: center; font-family: var(--kop); font-weight: 600; font-size: 15px; line-height: 1;
+          padding: 5px 4px; border-radius: 4px; background: var(--ijs); color: var(--blauwdonker); margin-top: 1px; }
+.nscore.hoog { background: #FDE4E4; color: #B71C1C; } .nscore.midden { background: #FEF3C7; color: #92400E; }
+.nscore.laag { background: #EEF2F6; color: #5C6B7A; } .nscore.nieuw { font-size: 11px; text-transform: uppercase; padding: 6px 4px; }
+.nweg { margin: 0; }
+.nweg button { border: 0; background: none; color: var(--zacht); font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px; border-radius: 4px; opacity: 0; }
+.nitem:hover .nweg button, .nweg button:focus-visible { opacity: 1; }
+.nweg button:hover { background: var(--rozig); color: var(--rooddonker); }
+@media (hover: none) { .nweg button { opacity: .6; } }
+.nvoet { margin: 6px 0 4px; }
+tr.uit td { opacity: .55; }
+.breekbaar { overflow-wrap: anywhere; }
+
+/* Vandaag: nieuws */
+.minikop { display: flex; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--lijn); }
+.minikop:last-of-type { border-bottom: 0; }
+.minikop .stipje { flex: 0 0 8px; height: 8px; border-radius: 50%; background: var(--blauw); transform: translateY(-1px); }
+.minikop.keepers .stipje { background: var(--keepers); } .minikop.politiek .stipje { background: var(--politiek); } .minikop.overig .stipje { background: var(--overig); }
+.minikop a { flex: 1; min-width: 0; color: var(--inkt); text-decoration: none; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
+.minikop a:hover { text-decoration: underline; }
+.minikop .bron { font-size: 12px; color: var(--zacht); white-space: nowrap; max-width: 34%; overflow: hidden; text-overflow: ellipsis; }
+.nraster.enkel .nitem { border-bottom: 0; border-top: 1px solid var(--lijn); }
