@@ -592,3 +592,95 @@ def test_verplaatsen_en_afzenderregels(klant, monkeypatch):
         assert not c.execute("SELECT 1 FROM post_afzenderregels").fetchone()
     vandaag = klant.get("/", headers=KOP).text  # v1 tot v3 staan niet in de nagebootste inbox en zijn dus weg
     assert 'href="/bram?map=actie">1 bericht</a> vraagt om actie' in vandaag
+
+
+# ---------------------------------------------------------------- sparren over de hele postkamer
+
+def test_opruimvoorstel_uit_antwoord():
+    from app.bram import gesprek  # pylint: disable=import-outside-toplevel
+    rest, v = gesprek.voorstellen_uit('Drie nieuwsbrieven kunnen weg.\n<opruimen>{"actie": "archiveren", "berichten": [3, 1, 3], '
+                                      '"uitleg": "nieuwsbrieven"}</opruimen><opruimen>{"actie": "verplaats", "berichten": [2]}</opruimen>'
+                                      '<opruimen>{"actie": "versturen", "berichten": [2]}</opruimen>'
+                                      '<antwoord>{"bericht": 7, "tekst": "Hoi"}</antwoord>')
+    assert rest == "Drie nieuwsbrieven kunnen weg."
+    assert v[0] == {"soort": "bulk", "bericht": None, "gegevens": {"actie": "archiveren", "groep": "", "berichten": [1, 3], "uitleg": "nieuwsbrieven"}}
+    assert len(v) == 2 and v[1]["soort"] == "antwoord" and v[1]["bericht"] == 7  # verplaats zonder groep en onbekende actie vallen weg
+    assert web.lijst_adres("weg", 2, True) == "/bram?map=weg&account=2&praat=1"
+
+
+def test_sparren_over_de_postkamer(klant, monkeypatch):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    from app.clara import kluis, web as clara_web  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(bronnen, "google_toegang", lambda refresh: ("tok", 3600, None))
+    monkeypatch.setattr(bronnen, "gmail_volledig", lambda tok, mid: {
+        "tekst": f"Volledige tekst van {mid}: kun je 12 maart een lezing geven?", "draad": "t", "van": "x", "antwoord_aan": "jan@club.nl",
+        "aan": "m@neighbour.nu", "cc": "", "onderwerp": "Lezing", "message_id": "", "references": "", "bijlagen": []})
+    gearchiveerd = []
+    monkeypatch.setattr(bronnen, "gmail_archiveer", lambda tok, mid: gearchiveerd.append(mid))
+    monkeypatch.setattr(clara_web, "_schrijfdoelen", lambda k: [("1|primary", "Martijn (Neighbour)", "prive")])
+    monkeypatch.setattr(clara_web, "_reisdoelen", lambda k: [("1|primary", "Martijn (Neighbour)", "prive")])
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM post_koppelingen")
+        c.execute("DELETE FROM gesprekken WHERE persona = 'bram'")
+        k1 = c.execute("INSERT INTO post_koppelingen (soort, naam, account, geheim, claude) VALUES ('google', 'Neighbour', 'm@neighbour.nu', %s, true) RETURNING id",
+                       (kluis.sluit("r"),)).fetchone()["id"]
+        k2 = c.execute("INSERT INTO post_koppelingen (soort, naam, account, geheim, claude) VALUES ('google', 'Gemeenteraad', 'm@helmond.nl', %s, false) RETURNING id",
+                       (kluis.sluit("r"),)).fetchone()["id"]
+        ids = {}
+        for n, k, adres, cat in (("p1", k1, "jan@club.nl", "antwoord"), ("p2", k1, "nieuws@bol.com", "nieuwsbrief"),
+                                 ("p3", k1, "nieuws@krant.nl", "nieuwsbrief"), ("p4", k2, "griffie@helmond.nl", "actie")):
+            ids[n] = c.execute("""INSERT INTO post_berichten (koppeling_id, extern_id, van_naam, van_adres, onderwerp, ontvangen, categorie, regel)
+                                  VALUES (%s, %s, %s, %s, %s, now(), %s, %s) RETURNING id""",
+                               (k, n, adres.split("@")[0], adres, f"Onderwerp {n}", cat, f"Regel {n}")).fetchone()["id"]
+    gezien = []
+
+    def nep_claude(c, persona, systeem, berichten, **kw):
+        gezien.append(systeem)
+        return (f"De nieuwsbrieven van Bol.com en de krant kunnen weg. Jan wacht op antwoord.\n"
+                f'<opruimen>{{"actie": "archiveren", "berichten": [{ids["p2"]}, {ids["p3"]}, 999999], "uitleg": "twee nieuwsbrieven"}}</opruimen>'
+                f'<antwoord>{{"bericht": {ids["p1"]}, "tekst": "Hoi Jan,\\n\\n12 maart past.\\n\\nGroet,\\nMartijn"}}</antwoord>'
+                f'<antwoord>{{"bericht": {ids["p2"]}, "tekst": "Niet aangevinkt, dus geen voorstel"}}</antwoord>'
+                f'<herinnering>{{"bericht": {ids["p1"]}, "titel": "Jan terugbellen", "start": "2026-11-03T09:00"}}</herinnering>')
+    monkeypatch.setattr(claude, "gesprek", nep_claude)
+
+    # Het paneel gaat open met de link links; dicht staat het niet in de weg.
+    assert 'id="gesprek"' not in klant.get("/bram", headers=KOP).text
+    pagina = klant.get("/bram?map=weg&praat=1", headers=KOP).text
+    assert 'id="gesprek"' in pagina and "Vraag het Bram" in pagina and "Deze keer ook Gemeenteraad" in pagina
+    assert 'name="praat" value="1"' in pagina and "Vraag Bram hierover" in pagina
+    # Een vraag met één aangevinkt bericht: Bram ziet de lijst (zonder de mailbox waar Claude niet mag meelezen) en dat ene bericht helemaal.
+    r = klant.post("/bram/gesprek/vraag", headers=FORM, data={"vraag": "Wat kan weg en wat moet ik doen?", "map": "weg", "gekozen": str(ids["p1"])},
+                   follow_redirects=False)
+    assert r.headers["location"].startswith("/bram?map=weg&praat=1&g=") and r.headers["location"].endswith("#gesprek")
+    assert "Onderwerp p1" in gezien[0] and "Onderwerp p3" in gezien[0] and "Onderwerp p4" not in gezien[0]
+    assert f"Aangevinkt bericht [{ids['p1']}]" in gezien[0] and "Volledige tekst van p1" in gezien[0] and "Volledige tekst van p2" not in gezien[0]
+    with db.pool.connection() as c:
+        g = c.execute("SELECT * FROM gesprekken WHERE persona = 'bram' AND kader = 'postkamer'").fetchone()
+        v = c.execute("SELECT * FROM post_voorstellen WHERE gesprek_id = %s ORDER BY id", (g["id"],)).fetchall()
+    assert [x["soort"] for x in v] == ["bulk", "antwoord", "herinnering"]  # het antwoord bij p2 (niet gelezen) valt weg
+    assert v[0]["gegevens"]["berichten"] == [ids["p2"], ids["p3"]]  # onbekend nummer valt weg
+    pagina = klant.get(r.headers["location"].split("#")[0], headers=KOP).text
+    assert "Jan wacht op antwoord." in pagina and "Archiveren: 2 berichten" in pagina and "twee nieuwsbrieven" in pagina
+    assert "nieuws: Onderwerp p2" in pagina and "Bij: jan, Onderwerp p1" in pagina and "Versturen" in pagina
+    # Met 'deze keer ook' ziet Bram ook de gemeenteraad.
+    klant.post("/bram/gesprek/vraag", headers=FORM, data={"vraag": "En de raad?", "gesprek": str(g["id"]), "ook": "1"})
+    assert "Onderwerp p4" in gezien[1]
+    with db.pool.connection() as c:
+        assert c.execute("SELECT count(*) AS n FROM gesprek_berichten WHERE gesprek_id = %s", (g["id"],)).fetchone()["n"] == 4
+    # Het opruimvoorstel uitvoeren: beide berichten gearchiveerd, terug in het gesprek.
+    r = klant.post(f"/bram/voorstel/{v[0]['id']}", headers=FORM, data={"actie": "doen", "map": "weg"}, follow_redirects=False)
+    assert r.headers["location"].startswith(f"/bram?map=weg&praat=1&g={g['id']}&melding=2+berichten+gearchiveerd")
+    assert sorted(gearchiveerd) == ["p2", "p3"]
+    pagina = klant.get(f"/bram?praat=1&g={g['id']}", headers=KOP).text
+    assert "✓ 2 berichten gearchiveerd." in pagina and "(Gedaan: 2 berichten gearchiveerd.)" in pagina
+    # Nieuw gesprek: leeg paneel, het oude staat bij Eerdere gesprekken.
+    r = klant.post("/bram/gesprek/nieuw", headers=FORM, data={"map": "alles"}, follow_redirects=False)
+    assert r.headers["location"] == "/bram?praat=1&g=0#gesprek"
+    pagina = klant.get("/bram?praat=1&g=0", headers=KOP).text
+    assert "Jan wacht op antwoord." not in pagina and "Eerdere gesprekken (1)" in pagina
+    # Een leeg vraagveld doet niets; van een andere site geweigerd.
+    assert klant.post("/bram/gesprek/vraag", headers=FORM, data={"vraag": " "}, follow_redirects=False).headers["location"] == "/bram?praat=1#gesprek"
+    assert klant.post("/bram/gesprek/vraag", headers=KOP, data={"vraag": "x"}).status_code == 403
+    # Het gesprek over één bericht blijft daar: het staat niet in de postkamer.
+    pagina = klant.get(f"/bram/bericht/{ids['p1']}", headers=KOP).text
+    assert "Jan wacht op antwoord." not in pagina

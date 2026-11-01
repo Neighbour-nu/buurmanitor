@@ -1,0 +1,36 @@
+{# Eén voorstel van Bram als formulier met knop. Gebruikt op het berichtscherm en in het gesprek over de postkamer.
+   Verwacht in de context: doelen, eigen, datum, DAGEN; en voor de postkamer ook namen (bericht-id -> afzender en onderwerp). #}
+{% macro moment(iso) -%}{%- set d = datum(iso) -%}{{ DAGEN[d.weekday()] }} {{ d.strftime('%d-%m-%Y %H.%M') }}{%- endmacro %}
+{% macro voorstel(v, aan='', verborgen={}, namen={}) %}
+  {% set g = v.gegevens %}
+  <form method="post" action="/bram/voorstel/{{ v.id }}" class="voorstel">
+    {% for naam, waarde in verborgen.items() %}<input type="hidden" name="{{ naam }}" value="{{ waarde }}">{% endfor %}
+    {% if v.bericht_id and namen.get(v.bericht_id) %}<span class="noot">Bij: {{ namen[v.bericht_id].van_naam }}, {{ namen[v.bericht_id].onderwerp }}</span><br>{% endif %}
+    {% if v.soort == 'bulk' %}
+      {% set werkwoord = {'archiveren': 'Archiveren', 'verwijderen': 'Verwijderen', 'gelezen': 'Als gelezen markeren', 'verplaats': 'Verplaatsen'}[g.actie] %}
+      <b>{{ werkwoord }}: {{ g.berichten | length }} bericht{{ 'en' if g.berichten | length != 1 }}</b>{% if g.actie == 'verplaats' %} naar {{ {'actie': 'Actie nodig', 'lezen': 'Lezen', 'weg': 'Kan weg'}[g.groep] }}{% endif %}
+      {% if g.uitleg %}<br><span class="noot">{{ g.uitleg }}</span>{% endif %}
+      <details class="bulklijst"><summary>Welke berichten</summary><ul>
+        {% for i in g.berichten %}<li>{% if namen.get(i) %}{{ namen[i].van_naam }}: {{ namen[i].onderwerp }}{% else %}(niet meer in de inbox){% endif %}</li>{% endfor %}
+      </ul></details>
+      <button class="knop klein vol" name="actie" value="doen" {% if g.actie == 'verwijderen' %}onclick="return confirm('Deze berichten naar de prullenbak?')"{% endif %}>{{ werkwoord }}</button>
+    {% elif v.soort == 'antwoord' %}
+      <b>Antwoord{% if aan %} aan {{ aan }}{% endif %}</b>
+      <textarea name="tekst" rows="8" aria-label="Tekst van het antwoord">{{ g.tekst }}</textarea>
+      <button class="knop klein vol" name="actie" value="doen" onclick="return confirm('Dit antwoord nu versturen?')">Versturen</button>
+    {% elif v.soort == 'afspraak' %}
+      <b>Afspraak:</b> <input type="text" name="titel" value="{{ g.titel }}" aria-label="Titel">
+      <br>{{ moment(g.start) }}–{{ datum(g.eind).strftime('%H.%M') }}{% if g.locatie %} · {{ g.locatie }}{% endif %}
+      {% if g.omschrijving %}<br><span class="noot">{{ g.omschrijving }}</span>{% endif %}
+      {% if doelen %}<br><select name="doel" aria-label="Agenda">{% set gekozen = namespace(klaar=false) %}{% for w, label, d in doelen %}{% set past = g.agenda and label.lower().startswith(g.agenda.lower() ~ ' (') %}<option value="{{ w }}" {% if past and not gekozen.klaar %}selected{% set gekozen.klaar = true %}{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <button class="knop klein vol" name="actie" value="doen">Zet in agenda</button>
+      {% else %}<br><span class="noot">Er is geen agenda met schrijfrechten gekoppeld bij Clara.</span>{% endif %}
+    {% else %}
+      <b>Herinnering:</b> <input type="text" name="titel" value="{{ g.titel }}" aria-label="Titel">
+      <br>{{ moment(g.start) }} <span class="noot">(houdt geen tijd bezet)</span>
+      {% if eigen %}<br><select name="doel" aria-label="Agenda">{% for w, label, d in eigen %}<option value="{{ w }}">{{ label }}</option>{% endfor %}</select>
+      <button class="knop klein vol" name="actie" value="doen">Zet in agenda</button>{% endif %}
+    {% endif %}
+    <button class="knop klein" name="actie" value="weg">Niet doen</button>
+  </form>
+{% endmacro %}

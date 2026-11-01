@@ -50,10 +50,19 @@ BULK = {"archiveren": "gearchiveerd", "verwijderen": "verwijderd", "gelezen": "a
         "ongelezen": "als ongelezen gemarkeerd", "uitschrijven": "uitgeschreven", "verplaats": "verplaatst"}
 
 
-def lijst_adres(map_="alles", account=0):
-    """Het adres van de lijst met de gekozen map en het gekozen account. Pure functie."""
-    delen = ([f"map={map_}"] if map_ in GROEP_NAMEN else []) + ([f"account={int(account)}"] if account else [])
+def lijst_adres(map_="alles", account=0, praat=False):
+    """Het adres van de lijst met de gekozen map, het gekozen account en of het gesprek open staat. Pure functie."""
+    delen = ([f"map={map_}"] if map_ in GROEP_NAMEN else []) + ([f"account={int(account)}"] if account else []) + (["praat=1"] if praat else [])
     return "/bram" + ("?" + "&".join(delen) if delen else "")
+
+
+def _paneel_adres(f, gid):
+    """Terug naar de lijst (zelfde map en mailbox) met het gesprek open."""
+    try:
+        account = int(f.get("account") or 0)
+    except ValueError:
+        account = 0
+    return lijst_adres(str(f.get("map") or "alles"), account, True) + ("" if gid in (None, "") else f"&g={gid}") + "#gesprek"
 
 
 def _lijst_uit_formulier(f):
@@ -61,15 +70,41 @@ def _lijst_uit_formulier(f):
         account = int(f.get("account") or 0)
     except ValueError:
         account = 0
-    return lijst_adres(str(f.get("map") or "alles"), account)
+    return lijst_adres(str(f.get("map") or "alles"), account, f.get("praat") == "1")
+
+
+def _gesprek_paneel(c, g=None):
+    """Het gesprek over de postkamer: het gekozen gesprek, anders het laatste. Met open en uitgevoerde voorstellen."""
+    if g:
+        gs = c.execute("SELECT * FROM gesprekken WHERE id = %s AND persona = 'bram' AND kader = 'postkamer'", (g,)).fetchone()
+    elif g is None:
+        gs = c.execute("""SELECT * FROM gesprekken WHERE persona = 'bram' AND kader = 'postkamer' AND NOT gearchiveerd
+                          ORDER BY bijgewerkt DESC LIMIT 1""").fetchone()
+    else:
+        gs = None
+    uit = {"gesprek": gs, "berichten": [], "voorstellen": [], "klaar": [], "namen": {},
+           "eerdere": c.execute("""SELECT id, titel, bijgewerkt FROM gesprekken WHERE persona = 'bram' AND kader = 'postkamer'
+                                   AND NOT gearchiveerd AND id <> %s ORDER BY bijgewerkt DESC LIMIT 10""", (gs["id"] if gs else 0,)).fetchall(),
+           "zonder_claude": [k["naam"] for k in c.execute("SELECT naam FROM post_koppelingen WHERE actief AND NOT claude ORDER BY id")]}
+    if gs:
+        uit["berichten"] = c.execute("SELECT * FROM gesprek_berichten WHERE gesprek_id = %s ORDER BY id", (gs["id"],)).fetchall()
+        uit["voorstellen"] = c.execute("SELECT * FROM post_voorstellen WHERE gesprek_id = %s AND status = 'open' ORDER BY id", (gs["id"],)).fetchall()
+        uit["klaar"] = c.execute("SELECT * FROM post_voorstellen WHERE gesprek_id = %s AND status = 'uitgevoerd' ORDER BY id", (gs["id"],)).fetchall()
+        ids = {i for v in uit["voorstellen"] for i in (v["gegevens"].get("berichten") or [])} | {v["bericht_id"] for v in uit["voorstellen"] if v["bericht_id"]}
+        if ids:
+            uit["namen"] = {r["id"]: r for r in c.execute("SELECT id, van_naam, onderwerp FROM post_berichten WHERE id = ANY(%s::int[])", (sorted(ids),))}
+    return uit
 
 
 @router.get("/bram", response_class=HTMLResponse)
-def postkamer(request: Request, map: str = "alles", account: int = 0, melding: str = "", fout: str = ""):  # pylint: disable=redefined-builtin
-    """Eén lijst voor alle mailboxen, zoals Gmail: links mappen en accounts, rechts de berichten."""
+def postkamer(request: Request, map: str = "alles", account: int = 0, praat: int = 0, g: int | None = None,  # pylint: disable=redefined-builtin
+              melding: str = "", fout: str = ""):
+    """Eén lijst voor alle mailboxen, zoals Gmail: links mappen en accounts, rechts de berichten (en het gesprek met Bram)."""
     if map not in GROEP_NAMEN:
         map = "alles"
     with db.pool.connection() as c:
+        paneel = _gesprek_paneel(c, g) if praat else None
+        agendas = clara_web.sync.koppelingen(c, alleen_actief=True) if praat else []
         koppelingen = sync.koppelingen(c)
         berichten = c.execute("""SELECT b.*, k.naam AS koppeling, k.domein, k.soort FROM post_berichten b
                                  JOIN post_koppelingen k ON k.id = b.koppeling_id
@@ -90,7 +125,50 @@ def postkamer(request: Request, map: str = "alles", account: int = 0, melding: s
         request, "bram", p=personas.get("bram"), koppelingen=koppelingen, mappen=MAPPEN, groep_namen=GROEP_NAMEN,
         lijst=lijst, map=map, per_map=per_map, per_account=per_account, account=account, melding=melding, fout=fout,
         tz=config.TZ, DAGEN=DAGEN, CATEGORIEEN=sync.CATEGORIEEN, nu=dt.datetime.now(config.TZ), kluis_ok=kluis.actief(),
-        domeinnaam=dict(DOMEINEN), groepen=GROEPEN))
+        domeinnaam=dict(DOMEINEN), groepen=GROEPEN, praat=praat, paneel=paneel, sleutel_ok=bool(config.ANTHROPIC_API_KEY),
+        doelen=clara_web._schrijfdoelen(agendas), eigen=clara_web._reisdoelen(agendas),  # pylint: disable=protected-access
+        datum=lambda iso: dt.datetime.fromisoformat(iso).astimezone(config.TZ), lijst_adres=lijst_adres))
+
+
+@router.post("/bram/gesprek/vraag")
+async def postkamer_vraag(request: Request):
+    """Een vraag aan Bram over de hele postkamer, eventueel over de aangevinkte berichten."""
+    controleer_herkomst(request)
+    f = await request.form()
+    tekst = str(f.get("vraag", "")).strip()[:4000]
+    gekozen = [int(x) for x in f.getlist("gekozen") if str(x).isdigit()][:5]
+    try:
+        gid = int(f.get("gesprek") or 0) or None
+    except ValueError:
+        gid = None
+    if not tekst:
+        return _terug(_paneel_adres(f, gid))
+    with db.pool.connection() as c:
+        if gid and not c.execute("SELECT 1 FROM gesprekken WHERE id = %s AND persona = 'bram' AND kader = 'postkamer'", (gid,)).fetchone():
+            gid = None
+        if not gid:
+            gid = c.execute("INSERT INTO gesprekken (persona, titel, kader) VALUES ('bram', %s, 'postkamer') RETURNING id",
+                            (" ".join(tekst.split())[:80],)).fetchone()["id"]
+        vraag_tekst = tekst + (f"\n\n(Aangevinkt: {len(gekozen)} bericht{'en' if len(gekozen) != 1 else ''}.)" if gekozen else "")
+        c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'user', %s)", (gid, vraag_tekst))
+        c.execute("UPDATE gesprekken SET gearchiveerd = false WHERE id = %s", (gid,))
+
+    def antwoorden():
+        with db.pool.connection() as c:
+            try:
+                gesprek.postkamer_antwoord(c, gid, gekozen, ook_zonder_claude=f.get("ook") == "1")
+            except (claude.ClaudeFout, bronnen.BronFout, kluis.KluisFout) as e:
+                c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)",
+                          (gid, f"(Ik kan nu niet antwoorden: {e})"))
+    await asyncio.to_thread(antwoorden)
+    return RedirectResponse(_paneel_adres(f, gid), status_code=303)
+
+
+@router.post("/bram/gesprek/nieuw")
+async def postkamer_nieuw(request: Request):
+    controleer_herkomst(request)
+    f = await request.form()
+    return _terug(_paneel_adres(f, 0))
 
 
 @router.post("/bram/vernieuwen")
@@ -176,7 +254,11 @@ async def voorstel(request: Request, vid: int):
         v = c.execute("SELECT * FROM post_voorstellen WHERE id = %s AND status = 'open'", (vid,)).fetchone()
         if not v:
             return _terug("/bram", fout="Dit voorstel is al afgehandeld.")
-        terug = f"/bram/bericht/{v['bericht_id']}#gesprek"
+        kader = c.execute("SELECT kader FROM gesprekken WHERE id = %s", (v["gesprek_id"],)).fetchone() if v["gesprek_id"] else None
+        if kader and kader["kader"] == "postkamer":
+            terug = _paneel_adres(f, v["gesprek_id"])
+        else:
+            terug = f"/bram/bericht/{v['bericht_id']}#gesprek"
         if f.get("actie") == "weg":
             c.execute("UPDATE post_voorstellen SET status = 'afgewezen' WHERE id = %s", (vid,))
             return _terug(terug)
@@ -184,6 +266,26 @@ async def voorstel(request: Request, vid: int):
 
     def doe():
         with db.pool.connection() as c:
+            if v["soort"] == "bulk":
+                gelukt, fouten = 0, []
+                for bid in g["berichten"]:
+                    b = c.execute("SELECT * FROM post_berichten WHERE id = %s AND status = 'open'", (bid,)).fetchone()
+                    if not b:
+                        continue
+                    try:
+                        if g["actie"] == "verplaats":
+                            c.execute("UPDATE post_berichten SET groep_handmatig = %s WHERE id = %s", (g["groep"], bid))
+                        else:
+                            sync.uitvoeren(c, b, g["actie"])
+                        gelukt += 1
+                    except (bronnen.BronFout, kluis.KluisFout) as e:
+                        fouten.append(f"{b['onderwerp'][:40]}: {e}")
+                uitslag = (f"{gelukt} bericht{'en' if gelukt != 1 else ''} {BULK[g['actie']]}"
+                           + (f" naar {GROEP_NAMEN[g['groep']]}" if g["actie"] == "verplaats" else "") + "."
+                           + (" Niet gelukt: " + "; ".join(fouten[:3]) if fouten else ""))
+                c.execute("UPDATE post_voorstellen SET status = 'uitgevoerd', uitslag = %s WHERE id = %s", (uitslag[:500], vid))
+                c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)", (v["gesprek_id"], f"(Gedaan: {uitslag})"))
+                return uitslag
             b = _bericht(c, v["bericht_id"])
             if v["soort"] == "antwoord":
                 tekst = str(f.get("tekst") or g.get("tekst") or "").strip()
@@ -205,8 +307,8 @@ async def voorstel(request: Request, vid: int):
                     clara_web._maak(c, str(f.get("doel", "")), titel, start, eind, omschrijving.strip(), locatie=g.get("locatie", ""))  # pylint: disable=protected-access
                     uitslag = f"'{titel}' staat in de agenda op {start.astimezone(config.TZ):%d-%m om %H.%M}."
             c.execute("UPDATE post_voorstellen SET status = 'uitgevoerd', uitslag = %s WHERE id = %s", (uitslag, vid))
-            if b["gesprek_id"]:
-                c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)", (b["gesprek_id"], f"(Gedaan: {uitslag})"))
+            if v["gesprek_id"]:
+                c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)", (v["gesprek_id"], f"(Gedaan: {uitslag})"))
             return uitslag
     try:
         uitslag = await asyncio.to_thread(doe)

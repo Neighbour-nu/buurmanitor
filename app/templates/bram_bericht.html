@@ -2,7 +2,7 @@
 {% block titel %}{{ b.onderwerp }} · Bram · Buurmanitor<script>
 (function () { const g = document.getElementById("berichten"); if (g) g.scrollTop = g.scrollHeight; })();
 </script>{% endblock %}
-{% macro moment(iso) -%}{%- set d = datum(iso) -%}{{ DAGEN[d.weekday()] }} {{ d.strftime('%d-%m-%Y %H.%M') }}{%- endmacro %}
+{% from "_bram_voorstel.html" import voorstel with context %}
 {% block inhoud %}
 <section class="kopregel">
   <div>
@@ -72,29 +72,7 @@
       {% endfor %}
       </div>
 
-      {% for v in voorstellen %}
-        {% set g = v.gegevens %}
-        <form method="post" action="/bram/voorstel/{{ v.id }}" class="voorstel">
-          {% if v.soort == 'antwoord' %}
-            <b>Antwoord aan {{ volledig.antwoord_aan if volledig else b.van_adres }}</b>
-            <textarea name="tekst" rows="8" aria-label="Tekst van het antwoord">{{ g.tekst }}</textarea>
-            <button class="knop klein vol" name="actie" value="doen" onclick="return confirm('Dit antwoord nu versturen?')">Versturen</button>
-          {% elif v.soort == 'afspraak' %}
-            <b>Afspraak:</b> <input type="text" name="titel" value="{{ g.titel }}" aria-label="Titel">
-            <br>{{ moment(g.start) }}–{{ datum(g.eind).strftime('%H.%M') }}{% if g.locatie %} · {{ g.locatie }}{% endif %}
-            {% if g.omschrijving %}<br><span class="noot">{{ g.omschrijving }}</span>{% endif %}
-            {% if doelen %}<br><select name="doel" aria-label="Agenda">{% set gekozen = namespace(klaar=false) %}{% for w, label, d in doelen %}{% set past = g.agenda and label.lower().startswith(g.agenda.lower() ~ ' (') %}<option value="{{ w }}" {% if past and not gekozen.klaar %}selected{% set gekozen.klaar = true %}{% endif %}>{{ label }}</option>{% endfor %}</select>
-            <button class="knop klein vol" name="actie" value="doen">Zet in agenda</button>
-            {% else %}<br><span class="noot">Er is geen agenda met schrijfrechten gekoppeld bij Clara.</span>{% endif %}
-          {% else %}
-            <b>Herinnering:</b> <input type="text" name="titel" value="{{ g.titel }}" aria-label="Titel">
-            <br>{{ moment(g.start) }} <span class="noot">(houdt geen tijd bezet)</span>
-            {% if eigen %}<br><select name="doel" aria-label="Agenda">{% for w, label, d in eigen %}<option value="{{ w }}">{{ label }}</option>{% endfor %}</select>
-            <button class="knop klein vol" name="actie" value="doen">Zet in agenda</button>{% endif %}
-          {% endif %}
-          <button class="knop klein" name="actie" value="weg">Niet doen</button>
-        </form>
-      {% endfor %}
+      {% for v in voorstellen %}{{ voorstel(v, aan=(volledig.antwoord_aan if volledig else b.van_adres)) }}{% endfor %}
       {% for v in klaar %}<p class="noot">✓ {{ v.uitslag }}</p>{% endfor %}
 
       <form method="post" action="/bram/bericht/{{ b.id }}/vraag">

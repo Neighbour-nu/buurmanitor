@@ -29,7 +29,9 @@ Het logo (twee buurhuizen) is eigen werk.
   Archiveren, labelen, gelezen markeren, verwijderen (naar de prullenbak) en uitschrijven bij nieuwsbrieven (met één
   klik volgens RFC 8058, anders met een mail naar het uitschrijfadres) alleen na jouw klik. Per bericht kun je Bram iets vragen: hij leest de mail
   en de bijlagen (pdf, agenda-uitnodiging, tekst) en zet een antwoord, een afspraak (ook in de agenda van Sanne) of een
-  herinnering klaar. Versturen of inplannen gebeurt pas na jouw klik; een antwoord kun je eerst aanpassen.
+  herinnering klaar. Versturen of inplannen gebeurt pas na jouw klik; een antwoord kun je eerst aanpassen. Met
+  "Vraag Bram" in Post spar je over de hele postkamer (aangevinkte berichten leest hij helemaal); hij kan dan ook
+  voorstellen om meer berichten tegelijk op te ruimen.
 
 Volgende fases: Bram verder (Teams, WhatsApp en Signal), Noor (5), Vera (6) en Jesse (7).
 

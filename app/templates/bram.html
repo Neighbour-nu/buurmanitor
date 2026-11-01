@@ -5,12 +5,13 @@
   {%- set d = t.astimezone(tz) -%}
   {%- if d.date() == nu.date() %}{{ d.strftime('%H.%M') }}{% elif (nu.date() - d.date()).days < 7 %}{{ DAGEN[d.weekday()][:2] }} {{ d.strftime('%H.%M') }}{% else %}{{ d.day }} {{ ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'][d.month - 1] }}{% endif -%}
 {%- endmacro %}
+{% from "_bram_voorstel.html" import voorstel with context %}
 {% block inhoud %}
 {% if melding %}<p class="item">{{ melding }}</p>{% endif %}
 {% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
 {% for k in koppelingen if k.fout and k.actief %}<p class="item urgent"><b>{{ k.naam }}</b>: {{ k.fout }} <a href="/bram/instellingen">oplossen</a></p>{% endfor %}
 
-<div class="postvak">
+<div class="postvak {{ 'met-gesprek' if praat }}">
   <nav class="postmappen" aria-label="Mappen en accounts">
     <form method="post" action="/bram/vernieuwen"><button class="knop vol breed-knop" type="submit">↻ Nu bijwerken</button></form>
     {% for m, naam, _ in mappen %}
@@ -23,12 +24,14 @@
     <a href="/bram?{{ 'map=' ~ map ~ '&' if map != 'alles' }}account={{ k.id }}" class="pmap {{ 'actief' if account == k.id }}" title="{{ k.account }}">
       <span><span class="pdot {{ k.domein }}"></span>{{ k.naam }}</span><span class="aantal">{{ per_account.get(k.id, '') }}</span></a>
     {% endfor %}
+    <a href="{{ lijst_adres(map, account, not praat) }}{{ '#gesprek' if not praat }}" class="pmap praat-link {{ 'actief' if praat }}"><span>💬 {{ 'Gesprek sluiten' if praat else 'Vraag Bram' }}</span></a>
     <a href="/bram/instellingen" class="pmap klein-link"><span>⚙ Instellingen</span></a>
     {% if not koppelingen %}<p class="noot">Nog geen mailbox gekoppeld. <a href="/bram/instellingen">Koppel er een</a>.</p>{% endif %}
   </nav>
 
   <form method="post" action="/bram/bulk" class="postlijst" id="postlijst">
     <input type="hidden" name="map" value="{{ map }}"><input type="hidden" name="account" value="{{ account }}">
+    {% if praat %}<input type="hidden" name="praat" value="1">{% endif %}
     <div class="pbalk" id="pbalk">
       <label class="palles" title="Alles selecteren"><input type="checkbox" id="alles-kiezen" aria-label="Alles selecteren"></label>
       <span class="pgekozen" id="pgekozen">{{ lijst | length }} bericht{{ 'en' if lijst | length != 1 }}{% if map != 'alles' %} in {{ groep_namen[map] }}{% endif %}</span>
@@ -40,6 +43,7 @@
         <button class="knop klein" name="actie" value="uitschrijven" onclick="return confirm('Uitschrijven bij de afzenders van de geselecteerde berichten?')">Uitschrijven</button>
         <span class="pverplaats"><select name="groep" aria-label="Verplaats naar"><option value="">Verplaats naar…</option>{% for g, naam, _ in groepen %}<option value="{{ g }}">{{ naam }}</option>{% endfor %}</select>
           <button class="knop klein" name="actie" value="verplaats">Verplaats</button></span>
+        {% if praat %}<button class="knop klein vol" type="button" id="vraag-over-selectie">💬 Vraag Bram hierover</button>{% endif %}
       </span>
     </div>
 
@@ -68,6 +72,40 @@
     <p class="pleeg">{% if not koppelingen %}Nog geen mailbox gekoppeld.{% elif map == 'actie' %}Niets dat op jou wacht.{% elif map == 'weg' %}Niets op te ruimen.{% else %}Geen berichten.{% endif %}</p>
     {% endfor %}
   </form>
+
+  {% if praat %}
+  <aside class="kaart postgesprek" id="gesprek">
+    <h2><span>Vraag het Bram</span>
+      <form method="post" action="/bram/gesprek/nieuw" class="inline"><input type="hidden" name="map" value="{{ map }}"><input type="hidden" name="account" value="{{ account }}">
+        <button class="knop klein" type="submit">Nieuw gesprek</button></form></h2>
+    {% if not sleutel_ok %}<p class="item urgent">Er is nog geen Claude-sleutel ingesteld.</p>{% endif %}
+    <div class="berichten" id="berichten">
+    {% for m in paneel.berichten %}
+      <div class="bericht {{ m.rol }}"><span class="noot">{{ 'Jij' if m.rol == 'user' else 'Bram' }} · {{ geleden(m.tijd) }}</span>
+        <div class="tekst">{{ m.tekst }}</div></div>
+    {% else %}
+      <p class="noot">Bram kent alle berichten in Post. Vraag bijvoorbeeld: "Wat moet ik vandaag echt doen?", "Wie wacht er
+        het langst op antwoord?" of "Ruim de nieuwsbrieven op". Vink berichten aan om Bram ze helemaal te laten lezen.</p>
+    {% endfor %}
+    </div>
+    {% for v in paneel.voorstellen %}{{ voorstel(v, verborgen={'map': map, 'account': account}, namen=paneel.namen) }}{% endfor %}
+    {% for v in paneel.klaar %}<p class="noot">✓ {{ v.uitslag }}</p>{% endfor %}
+    <form method="post" action="/bram/gesprek/vraag" id="vraag-bram">
+      <input type="hidden" name="gesprek" value="{{ paneel.gesprek.id if paneel.gesprek else '' }}">
+      <input type="hidden" name="map" value="{{ map }}"><input type="hidden" name="account" value="{{ account }}">
+      <p class="noot" id="gekozen-noot" hidden></p>
+      <textarea name="vraag" required placeholder="Vraag Bram iets over je post"></textarea>
+      {% if paneel.zonder_claude %}<label class="vink"><input type="checkbox" name="ook" value="1"> Deze keer ook {{ paneel.zonder_claude | join(', ') }}
+        <span class="noot">(daar mag Claude normaal niet meelezen)</span></label>{% endif %}
+      <p><button class="knop vol" type="submit">Stuur</button> <span class="noot">Bram doet pas iets als jij op de knop drukt.</span></p>
+    </form>
+    {% if paneel.eerdere %}
+    <details class="gesprekken"><summary>Eerdere gesprekken ({{ paneel.eerdere | length }})</summary>
+      {% for e in paneel.eerdere %}<div class="gesprekregel"><a href="{{ lijst_adres(map, account, true) }}&g={{ e.id }}#gesprek">{{ e.titel or 'Gesprek' }}</a> <span class="noot">{{ geleden(e.bijgewerkt) }}</span></div>{% endfor %}
+    </details>
+    {% endif %}
+  </aside>
+  {% endif %}
 </div>
 
 <script>
@@ -101,6 +139,29 @@
   // Bij de knoppen per regel telt alleen dat ene bericht, niet wat er verder is aangevinkt.
   lijst.querySelectorAll(".psnel button").forEach(k => k.addEventListener("click", () => vakjes.forEach(v => { v.checked = false; })));
   bijwerken();
+  // Het gesprek: wat is aangevinkt, gaat mee met de vraag (Bram leest die berichten dan helemaal; hooguit vijf).
+  const vraag = document.getElementById("vraag-bram");
+  if (vraag) {
+    const noot = document.getElementById("gekozen-noot");
+    const toon = () => {
+      const n = vakjes.filter(v => v.checked).length;
+      noot.hidden = !n;
+      noot.textContent = !n ? "" : n === 1 ? "Bram leest het aangevinkte bericht helemaal." : n > 5 ? "Bram leest de eerste 5 van de " + n + " aangevinkte berichten helemaal." : "Bram leest de " + n + " aangevinkte berichten helemaal.";
+    };
+    vakjes.forEach(v => v.addEventListener("change", toon));
+    alles.addEventListener("change", toon);
+    vraag.addEventListener("submit", function () {
+      vraag.querySelectorAll('input[name="gekozen"]').forEach(x => x.remove());
+      vakjes.filter(v => v.checked).slice(0, 5).forEach(v => {
+        const x = document.createElement("input"); x.type = "hidden"; x.name = "gekozen"; x.value = v.value; vraag.appendChild(x);
+      });
+      const knop = vraag.querySelector('button[type="submit"]'); knop.disabled = true; knop.textContent = "Bram denkt na…";
+    });
+    const over = document.getElementById("vraag-over-selectie");
+    if (over) over.addEventListener("click", () => { vraag.querySelector("textarea").focus(); });
+    const b = document.getElementById("berichten"); if (b) b.scrollTop = b.scrollHeight;
+    if (location.hash === "#gesprek") vraag.querySelector("textarea").focus({preventScroll: true});
+  }
 })();
 </script>
 {% endblock %}

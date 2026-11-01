@@ -259,6 +259,11 @@ MIGRATIES = [
     # een herinnering in de agenda. Uitgevoerd wordt het pas na een klik van Martijn.
     "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS gesprek_id int REFERENCES gesprekken(id) ON DELETE SET NULL",
     # Uitschrijven: wanneer Bram het deed, of de link als het alleen via de website van de afzender kan.
+    # Gesprek met Bram over de hele postkamer (kader 'postkamer'), los van de gesprekken over één bericht. Daarin kan Bram
+    # ook voorstellen om meer berichten tegelijk op te ruimen (soort 'bulk').
+    "ALTER TABLE gesprekken ADD COLUMN IF NOT EXISTS kader text NOT NULL DEFAULT ''",
+    "ALTER TABLE post_voorstellen DROP CONSTRAINT IF EXISTS post_voorstellen_soort_check",
+    "ALTER TABLE post_voorstellen ADD CONSTRAINT post_voorstellen_soort_check CHECK (soort IN ('antwoord', 'afspraak', 'herinnering', 'bulk'))",
     "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS uitgeschreven timestamptz",
     "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS uitschrijf_link text NOT NULL DEFAULT ''",
     # Zelf verplaatst (actie, lezen of weg) gaat voor het oordeel van Bram. Een afzenderregel doet dat voortaan
