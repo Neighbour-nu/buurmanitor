@@ -291,4 +291,27 @@ MIGRATIES = [
     # (na het aanmaken, zodat het ook op een lege database werkt) soort 'bulk' erbij
     "ALTER TABLE post_voorstellen DROP CONSTRAINT IF EXISTS post_voorstellen_soort_check",
     "ALTER TABLE post_voorstellen ADD CONSTRAINT post_voorstellen_soort_check CHECK (soort IN ('antwoord', 'afspraak', 'herinnering', 'bulk'))",
+    # ---------- Taken: kanbanbord ----------
+    # Een taak met eventueel een start- en einddatum; dan staat hij ook als afspraak in de agenda (agenda_*: welke).
+    """CREATE TABLE IF NOT EXISTS takenbord (
+        id serial PRIMARY KEY,
+        titel text NOT NULL,
+        beschrijving text NOT NULL DEFAULT '',
+        prio text NOT NULL DEFAULT 'middel' CHECK (prio IN ('laag', 'middel', 'hoog')),
+        status text NOT NULL DEFAULT 'nieuw' CHECK (status IN ('nieuw', 'triage', 'gepland', 'actief', 'wachtend', 'afgerond')),
+        wacht_op text NOT NULL DEFAULT '',
+        startdatum date,
+        starttijd time,
+        einddatum date,
+        eindtijd time,
+        doel text NOT NULL DEFAULT '',
+        agenda_koppeling int,
+        agenda_id text NOT NULL DEFAULT '',
+        agenda_extern text NOT NULL DEFAULT '',
+        agenda_spec text NOT NULL DEFAULT '',
+        agenda_fout text NOT NULL DEFAULT '',
+        bericht_id int REFERENCES post_berichten(id) ON DELETE SET NULL,
+        aangemaakt timestamptz NOT NULL DEFAULT now(),
+        bijgewerkt timestamptz NOT NULL DEFAULT now(),
+        afgerond timestamptz)""",
 ]

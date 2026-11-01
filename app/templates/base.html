@@ -6,7 +6,7 @@
 <title>{% block titel %}Buurmanitor{% endblock %}</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=13">
+<link rel="stylesheet" href="/static/style.css?v=14">
 {% block kop %}{% endblock %}
 </head>
 <body>
@@ -19,6 +19,7 @@
     <a href="/" class="{{ 'actief' if scherm == 'vandaag' }}">Vandaag</a>
     <a href="/iris" class="{{ 'actief' if scherm == 'iris' }}">Iris</a>
     <a href="/clara" class="{{ 'actief' if scherm == 'clara' }}">Agenda</a>
+    <a href="/taken" class="{{ 'actief' if scherm == 'taken' }}">Taken</a>
     <a href="/bram" class="{{ 'actief' if scherm == 'bram' }}">Post</a>
     <a href="/meldingen" class="{{ 'actief' if scherm == 'meldingen' }}">Meldingen<span id="teller" class="teller" hidden></span></a>
     <span class="scheiding" aria-hidden="true"></span>

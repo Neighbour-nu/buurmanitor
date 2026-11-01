@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from . import iris, personas
 from .bram import sync as bram_sync, web as bram_web  # noqa: F401  (sync registreert de planner-taak 'post')
 from .clara import sync as clara_sync, web as clara_web  # noqa: F401  (sync registreert de planner-taak)
+from .taken import web as taken_web
 from .kern import claude, config, db, gezondheid, meldingen, planner, prefix, web
 from .kern.db import q, q1, uitvoeren
 from .kern.web import controleer_herkomst, ctx, templates
@@ -59,6 +60,7 @@ app.mount("/static", StaticFiles(directory=os.path.join(web.BASIS, "static")), n
 app.middleware("http")(web.alleen_via_caddy)
 app.include_router(clara_web.router)
 app.include_router(bram_web.router)
+app.include_router(taken_web.router)
 if politiek:
     app.mount("/politiek", prefix.Voorvoegsel(politiek.app, "/politiek"))
 if zerohero:

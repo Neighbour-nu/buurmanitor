@@ -339,3 +339,24 @@ details.bulklijst ul { margin: 4px 0 6px; padding-left: 18px; font-size: 13px; m
 .prij[draggable=true] { cursor: grab; }
 .pmapkeuze { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .pmapkeuze select { width: auto; max-width: 260px; font-size: 13px; padding: 2px 6px; }
+/* Taken: kanbanbord */
+.kanban { display: grid; grid-template-columns: repeat(6, minmax(190px, 1fr)); gap: 10px; overflow-x: auto; padding-bottom: 8px; align-items: start; }
+.kolom { background: var(--ijs); border-radius: 6px; padding: 8px; min-height: 160px; }
+.kolom h2 { display: flex; justify-content: space-between; align-items: center; font-size: 15px; margin: 2px 2px 8px; }
+.kolom h2 .aantal { font-size: 13px; color: var(--zacht); }
+.kolom.sleep-hier { outline: 2px dashed var(--blauw); outline-offset: -2px; }
+.kolom .leeg { margin: 4px 2px; }
+.taak { background: var(--wit); border: 1px solid var(--lijn); border-left: 4px solid var(--lijn); border-radius: 4px; padding: 7px 8px; margin-bottom: 8px; cursor: grab; }
+.taak.prio-hoog { border-left-color: #C62828; } .taak.prio-middel { border-left-color: #E0A100; } .taak.prio-laag { border-left-color: #9AA5B1; }
+.taak.te-laat { background: #FFF6F6; }
+.taak.sleept { opacity: .5; }
+.taaktitel { font-weight: 600; color: var(--inkt); text-decoration: none; display: block; overflow-wrap: anywhere; }
+.taaktitel:hover { text-decoration: underline; }
+.taakregel { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-top: 4px; font-size: 13px; }
+.taak .noot { font-size: 13px; margin-top: 3px; overflow-wrap: anywhere; }
+.label.prio.hoog { background: #FDECEC; color: #B71C1C; } .label.prio.middel { background: #FFF4D6; color: #8A6100; } .label.prio.laag { background: #EEF1F4; color: #55606B; }
+.taakverplaats { margin-top: 6px; }
+.taakverplaats select { width: 100%; font-size: 13px; padding: 2px 6px; }
+.taakformulier .velden { align-items: end; }
+@media (max-width: 760px) { .kanban { grid-template-columns: repeat(6, minmax(220px, 80vw)); } }
+a.ikoon { text-decoration: none; display: inline-block; }

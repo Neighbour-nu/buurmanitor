@@ -41,6 +41,7 @@
         <button class="knop klein" name="actie" value="gelezen">Gelezen</button>
         <button class="knop klein" name="actie" value="ongelezen">Ongelezen</button>
         <button class="knop klein" name="actie" value="uitschrijven" onclick="return confirm('Uitschrijven bij de afzenders van de geselecteerde berichten?')">Uitschrijven</button>
+        <button class="knop klein" name="actie" value="taak" title="Van elke aangevinkte mail een taak maken (in Nieuw)">📋 Taak</button>
         <span class="pverplaats" role="group" aria-label="Verplaats naar"><span class="noot">Naar</span>{% for g, naam, _ in groepen if g != map %}<button class="knop klein" name="actie" value="verplaats:{{ g }}" title="Verplaats naar {{ naam }}">{{ naam }}</button>{% endfor %}</span>
         <input type="hidden" name="actie" id="sleep-actie" disabled>
         {% if mapkeuze %}
@@ -73,6 +74,7 @@
       <span class="pbox">{{ b.koppeling }}</span>
       <span class="ptijd">{{ wanneer(b.ontvangen) }}</span>
       <span class="psnel">
+        <a class="ikoon" href="/taken?nieuw=1&bericht={{ b.id }}#formulier" title="Taak maken van deze mail" aria-label="Taak maken">📋</a>
         <button class="ikoon" formaction="/bram/bericht/{{ b.id }}/archiveren" title="Archiveren" aria-label="Archiveren">🗄</button>
         <button class="ikoon" formaction="/bram/bericht/{{ b.id }}/verwijderen" title="Verwijderen" aria-label="Verwijderen">🗑</button>
         <button class="ikoon" formaction="/bram/bericht/{{ b.id }}/{{ 'ongelezen' if b.gelezen else 'gelezen' }}" title="{{ 'Markeren als ongelezen' if b.gelezen else 'Markeren als gelezen' }}" aria-label="{{ 'Ongelezen' if b.gelezen else 'Gelezen' }}">{{ '✉' if b.gelezen else '✓' }}</button>

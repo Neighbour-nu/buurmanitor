@@ -47,7 +47,8 @@ def groep(b):
 
 MAPPEN = (("alles", "Alles", ""),) + GROEPEN
 BULK = {"archiveren": "gearchiveerd", "verwijderen": "verwijderd", "gelezen": "als gelezen gemarkeerd",
-        "ongelezen": "als ongelezen gemarkeerd", "uitschrijven": "uitgeschreven", "verplaats": "verplaatst", "map": "gearchiveerd in"}
+        "ongelezen": "als ongelezen gemarkeerd", "uitschrijven": "uitgeschreven", "verplaats": "verplaatst", "map": "gearchiveerd in",
+        "taak": "als taak in Taken gezet"}
 
 
 def lijst_adres(map_="alles", account=0, praat=False):
@@ -447,7 +448,11 @@ async def bulk(request: Request):
                     overgeslagen.append(b["id"])  # die map hoort bij een andere mailbox
                     continue
                 try:
-                    if actie == "map":
+                    if actie == "taak":
+                        from ..taken import web as taken_web  # pylint: disable=import-outside-toplevel
+                        voorstel = taken_web.uit_bericht(b)
+                        taken_web.nieuw(c, {k: v for k, v in voorstel.items() if k != "bericht_id"}, b["id"])
+                    elif actie == "map":
                         laatste = sync.archiveer_in(c, b, map_id)
                         doe.map_naam = laatste.split(" (met ")[0].removeprefix("gearchiveerd in ")
                     elif actie == "verplaats":

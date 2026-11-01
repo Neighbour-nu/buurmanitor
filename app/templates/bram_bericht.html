@@ -36,6 +36,7 @@
         {% if b.van_adres %}{% for g, naam, _ in groepen %}<option value="{{ g }}|altijd">Altijd {{ naam }} voor {{ b.van_adres }}</option>{% endfor %}{% endif %}
       </select><noscript><button class="knop klein">Verplaats</button></noscript>
     </form>
+    <p class="verplaats"><a class="knop klein" href="/taken?nieuw=1&bericht={{ b.id }}#formulier">📋 Taak maken van deze mail</a></p>
     {% if mappen %}<form method="post" action="/bram/bericht/{{ b.id }}/map" class="verplaats">
       <span class="noot">Archiveren in {{ 'Gmail' if k.soort == 'google' else 'Outlook' }}:</span>
       {% for m in recent %}<button class="knop klein" name="map" value="{{ m.map_id }}">📁 {{ m.naam }}</button>{% endfor %}

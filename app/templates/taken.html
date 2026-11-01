@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block titel %}Taken · Buurmanitor{% endblock %}
+{% block main_klasse %}breed{% endblock %}
+{% macro datums(t) -%}
+  {%- if t.startdatum or t.einddatum -%}
+    {%- if t.startdatum %}{{ DAGEN[t.startdatum.weekday()][:2] }} {{ t.startdatum.strftime('%d-%m') }}{% if t.starttijd %} {{ t.starttijd.strftime('%H.%M') }}{% endif %}{% endif -%}
+    {%- if t.startdatum and t.einddatum %} → {% endif -%}
+    {%- if t.einddatum %}{% if not t.startdatum %}⏰ {% endif %}{{ DAGEN[t.einddatum.weekday()][:2] }} {{ t.einddatum.strftime('%d-%m') }}{% if t.eindtijd %} {{ t.eindtijd.strftime('%H.%M') }}{% endif %}{% elif t.eindtijd %}–{{ t.eindtijd.strftime('%H.%M') }}{% endif -%}
+  {%- endif -%}
+{%- endmacro %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Taken</h1>
+    <p class="motto">Sleep een taak naar een andere kolom. Met een datum staat de taak ook in je agenda.</p>
+  </div>
+  <div class="knoppen">
+    <a class="knop vol" href="/taken?nieuw=1#formulier">＋ Nieuwe taak</a>
+  </div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+
+{% if formulier %}
+<section class="kaart taakformulier" id="formulier">
+  <h2>{{ 'Taak bewerken' if formulier.id else 'Nieuwe taak' }}</h2>
+  {% if mail %}<p class="noot">Uit de mail <a href="/bram/bericht/{{ mail.id }}">{{ mail.onderwerp }}</a>{% if mail.van_naam %} van {{ mail.van_naam }}{% endif %}.</p>{% endif %}
+  {% if formulier.agenda_fout %}<p class="item urgent">Agenda: {{ formulier.agenda_fout }}</p>{% endif %}
+  <form method="post" action="/taken/{{ formulier.id if formulier.id else 'nieuw' }}" class="velden">
+    {% if not formulier.id and formulier.bericht_id %}<input type="hidden" name="bericht_id" value="{{ formulier.bericht_id }}">{% endif %}
+    <label class="breed">Korte titel <input type="text" name="titel" value="{{ formulier.titel }}" maxlength="160" required {{ 'autofocus' if not wacht }}></label>
+    <label class="breed">Beschrijving <textarea name="beschrijving" rows="5">{{ formulier.beschrijving }}</textarea></label>
+    <label>Prioriteit <select name="prio">{% for w, n in prios %}<option value="{{ w }}" {{ 'selected' if formulier.prio == w }}>{{ n }}</option>{% endfor %}</select></label>
+    <label>Kolom <select name="status" id="status-keuze">{% for w, n in statussen %}<option value="{{ w }}" {{ 'selected' if formulier.status == w }}>{{ n }}</option>{% endfor %}</select></label>
+    <label class="breed wacht-veld">Wachtend op (wie of wat) <input type="text" name="wacht_op" value="{{ formulier.wacht_op }}" maxlength="200" placeholder="bijvoorbeeld de griffie, of Jan van Upper Spire" {{ 'autofocus' if wacht }}></label>
+    <label>Startdatum <input type="date" name="startdatum" value="{{ formulier.startdatum.isoformat() if formulier.startdatum else '' }}"></label>
+    <label>Starttijd <input type="time" name="starttijd" value="{{ formulier.starttijd.strftime('%H:%M') if formulier.starttijd else '' }}"></label>
+    <label>Einddatum <input type="date" name="einddatum" value="{{ formulier.einddatum.isoformat() if formulier.einddatum else '' }}"></label>
+    <label>Eindtijd <input type="time" name="eindtijd" value="{{ formulier.eindtijd.strftime('%H:%M') if formulier.eindtijd else '' }}"></label>
+    {% if doelen %}<label>Agenda <select name="doel">{% for w, label, d in doelen %}<option value="{{ w }}" {{ 'selected' if formulier.doel == w }}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+    <p class="noot breed">Datums zijn niet verplicht. Zonder tijd komt de taak als afspraak voor de hele dag in je agenda (of voor alle
+      dagen van start tot en met einde); met een tijd als gewone afspraak, bijvoorbeeld van 9.00 tot 12.00 aan het rapport werken.
+      Alleen een einddatum wordt een deadline op die dag.</p>
+    <div class="knoppenrij breed">
+      <button class="knop vol" type="submit">Opslaan</button>
+      <a class="knop" href="/taken">Annuleren</a>
+      {% if formulier.id %}<button class="knop" type="submit" formaction="/taken/{{ formulier.id }}/weg" formnovalidate
+        onclick="return confirm('Deze taak verwijderen?')">Verwijderen</button>{% endif %}
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<form method="post" id="verplaats-form" hidden><input type="hidden" name="status" id="verplaats-status"></form>
+<div class="kanban" id="kanban">
+  {% for s, naam, lijst in kolommen %}
+  <section class="kolom {{ s }}" data-status="{{ s }}" aria-label="{{ naam }}">
+    <h2><span>{{ naam }}</span> <span class="aantal">{{ lijst | length }}</span></h2>
+    {% for t in lijst %}
+    {% set te_laat = t.einddatum and t.einddatum < vandaag and t.status != 'afgerond' %}
+    <article class="taak prio-{{ t.prio }} {{ 'te-laat' if te_laat }}" id="taak-{{ t.id }}" draggable="true" data-id="{{ t.id }}">
+      <a class="taaktitel" href="/taken?bewerk={{ t.id }}#formulier">{{ t.titel }}</a>
+      <div class="taakregel">
+        <span class="label prio {{ t.prio }}">{{ prio_namen[t.prio] }}</span>
+        {% if te_laat %}<span class="label rood">te laat</span>{% endif %}
+        {% if t.startdatum or t.einddatum %}<span class="noot" title="{{ 'staat in je agenda' if t.agenda_extern else '' }}">{{ datums(t) }}{% if t.agenda_extern %} 📅{% endif %}</span>{% endif %}
+      </div>
+      {% if t.status == 'wachtend' %}<div class="noot wacht">Wacht op: {% if t.wacht_op %}<b>{{ t.wacht_op }}</b>{% else %}<a href="/taken?bewerk={{ t.id }}&wacht=1#formulier">invullen</a>{% endif %}</div>{% endif %}
+      {% if t.bericht_id %}<div class="noot">✉ <a href="/bram/bericht/{{ t.bericht_id }}">{{ t.mail_onderwerp or 'mail' }}</a></div>{% endif %}
+      {% if t.agenda_fout %}<div class="noot urgent">Agenda: {{ t.agenda_fout }}</div>{% endif %}
+      <form method="post" action="/taken/{{ t.id }}/status" class="taakverplaats">
+        <select name="status" onchange="this.form.submit()" aria-label="Verplaats {{ t.titel }}">
+          {% for w, n in statussen %}<option value="{{ w }}" {{ 'selected' if t.status == w }}>{{ n }}</option>{% endfor %}
+        </select><noscript><button class="knop klein">Verplaats</button></noscript>
+      </form>
+    </article>
+    {% else %}<p class="noot leeg">Leeg</p>{% endfor %}
+    {% if s == 'afgerond' %}<p class="noot">{% if alles %}<a href="/taken">Alleen de laatste {{ afgerond_dagen }} dagen</a>{% else %}Laatste {{ afgerond_dagen }} dagen · <a href="/taken?alles=1">alles</a>{% endif %}</p>{% endif %}
+  </section>
+  {% endfor %}
+</div>
+
+<script>
+// Slepen tussen de kolommen. Zonder JavaScript werkt de keuzelijst op elke kaart.
+(function () {
+  const vorm = document.getElementById("verplaats-form"), veld = document.getElementById("verplaats-status");
+  let gesleept = null;
+  document.querySelectorAll(".taak[draggable]").forEach(k => {
+    k.addEventListener("dragstart", e => { gesleept = k; k.classList.add("sleept"); e.dataTransfer.setData("text/plain", k.dataset.id); e.dataTransfer.effectAllowed = "move"; });
+    k.addEventListener("dragend", () => { k.classList.remove("sleept"); document.querySelectorAll(".kolom").forEach(c => c.classList.remove("sleep-hier")); });
+  });
+  document.querySelectorAll(".kolom").forEach(kol => {
+    kol.addEventListener("dragover", e => { if (gesleept) { e.preventDefault(); kol.classList.add("sleep-hier"); } });
+    kol.addEventListener("dragleave", e => { if (!kol.contains(e.relatedTarget)) kol.classList.remove("sleep-hier"); });
+    kol.addEventListener("drop", e => {
+      e.preventDefault();
+      if (!gesleept || gesleept.closest(".kolom") === kol) return;
+      vorm.action = "/taken/" + gesleept.dataset.id + "/status";
+      veld.value = kol.dataset.status;
+      kol.appendChild(gesleept);
+      vorm.submit();
+    });
+  });
+  // Het veld 'Wachtend op' alleen tonen als die kolom gekozen is.
+  const keuze = document.getElementById("status-keuze"), wacht = document.querySelector(".wacht-veld");
+  if (keuze && wacht) { const toon = () => { wacht.hidden = keuze.value !== "wachtend"; }; keuze.addEventListener("change", toon); toon(); }
+})();
+</script>
+{% endblock %}
