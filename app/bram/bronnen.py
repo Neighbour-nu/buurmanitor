@@ -185,6 +185,10 @@ def gmail_gelezen(toegang, mid):
     gmail_wijzig(toegang, mid, eraf=["UNREAD"])
 
 
+def gmail_ongelezen(toegang, mid):
+    gmail_wijzig(toegang, mid, erbij=["UNREAD"])
+
+
 def gmail_label(toegang, mid, label_id):
     gmail_wijzig(toegang, mid, erbij=[label_id])
 
@@ -253,6 +257,10 @@ def ms_archiveer(toegang, mid):
 
 def ms_gelezen(toegang, mid):
     _graph(toegang, f"/me/messages/{mid}", body={"isRead": True}, methode="PATCH")
+
+
+def ms_ongelezen(toegang, mid):
+    _graph(toegang, f"/me/messages/{mid}", body={"isRead": False}, methode="PATCH")
 
 
 def ms_label(toegang, mid, categorie, huidige=()):

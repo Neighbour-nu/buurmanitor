@@ -96,6 +96,11 @@ def test_oordeel_van_claude_controleren():
     assert sync.lees_oordeel("geen json", 2) == {}
 
 
+def test_lijst_adres():
+    assert web.lijst_adres() == "/bram" and web.lijst_adres("weg") == "/bram?map=weg"
+    assert web.lijst_adres("actie", 3) == "/bram?map=actie&account=3" and web.lijst_adres("onzin", 0) == "/bram"
+
+
 def test_groepen():
     b = {"categorie": "lezen", "prioriteit": "normaal", "actie": "bewaren"}
     assert web.groep(b) == "lezen"
@@ -118,6 +123,10 @@ def test_koppeladressen_en_toestemming():
 
 
 # ---------------------------------------------------------------- database en schermen
+
+def lijst_in(pagina):
+    """Het deel van de postkamer met de berichten (zonder de mappen links)."""
+    return pagina.split('id="postlijst"')[1].split("<script>")[0]
 
 @pytest.fixture(scope="module")
 def klant():
@@ -207,12 +216,16 @@ def test_koppelen_sorteren_en_opruimen(klant, monkeypatch):
     with db.pool.connection() as c:  # bij het eerste koppelen geen meldingen
         assert not c.execute("SELECT 1 FROM meldingen WHERE bron = 'bram'").fetchone()
 
+    # Eén lijst voor alle mailboxen, met mappen links; de knoppen voor de selectie staan in de balk erboven.
     pagina = klant.get("/bram", headers=KOP).text
-    actie = pagina.split('id="actie"')[1].split('id="lezen"')[0]
-    weg = pagina.split('id="weg"')[1].split("<aside")[0]
+    assert all(x in pagina for x in ("Club vraagt een lezing op 12 maart.", "Black Friday", "Je reis is gewijzigd"))
+    assert 'action="/bram/bulk"' in pagina and 'name="bericht"' in pagina and 'value="verplaats"' in pagina
+    assert all(f'href="/bram?map={m}' in pagina for m in ("actie", "lezen", "weg"))
+    actie = lijst_in(klant.get("/bram?map=actie", headers=KOP).text)
+    weg = lijst_in(klant.get("/bram?map=weg", headers=KOP).text)
     assert "Club vraagt een lezing op 12 maart." in actie and "Antwoorden en inplannen" in actie and "Black Friday" not in actie
-    assert "Black Friday" in weg and "Je reis is gewijzigd" in weg and 'form="kan-weg" checked' in weg
-    assert "ZEROHERO/Lezingen" in pagina  # labels om te kiezen
+    assert "Black Friday" in weg and "Je reis is gewijzigd" in weg and "Club vraagt" not in weg
+    assert "ZEROHERO/Lezingen" in klant.get(f"/bram/bericht/{rijen['m1']['id']}", headers=KOP).text  # labels om te kiezen
 
     # Nieuw bericht na het koppelen, hoog: een melding. Zonder Claude op regels.
     gmail.zet(gmail_ruw("m4", "Wethouder <wethouder@helmond.nl>", "Morgen overleg?", "Kun je morgen om 10 uur bij de lezing praten?", uur=1))
@@ -220,7 +233,7 @@ def test_koppelen_sorteren_en_opruimen(klant, monkeypatch):
         c.execute("UPDATE post_koppelingen SET laatst = now() - interval '10 minutes'")
         assert "1 nieuw" in sync.taak_post(c)
         m = c.execute("SELECT * FROM meldingen WHERE bron = 'bram'").fetchall()
-        assert len(m) == 1 and "Wethouder" in m[0]["titel"] and m[0]["link"].startswith("/bram#b")
+        assert len(m) == 1 and "Wethouder" in m[0]["titel"] and m[0]["link"].startswith("/bram/bericht/")
         c.execute("UPDATE post_koppelingen SET claude = false")
     gmail.zet(gmail_ruw("m5", "Piet <piet@example.nl>", "Foto's van zaterdag", "Kijk maar", uur=1))
     with db.pool.connection() as c:
@@ -232,13 +245,22 @@ def test_koppelen_sorteren_en_opruimen(klant, monkeypatch):
     # Na een klik: gelezen, label, archiveren. Zonder herkomst geweigerd.
     assert klant.post(f"/bram/bericht/{ids['m1']}/gelezen", headers=KOP).status_code == 403
     r = klant.post(f"/bram/bericht/{ids['m1']}/gelezen", headers=FORM, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"].endswith(f"#b{ids['m1']}") and ("m1", [], ["UNREAD"]) in gmail.gewijzigd
+    assert r.status_code == 303 and r.headers["location"].startswith("/bram?melding=") and ("m1", [], ["UNREAD"]) in gmail.gewijzigd
+    r = klant.post(f"/bram/bericht/{ids['m1']}/ongelezen", headers=FORM, data={"map": "actie"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/bram?map=actie&melding=") and ("m1", ["UNREAD"], []) in gmail.gewijzigd
+    klant.post(f"/bram/bericht/{ids['m1']}/gelezen", headers=FORM)
     r = klant.post(f"/bram/bericht/{ids['m1']}/label", headers=FORM, data={"label": "Label_1"}, follow_redirects=False)
     assert ("m1", ["Label_1"], []) in gmail.gewijzigd
     assert "fout=" in klant.post(f"/bram/bericht/{ids['m1']}/label", headers=FORM, data={"label": "Label_99"}, follow_redirects=False).headers["location"]
-    r = klant.post("/bram/archiveren", headers=FORM, data={"bericht": [str(ids["m2"]), str(ids["m3"])]}, follow_redirects=False)
-    assert "2+berichten+gearchiveerd" in r.headers["location"] and "m2" not in gmail.inbox and "m3" not in gmail.inbox
-    assert "fout=" in klant.post("/bram/archiveren", headers=FORM, data={}, follow_redirects=False).headers["location"]
+    r = klant.post("/bram/bulk", headers=FORM, data={"bericht": [str(ids["m2"]), str(ids["m3"])], "actie": "archiveren", "map": "weg"},
+                   follow_redirects=False)
+    assert r.headers["location"].startswith("/bram?map=weg&") and "2+berichten+gearchiveerd" in r.headers["location"]
+    assert "m2" not in gmail.inbox and "m3" not in gmail.inbox
+    assert "fout=" in klant.post("/bram/bulk", headers=FORM, data={"actie": "archiveren"}, follow_redirects=False).headers["location"]
+    assert klant.post("/bram/bulk", headers=FORM, data={"actie": "onzin", "bericht": "1"}).status_code == 400
+    # Meerdere tegelijk als ongelezen en weer gelezen.
+    r = klant.post("/bram/bulk", headers=FORM, data={"bericht": [str(ids["m4"]), str(ids["m5"])], "actie": "gelezen"}, follow_redirects=False)
+    assert "2+berichten+als+gelezen+gemarkeerd" in r.headers["location"] and ("m4", [], ["UNREAD"]) in gmail.gewijzigd
     with db.pool.connection() as c:
         st = {r["extern_id"]: r for r in c.execute("SELECT * FROM post_berichten")}
         assert st["m1"]["gelezen"] and "Label_1" in st["m1"]["labels"]
@@ -256,7 +278,7 @@ def test_koppelen_sorteren_en_opruimen(klant, monkeypatch):
 
     # Vandaag en Iris weten ervan.
     vandaag = klant.get("/", headers=KOP).text
-    assert 'href="/bram#actie">2 berichten</a> vragen om actie' in vandaag
+    assert 'href="/bram?map=actie">2 berichten</a> vragen om actie' in vandaag
     from app import iris  # pylint: disable=import-outside-toplevel
     with db.pool.connection() as c:
         assert "Club vraagt een lezing op 12 maart." in iris.context(c)
@@ -502,7 +524,7 @@ def test_verwijderen_en_uitschrijven(klant, monkeypatch):
     r = klant.post(f"/bram/bericht/{ids['n4']}/uitschrijven", headers=FORM, follow_redirects=False)
     assert "fout=" in r.headers["location"] and "geen+uitschrijfadres" in r.headers["location"]
     pagina = klant.get("/bram", headers=KOP).text
-    assert pagina.count("uitgeschreven</span>") == 2 and 'href="https://krant.nl/afmelden"' in pagina
+    assert pagina.count("uitgeschreven</span>") == 2 and 'href="https://krant.nl/afmelden"' in pagina and "uitschrijven ↗" in pagina
     with db.pool.connection() as c:
         assert c.execute("SELECT count(*) AS n FROM logboek WHERE persona = 'bram' AND actie = 'uitgeschreven'").fetchone()["n"] >= 2
 
@@ -533,17 +555,24 @@ def test_verplaatsen_en_afzenderregels(klant, monkeypatch):
                                   VALUES (%s, %s, %s, %s, %s, now(), %s) RETURNING id""", (kid, n, adres, adres, f"Onderwerp {n}", cat)).fetchone()["id"]
 
     def groep_op_scherm(onderwerp):
-        p = klant.get("/bram", headers=KOP).text
-        return next(g for g in ("actie", "lezen", "weg") if onderwerp in p.split(f'id="{g}"')[1].split("</section>")[0])
+        return next(g for g in ("actie", "lezen", "weg") if onderwerp in lijst_in(klant.get(f"/bram?map={g}", headers=KOP).text))
 
     assert groep_op_scherm("Onderwerp v1") == "weg" and groep_op_scherm("Onderwerp v3") == "actie"
-    assert "Altijd Actie nodig voor club@hcqz.nl" in klant.get("/bram", headers=KOP).text
+    assert "Altijd Actie nodig voor club@hcqz.nl" in klant.get(f"/bram/bericht/{ids['v1']}", headers=KOP).text
     # Eén bericht van Kan weg naar Actie nodig, en een ander de andere kant op.
     r = klant.post(f"/bram/bericht/{ids['v1']}/verplaats", headers=FORM, data={"groep": "actie"}, follow_redirects=False)
-    assert r.headers["location"].endswith("#actie") and "Actie+nodig" in r.headers["location"]
+    assert r.headers["location"].startswith("/bram?melding=") and "Actie+nodig" in r.headers["location"]
     klant.post(f"/bram/bericht/{ids['v3']}/verplaats", headers=FORM, data={"groep": "weg"})
     assert groep_op_scherm("Onderwerp v1") == "actie" and groep_op_scherm("Onderwerp v2") == "weg" and groep_op_scherm("Onderwerp v3") == "weg"
     assert klant.post(f"/bram/bericht/{ids['v1']}/verplaats", headers=FORM, data={"groep": "onzin"}).status_code == 400
+    # Meerdere tegelijk verplaatsen met de balk boven de lijst.
+    r = klant.post("/bram/bulk", headers=FORM, data={"bericht": [str(ids["v1"]), str(ids["v3"])], "actie": "verplaats", "groep": "lezen"},
+                   follow_redirects=False)
+    assert "2+berichten+verplaatst+naar+Lezen" in r.headers["location"]
+    assert groep_op_scherm("Onderwerp v1") == groep_op_scherm("Onderwerp v3") == "lezen"
+    assert "fout=" in klant.post("/bram/bulk", headers=FORM, data={"bericht": str(ids["v1"]), "actie": "verplaats"}, follow_redirects=False).headers["location"]
+    klant.post(f"/bram/bericht/{ids['v1']}/verplaats", headers=FORM, data={"groep": "actie"})
+    klant.post(f"/bram/bericht/{ids['v3']}/verplaats", headers=FORM, data={"groep": "weg"})
     assert klant.post(f"/bram/bericht/{ids['v1']}/verplaats", headers=KOP, data={"groep": "weg"}).status_code == 403
     # Altijd voor deze afzender: ook de andere mail van dat adres, en nieuwe mail die binnenkomt.
     r = klant.post(f"/bram/bericht/{ids['v2']}/verplaats", headers=FORM, data={"groep": "actie|altijd", "terug": "bericht"}, follow_redirects=False)
@@ -562,4 +591,4 @@ def test_verplaatsen_en_afzenderregels(klant, monkeypatch):
     with db.pool.connection() as c:
         assert not c.execute("SELECT 1 FROM post_afzenderregels").fetchone()
     vandaag = klant.get("/", headers=KOP).text  # v1 tot v3 staan niet in de nagebootste inbox en zijn dus weg
-    assert 'href="/bram#actie">1 bericht</a> vraagt om actie' in vandaag
+    assert 'href="/bram?map=actie">1 bericht</a> vraagt om actie' in vandaag

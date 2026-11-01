@@ -24,8 +24,8 @@ Het logo (twee buurhuizen) is eigen werk.
   blokken. Uitnodigingen beantwoorden en blokken inplannen kan, maar alleen na jouw klik. Praat met Clara over je agenda;
   stelt ze een tijdstip voor, dan verschijnt dat als knop.
 
-- Bram (Post): de inbox van Gmail en Outlook in één postkamer, gesorteerd in Actie nodig, Lezen en Kan weg, met per
-  bericht één regel en een voorstel. Per account kies je of Claude de inhoud mag lezen; anders sorteert Bram op regels.
+- Bram (Post): de inbox van Gmail en Outlook in één lijst zoals in Gmail, met links de mappen Actie nodig, Lezen en
+  Kan weg en de mailboxen, en per bericht één regel en een voorstel. Vink berichten aan en de knoppen verschijnen. Per account kies je of Claude de inhoud mag lezen; anders sorteert Bram op regels.
   Archiveren, labelen, gelezen markeren, verwijderen (naar de prullenbak) en uitschrijven bij nieuwsbrieven (met één
   klik volgens RFC 8058, anders met een mail naar het uitschrijfadres) alleen na jouw klik. Per bericht kun je Bram iets vragen: hij leest de mail
   en de bijlagen (pdf, agenda-uitnodiging, tekst) en zet een antwoord, een afspraak (ook in de agenda van Sanne) of een

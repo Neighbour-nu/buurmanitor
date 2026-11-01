@@ -10,11 +10,12 @@
     <p class="motto">{{ b.van_naam }} &lt;{{ b.van_adres }}&gt; · {{ b.ontvangen.astimezone(tz).strftime('%d-%m-%Y %H.%M') }} · {{ k.naam }}</p>
   </div>
   <div class="knoppen">
-    <a class="knop" href="/bram#b{{ b.id }}">Terug naar de post</a>
+    <a class="knop" href="/bram">Terug naar de post</a>
     {% if b.link %}<a class="knop" href="{{ b.link }}" target="_blank" rel="noopener">Openen in {{ 'Gmail' if k.soort == 'google' else 'Outlook' }}</a>{% endif %}
     {% if b.status == 'open' %}<form method="post" class="inline"><input type="hidden" name="terug" value="bericht">
       <button class="knop" formaction="/bram/bericht/{{ b.id }}/archiveren">Archiveren</button>
       <button class="knop" formaction="/bram/bericht/{{ b.id }}/verwijderen" onclick="return confirm('Deze mail naar de prullenbak?')">Verwijderen</button>
+      <button class="knop" formaction="/bram/bericht/{{ b.id }}/ongelezen">Ongelezen</button>
       {% if b.uitgeschreven %}<span class="label groen">uitgeschreven</span>
       {% elif b.uitschrijf_link %}<a class="knop" href="{{ b.uitschrijf_link }}" target="_blank" rel="noopener noreferrer">Uitschrijven op de website</a>
       {% else %}<button class="knop" formaction="/bram/bericht/{{ b.id }}/uitschrijven" onclick="return confirm('Uitschrijven bij deze afzender?')">Uitschrijven</button>{% endif %}
@@ -35,6 +36,11 @@
         {% if b.van_adres %}{% for g, naam, _ in groepen %}<option value="{{ g }}|altijd">Altijd {{ naam }} voor {{ b.van_adres }}</option>{% endfor %}{% endif %}
       </select><noscript><button class="knop klein">Verplaats</button></noscript>
     </form>
+    {% if labels %}<form method="post" action="/bram/bericht/{{ b.id }}/label" class="verplaats"><input type="hidden" name="terug" value="bericht">
+      {% for l in b.labels if label_namen.get(l) or k.soort == 'microsoft' %}<span class="label groen">{{ label_namen.get(l) or l }}</span>{% endfor %}
+      <select name="label" aria-label="{{ 'Label' if k.soort == 'google' else 'Categorie' }}">{% for w, n in labels %}<option value="{{ w }}">{{ n }}</option>{% endfor %}</select>
+      <button class="knop klein" type="submit">{{ 'Label toevoegen' if k.soort == 'google' else 'Categorie toevoegen' }}</button>
+    </form>{% endif %}
     {% if b.regel %}<p class="bram-regel"><b>Bram:</b> {{ b.regel }}{% if b.voorstel %} <span class="bram-voorstel">→ {{ b.voorstel }}</span>{% endif %}</p>{% endif %}
     {% if volledig %}
       <p class="noot">Aan: {{ volledig.aan }}{% if volledig.cc %} · Cc: {{ volledig.cc }}{% endif %}</p>

@@ -37,9 +37,9 @@
     <h2>Post <a class="klein" href="/bram">postkamer</a></h2>
     {% if post is none %}<p class="noot">Nog geen mailaccounts gekoppeld. <a href="/bram/instellingen">Koppel ze bij Bram</a>.</p>
     {% else %}
-      {% if post.actie %}<p class="item belangrijk"><a href="/bram#actie">{{ post.actie }} bericht{{ 'en' if post.actie != 1 }}</a> {{ 'vraagt' if post.actie == 1 else 'vragen' }} om actie.</p>
+      {% if post.actie %}<p class="item belangrijk"><a href="/bram?map=actie">{{ post.actie }} bericht{{ 'en' if post.actie != 1 }}</a> {{ 'vraagt' if post.actie == 1 else 'vragen' }} om actie.</p>
       {% else %}<p class="noot">Niets dat op jou wacht.</p>{% endif %}
-      <p class="noot"><a href="/bram#lezen">{{ post.lezen }} om te lezen</a> · <a href="/bram#weg">{{ post.weg }} kan weg</a></p>
+      <p class="noot"><a href="/bram?map=lezen">{{ post.lezen }} om te lezen</a> · <a href="/bram?map=weg">{{ post.weg }} kan weg</a></p>
     {% endif %}
   </section>
 

@@ -1,99 +1,106 @@
 {% extends "base.html" %}
-{% block titel %}Bram · Buurmanitor{% endblock %}
+{% block titel %}Post · Bram · Buurmanitor{% endblock %}
+{% block main_klasse %}breed{% endblock %}
 {% macro wanneer(t) -%}
   {%- set d = t.astimezone(tz) -%}
-  {%- if d.date() == nu.date() %}{{ d.strftime('%H.%M') }}{% elif (nu.date() - d.date()).days < 7 %}{{ DAGEN[d.weekday()][:2] }} {{ d.strftime('%H.%M') }}{% else %}{{ d.strftime('%d-%m') }}{% endif -%}
+  {%- if d.date() == nu.date() %}{{ d.strftime('%H.%M') }}{% elif (nu.date() - d.date()).days < 7 %}{{ DAGEN[d.weekday()][:2] }} {{ d.strftime('%H.%M') }}{% else %}{{ d.day }} {{ ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'][d.month - 1] }}{% endif -%}
 {%- endmacro %}
-{% macro bericht(b, met_vinkje=false, huidig='') %}
-  <div class="post {{ 'ongelezen' if not b.gelezen }} {{ b.domein }} {{ 'hoog' if b.prioriteit == 'hoog' }}" id="b{{ b.id }}">
-    {% if met_vinkje %}<input type="checkbox" name="bericht" value="{{ b.id }}" form="kan-weg" checked aria-label="Archiveren: {{ b.onderwerp }}">{% endif %}
-    <div class="post-inhoud">
-      <div class="post-kop"><b class="van" title="{{ b.van_adres }}">{{ b.van_naam }}</b>
-        <span class="noot">{{ wanneer(b.ontvangen) }} · {{ b.koppeling }}</span></div>
-      <div><a href="/bram/bericht/{{ b.id }}" class="onderwerp" title="Lezen en Bram iets vragen">{{ b.onderwerp }}</a>
-        {% if b.prioriteit == 'hoog' %}<span class="label rood">hoog</span>{% endif %}
-        {% if b.categorie %}<span class="label">{{ CATEGORIEEN.get(b.categorie, b.categorie) }}</span>{% endif %}
-        {% for l in b.labels if label_namen.get(b.koppeling_id, {}).get(l) or b.soort == 'microsoft' %}<span class="label groen">{{ label_namen.get(b.koppeling_id, {}).get(l) or l }}</span>{% endfor %}</div>
-      <div class="bram-regel">{{ b.regel or b.fragment }}{% if b.voorstel %} <span class="bram-voorstel">→ {{ b.voorstel }}</span>{% endif %}
-        {% if b.beoordeeld_door == 'regels' %}<span class="noot" title="Gesorteerd op afzender en kenmerken, zonder de inhoud te lezen">(op regels)</span>{% endif %}</div>
-      <form method="post" class="knoppenrij post-acties">
-        <input type="hidden" name="account" value="{{ account }}">
-        <a class="knop klein" href="/bram/bericht/{{ b.id }}#gesprek">Vraag Bram</a>
-        <button class="knop klein {{ 'vol' if b.actie == 'archiveren' }}" formaction="/bram/bericht/{{ b.id }}/archiveren">Archiveren</button>
-        {% if not b.gelezen %}<button class="knop klein {{ 'vol' if b.actie == 'gelezen' }}" formaction="/bram/bericht/{{ b.id }}/gelezen">Gelezen</button>{% endif %}
-        <button class="knop klein" formaction="/bram/bericht/{{ b.id }}/verwijderen" title="Naar de prullenbak">Verwijderen</button>
-        {% if b.uitgeschreven %}<span class="label groen">uitgeschreven</span>
-        {% elif b.uitschrijf_link %}<a class="knop klein" href="{{ b.uitschrijf_link }}" target="_blank" rel="noopener noreferrer">Uitschrijven op de website</a>
-        {% elif b.nieuwsbrief or b.categorie == 'nieuwsbrief' %}<button class="knop klein" formaction="/bram/bericht/{{ b.id }}/uitschrijven" onclick="return confirm('Uitschrijven bij deze afzender?')">Uitschrijven</button>{% endif %}
-        {% if labels.get(b.koppeling_id) %}
-        <select name="label" aria-label="Label voor {{ b.onderwerp }}">{% for w, n in labels[b.koppeling_id] %}<option value="{{ w }}">{{ n }}</option>{% endfor %}</select>
-        <button class="knop klein" formaction="/bram/bericht/{{ b.id }}/label">{{ 'Label' if b.soort == 'google' else 'Categorie' }}</button>
-        {% endif %}
-      </form>
-      <form method="post" action="/bram/bericht/{{ b.id }}/verplaats" class="verplaats">
-        <input type="hidden" name="account" value="{{ account }}">
-        <select name="groep" onchange="if (this.value) this.form.submit()" aria-label="Verplaats {{ b.onderwerp }}">
-          <option value="">Verplaats naar…</option>
-          {% for g, naam, _ in groepen if g != huidig %}<option value="{{ g }}">{{ naam }}</option>{% endfor %}
-          {% if b.van_adres %}{% for g, naam, _ in groepen %}<option value="{{ g }}|altijd">Altijd {{ naam }} voor {{ b.van_adres }}</option>{% endfor %}{% endif %}
-        </select><noscript><button class="knop klein">Verplaats</button></noscript>
-        {% if b.groep_handmatig %}<span class="noot">zelf verplaatst</span>{% endif %}
-      </form>
-    </div>
-  </div>
-{% endmacro %}
 {% block inhoud %}
-<section class="kopregel">
-  <div>
-    <h1>Bram <span class="noot">{{ p.rol }}</span></h1>
-    <p class="motto">{{ p.motto }}</p>
-  </div>
-  <div class="knoppen">
-    <form method="post" action="/bram/vernieuwen" class="inline"><button class="knop" type="submit">Nu bijwerken</button></form>
-    <a class="knop" href="/bram/instellingen">Instellingen</a>
-  </div>
-</section>
 {% if melding %}<p class="item">{{ melding }}</p>{% endif %}
 {% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
-{% if not koppelingen %}
-  <p class="item belangrijk">Er is nog geen mailaccount gekoppeld. Ga naar <a href="/bram/instellingen">Instellingen</a>.</p>
-{% endif %}
 {% for k in koppelingen if k.fout and k.actief %}<p class="item urgent"><b>{{ k.naam }}</b>: {{ k.fout }} <a href="/bram/instellingen">oplossen</a></p>{% endfor %}
 
-<div class="clara-raster">
-  <div>
-  {% for sleutel, naam, uitleg in groepen %}
-    {% set lijst = per_groep[sleutel] %}
-    <section class="kaart" id="{{ sleutel }}">
-      <h2><span>{{ naam }} <span class="klein">{{ lijst | length }}</span></span>
-        {% if sleutel == 'weg' and lijst %}<form method="post" action="/bram/archiveren" id="kan-weg" class="inline">
-          <input type="hidden" name="account" value="{{ account }}">
-          <button class="knop klein vol" type="submit" name="actie" value="archiveren">Aangevinkte archiveren</button>
-          <button class="knop klein" type="submit" name="actie" value="verwijderen" onclick="return confirm('De aangevinkte berichten naar de prullenbak?')">Verwijderen</button></form>{% endif %}</h2>
-      <p class="noot">{{ uitleg }}</p>
-      {% for b in lijst %}{{ bericht(b, sleutel == 'weg', sleutel) }}
-      {% else %}<p class="noot">{% if sleutel == 'actie' %}Niets dat op jou wacht.{% elif sleutel == 'lezen' %}Niets te lezen.{% else %}Niets op te ruimen.{% endif %}</p>{% endfor %}
-    </section>
-  {% endfor %}
-  </div>
+<div class="postvak">
+  <nav class="postmappen" aria-label="Mappen en accounts">
+    <form method="post" action="/bram/vernieuwen"><button class="knop vol breed-knop" type="submit">↻ Nu bijwerken</button></form>
+    {% for m, naam, _ in mappen %}
+    <a href="/bram?{{ 'map=' ~ m ~ '&' if m != 'alles' }}{{ 'account=' ~ account if account }}" class="pmap {{ 'actief' if map == m }}" {% if map == m %}aria-current="page"{% endif %}>
+      <span>{{ naam }}</span><span class="aantal">{% if per_map['ongelezen_' ~ m] %}<b>{{ per_map['ongelezen_' ~ m] }}</b>{% else %}{{ per_map[m] or '' }}{% endif %}</span></a>
+    {% endfor %}
+    <div class="pmappen-kop">Mailboxen</div>
+    <a href="/bram?{{ 'map=' ~ map if map != 'alles' }}" class="pmap {{ 'actief' if not account }}"><span>Alle mailboxen</span></a>
+    {% for k in koppelingen if k.actief %}
+    <a href="/bram?{{ 'map=' ~ map ~ '&' if map != 'alles' }}account={{ k.id }}" class="pmap {{ 'actief' if account == k.id }}" title="{{ k.account }}">
+      <span><span class="pdot {{ k.domein }}"></span>{{ k.naam }}</span><span class="aantal">{{ per_account.get(k.id, '') }}</span></a>
+    {% endfor %}
+    <a href="/bram/instellingen" class="pmap klein-link"><span>⚙ Instellingen</span></a>
+    {% if not koppelingen %}<p class="noot">Nog geen mailbox gekoppeld. <a href="/bram/instellingen">Koppel er een</a>.</p>{% endif %}
+  </nav>
 
-  <aside>
-    <nav class="kaart mappen" aria-label="Accounts">
-      <h2>Accounts</h2>
-      <a href="/bram" class="map {{ 'actief' if not account }}"><span><b>Alles</b></span><span class="aantal">{{ aantal.values() | sum }}</span></a>
-      {% for k in koppelingen if k.actief %}
-      <a href="/bram?account={{ k.id }}" class="map {{ 'actief' if account == k.id }}">
-        <span><b>{{ k.naam }}</b><br><span class="noot">{{ domeinnaam.get(k.domein, k.domein) }} · {{ 'met Claude' if k.claude else 'op regels' }} · {% if k.laatst %}{{ geleden(k.laatst) }}{% else %}nog niet opgehaald{% endif %}</span></span>
-        <span class="aantal">{{ aantal.get(k.id, 0) }}</span></a>
-      {% endfor %}
-    </nav>
-    <section class="kaart">
-      <h2>Zo werkt Bram</h2>
-      <p class="noot">Bram kijkt elke vijf minuten in je inbox (de laatste {{ 30 }} dagen) en zet bij elk nieuw bericht één
-        regel: wat het is, wat het vraagt en wat hij voorstelt. In je mailbox verandert hij niets zonder jouw klik.
-        Wat je in Gmail of Outlook zelf archiveert, verdwijnt hier vanzelf.</p>
-      <p class="noot">Teams, WhatsApp en Signal komen later.</p>
-    </section>
-  </aside>
+  <form method="post" action="/bram/bulk" class="postlijst" id="postlijst">
+    <input type="hidden" name="map" value="{{ map }}"><input type="hidden" name="account" value="{{ account }}">
+    <div class="pbalk" id="pbalk">
+      <label class="palles" title="Alles selecteren"><input type="checkbox" id="alles-kiezen" aria-label="Alles selecteren"></label>
+      <span class="pgekozen" id="pgekozen">{{ lijst | length }} bericht{{ 'en' if lijst | length != 1 }}{% if map != 'alles' %} in {{ groep_namen[map] }}{% endif %}</span>
+      <span class="pknoppen" id="pknoppen">
+        <button class="knop klein" name="actie" value="archiveren" title="Archiveren">Archiveren</button>
+        <button class="knop klein" name="actie" value="verwijderen" title="Naar de prullenbak" onclick="return confirm('De geselecteerde berichten naar de prullenbak?')">Verwijderen</button>
+        <button class="knop klein" name="actie" value="gelezen">Gelezen</button>
+        <button class="knop klein" name="actie" value="ongelezen">Ongelezen</button>
+        <button class="knop klein" name="actie" value="uitschrijven" onclick="return confirm('Uitschrijven bij de afzenders van de geselecteerde berichten?')">Uitschrijven</button>
+        <span class="pverplaats"><select name="groep" aria-label="Verplaats naar"><option value="">Verplaats naar…</option>{% for g, naam, _ in groepen %}<option value="{{ g }}">{{ naam }}</option>{% endfor %}</select>
+          <button class="knop klein" name="actie" value="verplaats">Verplaats</button></span>
+      </span>
+    </div>
+
+    {% for b in lijst %}
+    <div class="prij {{ 'ongelezen' if not b.gelezen }} {{ 'hoog' if b.prioriteit == 'hoog' }}" id="b{{ b.id }}">
+      <label class="pkies"><input type="checkbox" name="bericht" value="{{ b.id }}" aria-label="Selecteer {{ b.onderwerp }}"></label>
+      <span class="pdot {{ b.domein }}" title="{{ b.koppeling }}"></span>
+      <a class="pvan" href="/bram/bericht/{{ b.id }}" title="{{ b.van_adres }}">{{ b.van_naam }}</a>
+      <a class="ptekst" href="/bram/bericht/{{ b.id }}">
+        {% if b.prioriteit == 'hoog' %}<span class="label rood">hoog</span>{% endif %}
+        {% if map == 'alles' %}<span class="label pgroep {{ b.groep }}">{{ groep_namen[b.groep] }}</span>{% endif %}
+        {% if b.uitgeschreven %}<span class="label groen">uitgeschreven</span>{% endif %}
+        <span class="pond">{{ b.onderwerp }}</span>
+        <span class="pfrag"> · {{ b.regel or b.fragment }}{% if b.voorstel %} <span class="pvoorstel">→ {{ b.voorstel }}</span>{% endif %}</span>
+      </a>
+      {% if b.uitschrijf_link and not b.uitgeschreven %}<a class="pbox puit" href="{{ b.uitschrijf_link }}" target="_blank" rel="noopener noreferrer" title="Uitschrijven kan alleen op de website van de afzender">uitschrijven ↗</a>{% endif %}
+      <span class="pbox">{{ b.koppeling }}</span>
+      <span class="ptijd">{{ wanneer(b.ontvangen) }}</span>
+      <span class="psnel">
+        <button class="ikoon" formaction="/bram/bericht/{{ b.id }}/archiveren" title="Archiveren" aria-label="Archiveren">🗄</button>
+        <button class="ikoon" formaction="/bram/bericht/{{ b.id }}/verwijderen" title="Verwijderen" aria-label="Verwijderen">🗑</button>
+        <button class="ikoon" formaction="/bram/bericht/{{ b.id }}/{{ 'ongelezen' if b.gelezen else 'gelezen' }}" title="{{ 'Markeren als ongelezen' if b.gelezen else 'Markeren als gelezen' }}" aria-label="{{ 'Ongelezen' if b.gelezen else 'Gelezen' }}">{{ '✉' if b.gelezen else '✓' }}</button>
+      </span>
+    </div>
+    {% else %}
+    <p class="pleeg">{% if not koppelingen %}Nog geen mailbox gekoppeld.{% elif map == 'actie' %}Niets dat op jou wacht.{% elif map == 'weg' %}Niets op te ruimen.{% else %}Geen berichten.{% endif %}</p>
+    {% endfor %}
+  </form>
 </div>
+
+<script>
+// Selecteren zoals in Gmail: knoppen verschijnen zodra er iets is aangevinkt; shift-klik selecteert een reeks.
+(function () {
+  const lijst = document.getElementById("postlijst");
+  if (!lijst) return;
+  const vakjes = [...lijst.querySelectorAll('input[name="bericht"]')];
+  const alles = document.getElementById("alles-kiezen");
+  const balk = document.getElementById("pbalk"), teller = document.getElementById("pgekozen");
+  const rust = teller.textContent;
+  let laatste = null;
+  balk.classList.add("met-js");
+  function bijwerken() {
+    const n = vakjes.filter(v => v.checked).length;
+    balk.classList.toggle("gekozen", n > 0);
+    teller.textContent = n ? n + " geselecteerd" : rust;
+    alles.checked = n > 0 && n === vakjes.length;
+    alles.indeterminate = n > 0 && n < vakjes.length;
+    vakjes.forEach(v => v.closest(".prij").classList.toggle("aan", v.checked));
+  }
+  vakjes.forEach((v, i) => v.addEventListener("click", function (e) {
+    if (e.shiftKey && laatste !== null) {
+      const [van, tot] = [Math.min(laatste, i), Math.max(laatste, i)];
+      for (let j = van; j <= tot; j++) vakjes[j].checked = v.checked;
+    }
+    laatste = i;
+    bijwerken();
+  }));
+  alles.addEventListener("change", function () { vakjes.forEach(v => { v.checked = alles.checked; }); bijwerken(); });
+  // Bij de knoppen per regel telt alleen dat ene bericht, niet wat er verder is aangevinkt.
+  lijst.querySelectorAll(".psnel button").forEach(k => k.addEventListener("click", () => vakjes.forEach(v => { v.checked = false; })));
+  bijwerken();
+})();
+</script>
 {% endblock %}

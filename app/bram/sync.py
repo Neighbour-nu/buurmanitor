@@ -229,7 +229,7 @@ def melden(c, k, nieuw, oordelen, nu=None):
             continue
         if o.get("prioriteit") == "hoog" and o.get("categorie") in ("actie", "antwoord") and nu - b["ontvangen"] < dt.timedelta(days=1):
             meldingen.melden(c, "belangrijk", "bram", f"Mail van {b['van_naam']}: {b['onderwerp']}"[:200],
-                             f"{o['regel']} Voorstel: {o['voorstel']}.", f"/bram#b{b['id']}",
+                             f"{o['regel']} Voorstel: {o['voorstel']}.", f"/bram/bericht/{b['id']}",
                              sleutel=f"bram-{k['id']}-{b['extern_id']}"[:200])
 
 
@@ -301,6 +301,10 @@ def uitvoeren(c, b, actie, label=""):
         (bronnen.gmail_gelezen if g else bronnen.ms_gelezen)(tok, b["extern_id"])
         c.execute("UPDATE post_berichten SET gelezen = true WHERE id = %s", (b["id"],))
         return "gelezen"
+    if actie == "ongelezen":
+        (bronnen.gmail_ongelezen if g else bronnen.ms_ongelezen)(tok, b["extern_id"])
+        c.execute("UPDATE post_berichten SET gelezen = false WHERE id = %s", (b["id"],))
+        return "ongelezen"
     if actie == "label":
         namen = dict(labels(c, k))
         if label not in namen:

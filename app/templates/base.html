@@ -27,7 +27,7 @@
   <div class="wie">{{ gebruiker }}</div>
 </header>
 <div id="banner" class="banner" hidden></div>
-<main>{% block inhoud %}{% endblock %}</main>
+<main class="{% block main_klasse %}{% endblock %}">{% block inhoud %}{% endblock %}</main>
 <footer class="voet">
   <a href="/gezondheid">Gezondheid</a>
   <a href="{{ auth_url }}/logout">Uitloggen</a>

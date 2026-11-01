@@ -45,32 +45,52 @@ def groep(b):
     return "lezen"
 
 
+MAPPEN = (("alles", "Alles", ""),) + GROEPEN
+BULK = {"archiveren": "gearchiveerd", "verwijderen": "verwijderd", "gelezen": "als gelezen gemarkeerd",
+        "ongelezen": "als ongelezen gemarkeerd", "uitschrijven": "uitgeschreven", "verplaats": "verplaatst"}
+
+
+def lijst_adres(map_="alles", account=0):
+    """Het adres van de lijst met de gekozen map en het gekozen account. Pure functie."""
+    delen = ([f"map={map_}"] if map_ in GROEP_NAMEN else []) + ([f"account={int(account)}"] if account else [])
+    return "/bram" + ("?" + "&".join(delen) if delen else "")
+
+
+def _lijst_uit_formulier(f):
+    try:
+        account = int(f.get("account") or 0)
+    except ValueError:
+        account = 0
+    return lijst_adres(str(f.get("map") or "alles"), account)
+
+
 @router.get("/bram", response_class=HTMLResponse)
-def postkamer(request: Request, account: int = 0, melding: str = "", fout: str = ""):
+def postkamer(request: Request, map: str = "alles", account: int = 0, melding: str = "", fout: str = ""):  # pylint: disable=redefined-builtin
+    """Eén lijst voor alle mailboxen, zoals Gmail: links mappen en accounts, rechts de berichten."""
+    if map not in GROEP_NAMEN:
+        map = "alles"
     with db.pool.connection() as c:
         koppelingen = sync.koppelingen(c)
         berichten = c.execute("""SELECT b.*, k.naam AS koppeling, k.domein, k.soort FROM post_berichten b
                                  JOIN post_koppelingen k ON k.id = b.koppeling_id
-                                 WHERE b.status = 'open' AND k.actief AND (%s = 0 OR k.id = %s)
-                                 ORDER BY b.ontvangen DESC""", (account, account)).fetchall()
-        labels, label_fout = {}, {}
-        for k in koppelingen:
-            if k["actief"] and not k["fout"] and (not account or k["id"] == account):
-                try:
-                    labels[k["id"]] = sync.labels(c, k)
-                except Exception as e:  # noqa: BLE001  (zonder labels werkt de postkamer gewoon)
-                    label_fout[k["id"]] = str(e)
-        aantal = {r["koppeling_id"]: r["n"] for r in c.execute(
-            "SELECT koppeling_id, count(*) AS n FROM post_berichten WHERE status = 'open' GROUP BY koppeling_id")}
-    per_groep = {g[0]: [] for g in GROEPEN}
+                                 WHERE b.status = 'open' AND k.actief ORDER BY b.ontvangen DESC""").fetchall()
+    per_map = {m[0]: 0 for m in MAPPEN} | {"ongelezen_" + m[0]: 0 for m in MAPPEN}
+    per_account = {}
+    lijst = []
     for b in berichten:
-        per_groep[groep(b)].append(b)
-    namen = {k["id"]: dict(labels.get(k["id"], [])) for k in koppelingen}
+        g = groep(b)
+        if not account or b["koppeling_id"] == account:
+            for m in ("alles", g):
+                per_map[m] += 1
+                per_map["ongelezen_" + m] += 0 if b["gelezen"] else 1
+            if map in ("alles", g):
+                lijst.append(b | {"groep": g})
+        per_account[b["koppeling_id"]] = per_account.get(b["koppeling_id"], 0) + 1
     return templates.TemplateResponse("bram.html", ctx(
-        request, "bram", p=personas.get("bram"), koppelingen=koppelingen, groepen=GROEPEN, per_groep=per_groep,
-        labels=labels, label_namen=namen, account=account, aantal=aantal, melding=melding, fout=fout, tz=config.TZ,
-        DAGEN=DAGEN, CATEGORIEEN=sync.CATEGORIEEN, nu=dt.datetime.now(config.TZ), kluis_ok=kluis.actief(),
-        domeinnaam=dict(DOMEINEN)))
+        request, "bram", p=personas.get("bram"), koppelingen=koppelingen, mappen=MAPPEN, groep_namen=GROEP_NAMEN,
+        lijst=lijst, map=map, per_map=per_map, per_account=per_account, account=account, melding=melding, fout=fout,
+        tz=config.TZ, DAGEN=DAGEN, CATEGORIEEN=sync.CATEGORIEEN, nu=dt.datetime.now(config.TZ), kluis_ok=kluis.actief(),
+        domeinnaam=dict(DOMEINEN), groepen=GROEPEN))
 
 
 @router.post("/bram/vernieuwen")
@@ -103,8 +123,13 @@ def bericht_scherm(request: Request, bid: int, melding: str = "", fout: str = ""
             lees_fout = ""
         except Exception as e:  # noqa: BLE001  (dan toont het scherm wat Bram al weet)
             volledig, lees_fout = None, str(e)
+        try:
+            labels = sync.labels(c, k)
+        except Exception:  # noqa: BLE001  (zonder labels werkt het scherm gewoon)
+            labels = []
     return templates.TemplateResponse("bram_bericht.html", ctx(
-        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, groep_nu=groep(b), groepen=GROEPEN, lees_fout=lees_fout, berichten=berichten,
+        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, groep_nu=groep(b), groepen=GROEPEN, labels=labels,
+        label_namen=dict(labels), lees_fout=lees_fout, berichten=berichten,
         voorstellen=voorstellen, klaar=klaar, doelen=clara_web._schrijfdoelen(agendas),  # pylint: disable=protected-access
         eigen=clara_web._reisdoelen(agendas), melding=melding, fout=fout, tz=config.TZ,  # pylint: disable=protected-access
         DAGEN=DAGEN, CATEGORIEEN=sync.CATEGORIEEN, sleutel_ok=bool(config.ANTHROPIC_API_KEY),
@@ -211,8 +236,7 @@ async def verplaats(request: Request, bid: int):
             tekst = f"Mail van {b['van_adres']} staat voortaan bij {GROEP_NAMEN[naar]} ({len(n)} nu)."
     if f.get("terug") == "bericht":
         return _terug(f"/bram/bericht/{bid}", melding=tekst)
-    terug = "/bram" + (f"?account={int(f.get('account') or 0)}" if f.get("account") not in (None, "", "0") else "")
-    return _terug(f"{terug}#{naar}", melding=tekst)
+    return _terug(_lijst_uit_formulier(f), melding=tekst)
 
 
 @router.post("/bram/afzenderregel/weg")
@@ -229,10 +253,10 @@ async def afzenderregel_weg(request: Request):
 async def bericht_actie(request: Request, bid: int, actie: str):
     """Archiveren, gelezen markeren of een label zetten, na Martijns klik."""
     controleer_herkomst(request)
-    if actie not in ("archiveren", "gelezen", "label", "verwijderen", "uitschrijven"):
+    if actie not in ("archiveren", "gelezen", "ongelezen", "label", "verwijderen", "uitschrijven"):
         raise HTTPException(404)
     f = await request.form()
-    terug = "/bram" + (f"?account={int(f.get('account') or 0)}" if f.get("account") not in (None, "", "0") else "")
+    terug = _lijst_uit_formulier(f)
     weg = actie in ("archiveren", "verwijderen")
     vanuit_bericht = f.get("terug") == "bericht"
 
@@ -243,22 +267,28 @@ async def bericht_actie(request: Request, bid: int, actie: str):
     try:
         b, tekst = await asyncio.to_thread(doe)
     except (bronnen.BronFout, kluis.KluisFout) as e:
-        return _terug(f"/bram/bericht/{bid}" if vanuit_bericht else terug + f"#b{bid}", fout=str(e)[:300])
+        return _terug(f"/bram/bericht/{bid}" if vanuit_bericht else terug, fout=str(e)[:300])
     if vanuit_bericht and not weg:
         return _terug(f"/bram/bericht/{bid}", melding=f"{tekst[:1].upper()}{tekst[1:]}.")
-    return _terug(terug + ("" if weg else f"#b{bid}"), melding=f"'{b['onderwerp'][:60]}': {tekst}.")
+    return _terug(terug, melding=f"'{b['onderwerp'][:60]}': {tekst}.")
 
 
+@router.post("/bram/bulk")
 @router.post("/bram/archiveren")
-async def archiveren(request: Request):
-    """Meerdere berichten tegelijk archiveren of verwijderen (de aangevinkte uit Kan weg)."""
+async def bulk(request: Request):
+    """Een actie op de aangevinkte berichten: archiveren, verwijderen, (on)gelezen, uitschrijven of verplaatsen."""
     controleer_herkomst(request)
     f = await request.form()
-    actie = "verwijderen" if f.get("actie") == "verwijderen" else "archiveren"
+    actie = str(f.get("actie") or "archiveren")
+    if actie not in BULK:
+        raise HTTPException(400)
+    naar = str(f.get("groep", ""))
+    if actie == "verplaats" and naar not in GROEP_NAMEN:
+        return _terug(_lijst_uit_formulier(f), fout="Kies waar de berichten heen moeten.")
     ids = [int(x) for x in f.getlist("bericht") if str(x).isdigit()]
-    terug = "/bram" + (f"?account={int(f.get('account') or 0)}" if f.get("account") not in (None, "", "0") else "")
+    terug = _lijst_uit_formulier(f)
     if not ids:
-        return _terug(terug, fout=f"Niets aangevinkt; er is niets {'verwijderd' if actie == 'verwijderen' else 'gearchiveerd'}.")
+        return _terug(terug, fout="Niets aangevinkt; er is niets gedaan.")
 
     def doe():
         gelukt, fouten = 0, []
@@ -268,13 +298,16 @@ async def archiveren(request: Request):
                 if not b:
                     continue
                 try:
-                    sync.uitvoeren(c, b, actie)
+                    if actie == "verplaats":
+                        c.execute("UPDATE post_berichten SET groep_handmatig = %s WHERE id = %s", (naar, bid))
+                    else:
+                        sync.uitvoeren(c, b, actie)
                     gelukt += 1
                 except (bronnen.BronFout, kluis.KluisFout) as e:
                     fouten.append(f"{b['onderwerp'][:40]}: {e}")
         return gelukt, fouten
     gelukt, fouten = await asyncio.to_thread(doe)
-    tekst = f"{gelukt} bericht{'en' if gelukt != 1 else ''} {'verwijderd' if actie == 'verwijderen' else 'gearchiveerd'}."
+    tekst = f"{gelukt} bericht{'en' if gelukt != 1 else ''} {BULK[actie]}" + (f" naar {GROEP_NAMEN[naar]}" if actie == "verplaats" else "") + "."
     if fouten:
         return _terug(terug, melding=tekst, fout="Niet gelukt: " + "; ".join(fouten[:3])[:300])
     return _terug(terug, melding=tekst)

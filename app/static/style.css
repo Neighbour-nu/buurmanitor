@@ -258,3 +258,68 @@ form.voorstel textarea { width: 100%; margin: 6px 0; font: inherit; }
 form.voorstel input[type=text] { width: auto; min-width: 60%; }
 form.verplaats { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
 form.verplaats select { width: auto; flex: 0 1 260px; font-size: 13px; padding: 2px 6px; }
+
+/* Bram: de postkamer als mailprogramma (één lijst voor alle mailboxen) */
+main.breed { max-width: 1440px; }
+.postvak { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 8px; }
+.postmappen { position: sticky; top: 80px; display: flex; flex-direction: column; gap: 1px; }
+.breed-knop { width: 100%; margin-bottom: 10px; }
+.pmap { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 0 16px 16px 0;
+  color: var(--inkt); text-decoration: none; font-size: 15px; }
+.pmap:hover { background: var(--ijs); color: var(--inkt); }
+.pmap.actief { background: #D3E3FD; font-weight: 600; }
+.pmap .aantal { font-size: 13px; color: var(--zacht); font-variant-numeric: tabular-nums; }
+.pmap .aantal b { color: var(--inkt); }
+.pmappen-kop { font-family: var(--kop); font-weight: 600; text-transform: uppercase; font-size: 14px; color: var(--zacht); margin: 14px 12px 4px; }
+.klein-link { font-size: 14px; color: var(--zacht); margin-top: 8px; }
+.pdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--lijn); margin-right: 7px; flex: 0 0 9px; }
+.pdot.politiek { background: var(--politiek); } .pdot.prive { background: var(--prive); } .pdot.zerohero { background: var(--zerohero); }
+.pdot.fbim { background: var(--fbim); } .pdot.upperspire { background: var(--upperspire); }
+
+.postlijst { background: var(--wit); border: 1px solid var(--lijn); border-radius: 8px; }
+.pbalk { position: sticky; top: 64px; z-index: 5; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 46px;
+  padding: 6px 12px; background: var(--wit); border-bottom: 1px solid var(--lijn); border-radius: 8px 8px 0 0; }
+.prij:last-of-type { border-bottom: 0; border-radius: 0 0 8px 8px; }
+.pbalk.gekozen { background: #EAF1FB; }
+.palles { display: flex; align-items: center; padding: 0 2px; }
+.pgekozen { color: var(--zacht); font-size: 14px; min-width: 110px; }
+.pbalk.gekozen .pgekozen { color: var(--blauwdonker); font-weight: 600; }
+.pknoppen { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pbalk.met-js:not(.gekozen) .pknoppen { display: none; }
+.pverplaats { display: inline-flex; gap: 4px; align-items: center; }
+.pverplaats select { width: auto; font-size: 13px; padding: 2px 6px; }
+
+.prij { position: relative; display: flex; align-items: center; gap: 10px; padding: 0 12px; min-height: 42px;
+  border-bottom: 1px solid #EEF2F7; background: #F7F9FC; font-size: 14px; scroll-margin-top: 120px; }
+.prij.ongelezen { background: var(--wit); }
+.prij:hover { box-shadow: inset 1px 0 0 #DADCE0, inset -1px 0 0 #DADCE0, 0 1px 2px rgba(60, 64, 67, .2); z-index: 1; }
+.prij.aan { background: #C2DBFF; }
+.prij.hoog .pvan::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--rood); }
+.pkies { display: flex; align-items: center; }
+.pvan { flex: 0 0 180px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--inkt); text-decoration: none; }
+.ptekst { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--inkt); text-decoration: none; }
+.ptekst .label { margin-right: 4px; vertical-align: 1px; }
+.prij.ongelezen .pvan, .prij.ongelezen .pond { font-weight: 700; }
+.pfrag { color: var(--zacht); }
+.pvoorstel { color: var(--blauwdonker); }
+.pbox { flex: 0 0 auto; font-size: 12px; color: var(--zacht); border: 1px solid var(--lijn); border-radius: 4px; padding: 0 6px; white-space: nowrap; }
+.ptijd { flex: 0 0 64px; text-align: right; font-size: 13px; color: var(--zacht); white-space: nowrap; }
+.prij.ongelezen .ptijd { color: var(--inkt); font-weight: 700; }
+.psnel { display: none; gap: 2px; }
+.prij:hover .psnel, .prij:focus-within .psnel { display: inline-flex; }
+.prij:hover .ptijd, .prij:focus-within .ptijd { display: none; }
+.ikoon { border: 0; background: transparent; cursor: pointer; font-size: 16px; padding: 4px 6px; border-radius: 50%; line-height: 1; }
+.ikoon:hover { background: #E8EAED; }
+.label.pgroep.actie { background: #FDE7D9; color: #9A3412; } .label.pgroep.lezen { background: var(--ijs); color: var(--blauwdonker); }
+.label.pgroep.weg { background: #EEF0F3; color: var(--zacht); }
+.pleeg { padding: 40px 16px; text-align: center; color: var(--zacht); }
+@media (max-width: 900px) {
+  .postvak { grid-template-columns: 1fr; }
+  .postmappen { position: static; flex-direction: row; flex-wrap: wrap; gap: 4px; }
+  .postmappen form, .pmappen-kop { width: 100%; }
+  .pmap { border-radius: 16px; border: 1px solid var(--lijn); }
+  .prij { flex-wrap: wrap; padding: 6px 10px; gap: 4px 10px; }
+  .pvan { flex: 1 1 auto; } .ptekst { flex-basis: 100%; order: 5; white-space: normal; } .pbox { display: none; }
+  .psnel { display: none !important; } .prij .ptijd { display: inline !important; }
+  .pbalk { position: static; }
+}
