@@ -22,6 +22,19 @@ def datum_lang(d):
     return f"{DAGEN[d.weekday()]} {d.day} {MAANDEN[d.month - 1]}"
 
 
+def datum_kort(t, nu=None):
+    """Zoals in Gmail: vandaag de tijd, deze week de dag, anders de datum."""
+    if not t:
+        return ""
+    nu = nu or dt.datetime.now(config.TZ)
+    t = t.astimezone(config.TZ)
+    if t.date() == nu.date():
+        return f"{t:%H.%M}"
+    if (nu.date() - t.date()).days < 7:
+        return DAGEN[t.weekday()][:2]
+    return f"{t.day}-{t.month}"
+
+
 def geleden(t):
     if not t:
         return "nooit"
@@ -46,7 +59,7 @@ def mb(n):
 def ctx(request: Request, scherm, **kw):
     kw.update(request=request, scherm=scherm, gebruiker=request.headers.get("Remote-Name")
               or request.headers.get("Remote-User") or "", auth_url=config.AUTH_URL,
-              geleden=geleden, datum_lang=datum_lang, domeinen=config.DOMEINEN, euro=euro, mb=mb,
+              geleden=geleden, datum_lang=datum_lang, datum_kort=datum_kort, domeinen=config.DOMEINEN, euro=euro, mb=mb,
               werkruimtes=config.werkruimtes())
     return kw
 

@@ -87,11 +87,18 @@ def bram_vandaag(c):
     """Wat Bram ziet: hoeveel berichten om actie vragen en hoeveel er weg kunnen."""
     if not bram_sync.koppelingen(c, alleen_actief=True):
         return None
-    rijen = c.execute("""SELECT b.categorie, b.prioriteit, b.actie, b.groep_handmatig FROM post_berichten b JOIN post_koppelingen k
-                         ON k.id = b.koppeling_id WHERE b.status = 'open' AND k.actief""").fetchall()
+    rijen = c.execute("""SELECT b.id, b.categorie, b.prioriteit, b.actie, b.groep_handmatig, b.van_naam, b.van_adres, b.onderwerp,
+                                b.regel, b.ontvangen, b.gelezen, k.naam AS koppeling FROM post_berichten b JOIN post_koppelingen k
+                         ON k.id = b.koppeling_id WHERE b.status = 'open' AND k.actief ORDER BY b.ontvangen DESC""").fetchall()
     tel = {"actie": 0, "lezen": 0, "weg": 0}
+    lijst = []
     for r in rijen:
-        tel[bram_web.groep(r)] += 1
+        g = bram_web.groep(r)
+        tel[g] += 1
+        if g != "weg":
+            lijst.append(dict(r, groep=g))
+    # Miniweergave: eerst wat om actie vraagt, dan om te lezen; nieuwste eerst.
+    tel["lijst"] = sorted(lijst, key=lambda r: (r["groep"] != "actie", -r["ontvangen"].timestamp()))[:8]
     return tel
 
 

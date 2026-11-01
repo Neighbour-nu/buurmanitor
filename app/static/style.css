@@ -370,3 +370,17 @@ a.ikoon { text-decoration: none; display: inline-block; }
 .meldingmappen a:hover { background: var(--ijs); }
 .meldingmappen a.actief { background: var(--ijs); font-weight: 600; color: var(--blauwdonker); }
 .meldingmappen .aantal { color: var(--zacht); font-variant-numeric: tabular-nums; }
+
+/* Vandaag: compacte agenda en een miniweergave van de post */
+details.afspraak.klein > .open { padding-left: 64px; }
+details.afspraak.klein .tijd { flex-basis: 56px; }
+.postteller { margin-top: 0; }
+.minipost { border: 1px solid var(--lijn); border-radius: 6px; overflow: hidden; }
+.minibericht { display: grid; grid-template-columns: minmax(70px, 30%) 1fr auto; gap: 8px; align-items: baseline; padding: 6px 8px;
+               border-bottom: 1px solid var(--lijn); color: var(--zacht); text-decoration: none; font-size: 14px; background: var(--achter); }
+.minibericht:last-child { border-bottom: 0; }
+.minibericht:hover { background: var(--ijs); }
+.minibericht.ongelezen { background: var(--wit); color: var(--inkt); font-weight: 600; }
+.minibericht .van, .minibericht .onderwerp { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.minibericht .wanneer { font-size: 12px; font-variant-numeric: tabular-nums; }
+.minibericht .stip { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--rooddonker, #B71C1C); margin-right: 5px; vertical-align: 1px; }

@@ -50,8 +50,11 @@
     {% if agenda is none %}<p class="noot">Nog geen agenda's gekoppeld. <a href="/clara/koppelingen">Koppel ze bij Clara</a>.</p>
     {% else %}
       {% for a in agenda.vandaag %}
-        <div class="afspraak {{ a.domein }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %}><span class="tijd">{% if a.heledag %}hele dag{% else %}{{ a.start.astimezone(agenda.tz).strftime('%H.%M') }}{% endif %}</span>
-          <span class="wat">{{ a.titel }}<br><span class="noot">{{ a.agenda_naam or a.koppeling }}{% if a.locatie %} · {{ a.locatie }}{% endif %}</span></span></div>
+        <details class="afspraak klein {{ a.domein }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %}>
+          <summary><span class="tijd">{% if a.heledag %}hele dag{% else %}{{ a.start.astimezone(agenda.tz).strftime('%H.%M') }}{% endif %}</span>
+            <span class="wat"><span class="atitel">{{ a.titel }}</span></span></summary>
+          <div class="open"><span class="noot">{% if not a.heledag %}{{ a.start.astimezone(agenda.tz).strftime('%H.%M') }}–{{ a.eind.astimezone(agenda.tz).strftime('%H.%M') }} · {% endif %}{{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}{% if a.link %} · <a href="{{ a.link }}" target="_blank" rel="noopener">openen</a>{% endif %}</span></div>
+        </details>
       {% else %}<p class="noot">Geen afspraken vandaag.</p>{% endfor %}
       {% if agenda.conflicten %}<p class="item belangrijk"><a href="/clara#overlap">{{ agenda.conflicten | length }} keer potentiële overlap</a> in de komende week.</p>{% endif %}
       {% if agenda.uitnodigingen %}<p class="noot"><a href="/clara#uitnodigingen">{{ agenda.uitnodigingen | length }} uitnodiging{{ 'en' if agenda.uitnodigingen | length > 1 }}</a> nog te beantwoorden.</p>{% endif %}
@@ -62,9 +65,17 @@
     <h2>Post <a class="klein" href="/bram">postkamer</a></h2>
     {% if post is none %}<p class="noot">Nog geen mailaccounts gekoppeld. <a href="/bram/instellingen">Koppel ze bij Bram</a>.</p>
     {% else %}
-      {% if post.actie %}<p class="item belangrijk"><a href="/bram?map=actie">{{ post.actie }} bericht{{ 'en' if post.actie != 1 }}</a> {{ 'vraagt' if post.actie == 1 else 'vragen' }} om actie.</p>
-      {% else %}<p class="noot">Niets dat op jou wacht.</p>{% endif %}
-      <p class="noot"><a href="/bram?map=lezen">{{ post.lezen }} om te lezen</a> · <a href="/bram?map=weg">{{ post.weg }} kan weg</a></p>
+      <p class="noot postteller"><a href="/bram?map=actie">{% if post.actie %}<b>{{ post.actie }} actie nodig</b>{% else %}niets voor actie{% endif %}</a>
+        · <a href="/bram?map=lezen">{{ post.lezen }} lezen</a> · <a href="/bram?map=weg">{{ post.weg }} kan weg</a></p>
+      <div class="minipost">
+      {% for b in post.lijst %}
+        <a class="minibericht {{ 'ongelezen' if not b.gelezen }} {{ b.groep }}" href="/bram/bericht/{{ b.id }}" title="{{ b.regel or b.onderwerp }}">
+          <span class="van">{{ b.van_naam or b.van_adres }}</span>
+          <span class="onderwerp">{% if b.groep == 'actie' %}<span class="stip" aria-label="actie nodig"></span>{% endif %}{{ b.onderwerp or '(geen onderwerp)' }}</span>
+          <span class="wanneer">{{ datum_kort(b.ontvangen) }}</span>
+        </a>
+      {% else %}<p class="noot">Geen mail die op je wacht.</p>{% endfor %}
+      </div>
     {% endif %}
   </section>
 

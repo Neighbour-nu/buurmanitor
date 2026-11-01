@@ -278,7 +278,7 @@ def test_koppelen_sorteren_en_opruimen(klant, monkeypatch):
 
     # Vandaag en Iris weten ervan.
     vandaag = klant.get("/", headers=KOP).text
-    assert 'href="/bram?map=actie">2 berichten</a> vragen om actie' in vandaag
+    assert 'href="/bram?map=actie"><b>2 actie nodig</b>' in vandaag
     from app import iris  # pylint: disable=import-outside-toplevel
     with db.pool.connection() as c:
         assert "Club vraagt een lezing op 12 maart." in iris.context(c)
@@ -598,7 +598,7 @@ def test_verplaatsen_en_afzenderregels(klant, monkeypatch):
     with db.pool.connection() as c:
         assert not c.execute("SELECT 1 FROM post_afzenderregels").fetchone()
     vandaag = klant.get("/", headers=KOP).text  # v1 tot v3 staan niet in de nagebootste inbox en zijn dus weg
-    assert 'href="/bram?map=actie">1 bericht</a> vraagt om actie' in vandaag
+    assert 'href="/bram?map=actie"><b>1 actie nodig</b>' in vandaag
 
 
 # ---------------------------------------------------------------- sparren over de hele postkamer
@@ -769,3 +769,26 @@ def test_archiveren_in_map(klant, monkeypatch):
     r = klant.post(f"/bram/bericht/{g4}/map", headers=FORM, follow_redirects=False, data={"map_doel": "Label_weg"})
     assert "fout=" in r.headers["location"]
     assert klant.post(f"/bram/bericht/{g4}/map", headers=KOP, data={"map_doel": "Label_7"}).status_code == 403
+
+
+def test_miniweergave_op_vandaag(klant):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    from app.clara import kluis  # pylint: disable=import-outside-toplevel
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM post_koppelingen")
+        kid = c.execute("INSERT INTO post_koppelingen (soort, naam, account, geheim) VALUES ('google', 'Neighbour', 'm@n.nu', %s) RETURNING id",
+                        (kluis.sluit("r"),)).fetchone()["id"]
+        ids = {}
+        for n, (onderwerp, cat, gelezen) in enumerate((("Vraag van de griffie", "antwoord", False), ("Nieuwsbrief KNVB", "nieuwsbrief", False),
+                                                       ("Verslag fractie", "persoonlijk", True))):
+            ids[onderwerp] = c.execute("""INSERT INTO post_berichten (koppeling_id, extern_id, van_naam, van_adres, onderwerp, ontvangen, categorie, gelezen)
+                                          VALUES (%s, %s, 'Afzender', 'a@x.nl', %s, now() - make_interval(hours => %s), %s, %s) RETURNING id""",
+                                       (kid, f"v{n}", onderwerp, n, cat, gelezen)).fetchone()["id"]
+    pagina = klant.get("/", headers=KOP).text
+    mini = pagina.split('class="minipost"')[1].split("</section>")[0]
+    assert f'href="/bram/bericht/{ids["Vraag van de griffie"]}"' in mini and "Verslag fractie" in mini
+    assert "Nieuwsbrief KNVB" not in mini  # Kan weg staat niet in de miniweergave
+    assert mini.index("Vraag van de griffie") < mini.index("Verslag fractie")  # actie nodig eerst
+    assert 'minibericht ongelezen actie' in mini
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM post_koppelingen")

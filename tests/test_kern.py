@@ -248,3 +248,11 @@ def test_doorgeven_stuurt_alleen_intern_door():
         asyncio.run(d({"type": "http", "path": pad}, None, None))
     assert gezien == [("zerohero", "/intern/weging/leerpunten"), ("portal", "/internet"), ("portal", "/"),
                       ("portal", "/zerohero/intern/x")]
+
+
+def test_datum_kort():
+    nu = dt.datetime(2026, 11, 4, 15, 0, tzinfo=config.TZ)
+    assert web.datum_kort(dt.datetime(2026, 11, 4, 9, 5, tzinfo=config.TZ), nu) == "09.05"
+    assert web.datum_kort(dt.datetime(2026, 11, 2, 9, 5, tzinfo=config.TZ), nu) == "ma"
+    assert web.datum_kort(dt.datetime(2026, 10, 20, 9, 5, tzinfo=config.TZ), nu) == "20-10"
+    assert web.datum_kort(None) == ""
