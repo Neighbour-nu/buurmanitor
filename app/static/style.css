@@ -491,3 +491,24 @@ tr.uit td { opacity: .55; }
 .voorstel.mislukt { border-left-color: var(--oranje); }
 .voorstel.mislukt .test { color: var(--oranje); }
 #vera { scroll-margin-top: 80px; }
+
+/* Vandaag: nieuws per stroom */
+.nieuwsblok { margin-bottom: 8px; }
+.nieuwsblok h3 { font-family: var(--kop); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: 13px; margin: 8px 0 2px;
+                 padding-left: 8px; border-left: 3px solid var(--blauw); }
+.nieuwsblok h3 a { color: inherit; text-decoration: none; } .nieuwsblok h3 a:hover { text-decoration: underline; }
+.nieuwsblok.keepers h3 { color: var(--keepers); border-left-color: var(--keepers); }
+.nieuwsblok.politiek h3 { color: var(--politiek); border-left-color: var(--politiek); }
+.nieuwsblok.overig h3 { color: var(--overig); border-left-color: var(--overig); }
+.nieuwsblok .noot { margin: 2px 0 4px 11px; }
+.kopregel-nieuws { display: block; padding: 5px 0 5px 11px; border-bottom: 1px solid var(--lijn); text-decoration: none; color: var(--inkt); }
+.nieuwsblok .kopregel-nieuws:last-child { border-bottom: 0; }
+.kopregel-nieuws .nkoptekst { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 500; line-height: 1.3; }
+.kopregel-nieuws:hover .nkoptekst { text-decoration: underline; color: var(--blauwdonker); }
+.kopregel-nieuws .bron { display: block; font-size: 12px; color: var(--zacht); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kopregel-nieuws.gelezen .nkoptekst { color: var(--zacht); font-weight: 400; }
+.raster { grid-auto-flow: row dense; }
+@media (min-width: 900px) {
+  #nieuws { grid-column: span 2; grid-row: span 2; }
+  .nieuwsgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 18px; }
+}

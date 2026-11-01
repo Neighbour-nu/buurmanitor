@@ -121,18 +121,17 @@ def vandaag(request: Request):
         open_ = meldingen.open_meldingen(c, 12)
         lijst_meldingen = _meldingen_in_map(c, meldingmap)
         aantallen = meldingen.aantallen(c)
-        besteed, _ = claude.verbruik_maand(c)
         agenda = clara_vandaag(c, nu)
         post = bram_vandaag(c)
         taken = noor.vandaag_overzicht(c, nu)
-        koppen = vera_nieuws.koppen(c, nu)
+        stromen, _ = vera_nieuws.verzamel(c, 2)
+        koppen = vera_nieuws.koppen_per_soort(stromen, nu, per=4)
     urgent = [m for m in open_ if m["niveau"] == "urgent"]
-    g, s = gezondheid.geheugen(), gezondheid.schijf()
     return templates.TemplateResponse("vandaag.html", ctx(
         request, "vandaag", nu=nu, meldingen=open_, urgent=urgent, werkruimtes=config.werkruimtes(), agenda=agenda,
         lijst_meldingen=lijst_meldingen, meldingmap=meldingmap, meldingmappen=meldingen.MAPPEN, aantallen=aantallen,
-        team=personas.alle().values(), post=post, taken=taken, koppen=koppen, taakmelding=request.query_params.get("melding", "")[:300], geheugen=g, schijf=s, backups=gezondheid.backups(), besteed=besteed,
-        plafond=config.MAANDPLAFOND_EUR, fase=config.FASE))
+        post=post, taken=taken, koppen=koppen, soortnamen=vera_nieuws.SOORT_NAMEN,
+        taakmelding=request.query_params.get("melding", "")[:300]))
 
 
 # ---------- Iris ----------

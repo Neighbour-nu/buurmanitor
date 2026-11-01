@@ -301,6 +301,22 @@ def koppen(c, nu, aantal=5):
     return alles[:aantal]
 
 
+def koppen_per_soort(stromen, nu, per=3, uren=36, drempel=40):
+    """De belangrijkste koppen per stroom van de laatste anderhalve dag, voor Vandaag. Pure functie.
+    Ongelezen eerst, dan op belang; ongewogen nieuws telt mee als er (nog) niets gewogen is. None: stroom niet beschikbaar."""
+    grens, uit = nu - dt.timedelta(hours=uren), {}
+    nul = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
+    for soort, _ in SOORTEN:
+        lijst = stromen.get(soort)
+        if lijst is None:
+            uit[soort] = None
+            continue
+        recent = [b for b in lijst if b["tijd"] and b["tijd"] >= grens and (b["score"] is None or b["score"] >= drempel)]
+        recent.sort(key=lambda b: (bool(b.get("gelezen")), b["score"] is None, -(b["score"] or 0), -(b["tijd"] or nul).timestamp()))
+        uit[soort] = recent[:per]
+    return uit
+
+
 def url_van(c, soort, bid, lezers_url=None):
     """Het adres van één bericht (voor doorklikken). None als het niet (meer) bestaat."""
     if soort == "overig":

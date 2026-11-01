@@ -253,7 +253,7 @@ def test_noor_gesprek_en_vandaag(klant, monkeypatch):
     pagina = klant.get("/", headers=KOP).text
     assert 'id="taken"' in pagina and "Motie OV voorbereiden" in pagina and ">hoog<" in pagina and "Je wacht op Jan." in pagina
     assert '<b>' not in pagina.split('class="noot taakteller">')[1].split("</p>")[0]  # niets actief
-    assert 'href="/taken?praat=1#noor">Noor</a>' in pagina
+    assert 'href="/taken?praat=1#noor">Vraag Noor</a>' in pagina
     r = klant.post("/taken/nieuw", headers=FORM, data={"titel": "Fietsband plakken", "terug": "/"}, follow_redirects=False)
     assert r.headers["location"].startswith("/?melding=") and r.headers["location"].endswith("#taken")
     assert "Fietsband plakken" in klant.get(r.headers["location"], headers=KOP).text.split('id="taken"')[1].split("</section>")[0]

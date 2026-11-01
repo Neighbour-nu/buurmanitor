@@ -106,6 +106,25 @@
     <p class="noot"><a href="/taken?praat=1#noor">Vraag Noor</a> wat eerst moet, of om een taak in te plannen.</p>
   </section>
 
+  <section class="kaart" id="nieuws">
+    <h2>Nieuws <a class="klein" href="/vera">alle nieuws</a></h2>
+    <div class="nieuwsgrid">
+    {% for soort, lijst in koppen.items() %}
+      <div class="nieuwsblok {{ soort }}">
+        <h3><a href="/vera?soort={{ soort }}">{{ soortnamen[soort] }}</a></h3>
+        {% if lijst is none %}<p class="noot">{{ 'De Doellijn' if soort == 'keepers' else 'Promonitor' }} draait hier nog niet als werkruimte.</p>
+        {% else %}
+          {% for b in lijst %}
+          <a class="kopregel-nieuws {{ 'gelezen' if b.gelezen }}" href="/vera/lees/{{ b.soort }}/{{ b.id }}" target="_blank" rel="noopener" title="{{ b.waarom or b.titel }}">
+            <span class="nkoptekst">{{ b.titel }}</span>
+            <span class="bron">{{ b.bron }}{% if b.tijd %} · {{ geleden(b.tijd) }}{% endif %}</span></a>
+          {% else %}<p class="noot">Nog niets belangrijks.</p>{% endfor %}
+        {% endif %}
+      </div>
+    {% endfor %}
+    </div>
+  </section>
+
   <section class="kaart">
     <h2>Werkruimtes</h2>
     {% for w in werkruimtes %}
@@ -114,29 +133,5 @@
     {% if 'https://' in werkruimtes|map(attribute='url')|join(' ') %}<p class="noot">Een werkruimte met een eigen adres draait nog als losse app; na de overstap opent hij hier, met één login.</p>{% endif %}
   </section>
 
-  <section class="kaart">
-    <h2>Het team</h2>
-    {% for p in team %}
-      {% set actief = p.fase <= fase %}
-      <div class="persoon"><b>{% set pad = {'iris': '/iris', 'clara': '/clara', 'bram': '/bram', 'noor': '/taken?praat=1#noor', 'vera': '/vera'}.get(p.sleutel) %}{% if pad and actief %}<a href="{{ pad }}">{{ p.naam }}</a>{% else %}{{ p.naam }}{% endif %}</b> <span class="noot">{{ p.rol }}</span>
-        <span class="label {{ 'groen' if actief }}">{{ 'actief' if actief else 'fase ' ~ p.fase }}</span></div>
-    {% endfor %}
-  </section>
-
-  <section class="kaart" id="nieuws">
-    <h2>Nieuws <a class="klein" href="/vera">alles</a></h2>
-    {% for b in koppen %}
-      <div class="minikop {{ b.soort }}"><span class="stipje" title="{{ {'keepers': 'Keepersnieuws', 'politiek': 'Politiek nieuws', 'overig': 'Overig nieuws'}[b.soort] }}"></span>
-        <a href="/vera/lees/{{ b.soort }}/{{ b.id }}" target="_blank" rel="noopener" title="{{ b.waarom or b.titel }}">{{ b.titel }}</a>
-        <span class="bron" title="{{ b.bron }}">{{ b.bron }}</span></div>
-    {% else %}<p class="noot">Nog geen belangrijk nieuws vandaag.</p>{% endfor %}
-  </section>
-
-  <section class="kaart">
-    <h2>Server <a class="klein" href="/gezondheid">details</a></h2>
-    {% if geheugen %}<p>Geheugen <b>{{ geheugen.procent }}%</b> · schijf <b>{{ schijf.procent }}%</b></p>{% endif %}
-    {% for b in backups %}<p class="noot">Back-up {{ b.naam }}: {% if b.ok %}<span class="label groen">in orde</span>{% else %}<span class="label rood">te oud of ontbreekt</span>{% endif %}</p>{% endfor %}
-    <p class="noot">Claude deze maand: {{ euro(besteed) }} van {{ euro(plafond) }}</p>
-  </section>
 </div>
 {% endblock %}

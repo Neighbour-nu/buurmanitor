@@ -58,6 +58,19 @@ def test_selectie_en_uitgelicht():
     assert [(x["soort"], x["id"]) for x in nieuws.uitgelicht(stromen, nu)] == [("keepers", 1), ("overig", 2)]
 
 
+def test_koppen_per_stroom():
+    nu = dt.datetime(2026, 11, 2, 12, tzinfo=TZ)
+
+    def b(soort, i, score, uur=1, gelezen=False):
+        return {"soort": soort, "id": i, "titel": f"{soort} {i}", "score": score, "tijd": nu - dt.timedelta(hours=uur), "gelezen": gelezen}
+    stromen = {"keepers": [b("keepers", 1, 70), b("keepers", 2, 90, gelezen=True), b("keepers", 3, 80), b("keepers", 4, 60), b("keepers", 5, 99, 40)],
+               "politiek": None,
+               "overig": [b("overig", 1, 20), b("overig", 2, None)]}
+    k = nieuws.koppen_per_soort(stromen, nu)
+    assert [x["id"] for x in k["keepers"]] == [3, 1, 4]  # ongelezen eerst, op belang; te oud valt weg
+    assert k["politiek"] is None and [x["id"] for x in k["overig"]] == [2]
+
+
 @pytest.fixture(scope="module")
 def klant():
     if not DB:
@@ -136,9 +149,13 @@ def test_ophalen_wegen_en_pagina(klant, monkeypatch):
     assert klant.post(f"/vera/verberg/{wid}", headers=KOP).status_code == 403
     klant.post(f"/vera/verberg/{wid}", headers=FORM, data={"terug": "/vera?soort=overig&alles=1"})
     assert "Wielrenner wint etappe" not in klant.get("/vera?soort=overig&alles=1", headers=KOP).text
-    # Vandaag: de koppen.
-    vandaag = klant.get("/", headers=KOP).text.split('id="nieuws"')[1].split("</section>")[0]
+    # Vandaag: de koppen per stroom; geen blokken Team en Server meer.
+    hele = klant.get("/", headers=KOP).text
+    vandaag = hele.split('id="nieuws"')[1].split("</section>")[0]
     assert "Bijlow redt penalty in topper" in vandaag and f'href="/vera/lees/overig/{oid}"' in vandaag
+    assert vandaag.index("Keepersnieuws") < vandaag.index("Bijlow") < vandaag.index("Politiek nieuws") < vandaag.index("Overig nieuws")
+    assert "Promonitor draait hier nog niet" not in vandaag  # Promonitor gaf een fout, maar is er wel
+    assert "Het team" not in hele and "Geheugen" not in hele and "<h2>Server" not in hele
     with db.pool.connection() as c:
         c.execute("DELETE FROM vera_berichten")
         c.execute("DELETE FROM vera_gelezen")
