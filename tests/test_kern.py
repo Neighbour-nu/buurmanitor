@@ -152,6 +152,22 @@ def test_schermen_starten():
         for pad in ["/", "/iris", "/iris?g=0", "/gezondheid", "/api/meldingen?na=0"]:
             assert k.get(pad, headers=KOP).status_code == 200, pad
         assert k.get("/gezond").text == "ok"
+        # De knop Vernieuwen op Vandaag: haalt mail, agenda's en nieuws meteen op (hier nagebootst).
+        from app.kern import planner  # pylint: disable=import-outside-toplevel
+        gestart, oud = [], planner.nu_draaien
+        planner.nu_draaien = lambda pool, naam: gestart.append(naam)
+        try:
+            assert 'action="/vandaag/vernieuwen"' in k.get("/", headers=KOP).text
+            assert k.post("/vandaag/vernieuwen", headers=KOP).status_code == 403
+            vorm = KOP | {"Origin": "https://buurmanitor.neighbour.nu"}
+            r = k.post("/vandaag/vernieuwen", headers=vorm | {"X-Vandaag": "1"})
+            assert r.json() == {"gestart": ["agenda", "post", "nieuws"]} and gestart == ["agenda", "post", "nieuws"]
+            r = k.post("/vandaag/vernieuwen", headers=vorm, follow_redirects=False)
+            assert r.status_code == 303 and r.headers["location"] == "/"
+            stand = k.get("/api/vernieuwen?sinds=0", headers=KOP).json()["taken"]
+            assert set(stand) == {"agenda", "post", "nieuws"} and set(stand.values()) <= {"klaar", "bezig", "wacht"}
+        finally:
+            planner.nu_draaien = oud
         # Iris zonder sleutel: het gesprek wordt bewaard met een nette melding, geen fout.
         r = k.post("/iris", headers=KOP | {"Origin": "https://buurmanitor.neighbour.nu"}, data={"vraag": "Hoi Iris"},
                    follow_redirects=False)
@@ -256,3 +272,13 @@ def test_datum_kort():
     assert web.datum_kort(dt.datetime(2026, 11, 2, 9, 5, tzinfo=config.TZ), nu) == "ma"
     assert web.datum_kort(dt.datetime(2026, 10, 20, 9, 5, tzinfo=config.TZ), nu) == "20-10"
     assert web.datum_kort(None) == ""
+
+
+def test_vernieuw_stand():
+    nu = dt.datetime(2026, 11, 1, 23, 0, tzinfo=dt.timezone.utc)
+    rijen = [{"naam": "agenda", "laatst": nu + dt.timedelta(seconds=3), "bezig_sinds": None},
+             {"naam": "post", "laatst": nu - dt.timedelta(minutes=4), "bezig_sinds": nu},
+             {"naam": "nieuws", "laatst": nu - dt.timedelta(minutes=10), "bezig_sinds": None}]
+    assert main.vernieuw_stand(rijen, nu, ["agenda", "post", "nieuws", "onbekend"]) == {
+        "agenda": "klaar", "post": "bezig", "nieuws": "wacht", "onbekend": "wacht"}
+

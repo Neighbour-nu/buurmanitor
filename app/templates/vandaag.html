@@ -8,7 +8,12 @@
       {% elif meldingen %}{{ meldingen | length }} open melding{{ 'en' if meldingen | length > 1 }}, niets urgents.
       {% else %}geen open meldingen.{% endif %}</p>
   </div>
-  <div class="chips">{% for k, naam in domeinen %}<span class="chip {{ k }}">{{ naam }}</span>{% endfor %}</div>
+  <div class="kop-rechts">
+    <form method="post" action="/vandaag/vernieuwen" id="vernieuwen">
+      <button class="knop" type="submit" title="Mail, agenda's en nieuws nu ophalen en het scherm verversen"><span class="draai" aria-hidden="true">↻</span> <span class="tekst">Vernieuwen</span></button>
+    </form>
+    <div class="chips">{% for k, naam in domeinen %}<span class="chip {{ k }}">{{ naam }}</span>{% endfor %}</div>
+  </div>
 </section>
 
 <div class="vandaag-boven">
@@ -147,4 +152,33 @@
     {% endfor %}
     </div>
   </section>
+<script>
+// Vernieuwen: eerst mail, agenda's en nieuws ophalen (op de server), dan het scherm verversen.
+(function () {
+  const vorm = document.getElementById("vernieuwen"); if (!vorm) return;
+  const knop = vorm.querySelector("button"), tekst = knop.querySelector(".tekst");
+  vorm.addEventListener("submit", async e => {
+    e.preventDefault();
+    if (knop.disabled) return;
+    knop.disabled = true; knop.classList.add("bezig"); tekst.textContent = "Ophalen…";
+    const sinds = Date.now() / 1000 - 1, begin = Date.now();
+    try {
+      const r = await fetch(vorm.action, { method: "POST", headers: { "X-Vandaag": "1" }, credentials: "same-origin" });
+      if (!r.ok) throw new Error(r.status);
+    } catch (fout) { location.reload(); return; }
+    const kijk = async () => {
+      let klaar = false;
+      try {
+        const d = await (await fetch("/api/vernieuwen?sinds=" + sinds, { credentials: "same-origin" })).json();
+        const st = Object.values(d.taken);
+        const bezig = st.filter(x => x === "bezig").length;
+        klaar = st.every(x => x === "klaar") || (Date.now() - begin > 8000 && bezig === 0);
+        if (!klaar) tekst.textContent = "Ophalen… " + st.filter(x => x === "klaar").length + "/" + st.length;
+      } catch (fout) { /* volgende ronde */ }
+      if (klaar || Date.now() - begin > 90000) location.reload(); else setTimeout(kijk, 1500);
+    };
+    setTimeout(kijk, 1200);
+  });
+})();
+</script>
 {% endblock %}

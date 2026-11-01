@@ -137,6 +137,41 @@ def vandaag(request: Request):
         taakmelding=request.query_params.get("melding", "")[:300]))
 
 
+VERNIEUW_TAKEN = ("agenda", "post", "nieuws")  # wat de knop Vernieuwen op Vandaag meteen ophaalt
+
+
+@app.post("/vandaag/vernieuwen")
+def vandaag_vernieuwen(request: Request):
+    """Mail, agenda's en nieuws nu ophalen (op de achtergrond); de pagina wacht met /api/vernieuwen tot het klaar is."""
+    controleer_herkomst(request)
+    gestart = [n for n in VERNIEUW_TAKEN if n in planner.TAKEN]
+    for naam in gestart:
+        planner.nu_draaien(db.pool, naam)
+    if request.headers.get("x-vandaag") == "1":
+        return JSONResponse({"gestart": gestart})
+    return RedirectResponse("/", status_code=303)
+
+
+def vernieuw_stand(rijen, sinds, namen):
+    """Per taak: klaar (na 'sinds' afgerond) of nog bezig. Pure functie."""
+    per = {r["naam"]: r for r in rijen}
+    uit = {}
+    for n in namen:
+        r = per.get(n)
+        uit[n] = "bezig" if r and r["bezig_sinds"] else ("klaar" if r and r["laatst"] and r["laatst"] >= sinds else "wacht")
+    return uit
+
+
+@app.get("/api/vernieuwen")
+def vernieuwen_stand(sinds: float = 0):
+    """Hoe ver het vernieuwen is: per taak klaar, bezig of wacht (nog niet begonnen)."""
+    moment = dt.datetime.fromtimestamp(sinds, dt.timezone.utc) if sinds else dt.datetime.now(dt.timezone.utc)
+    namen = [n for n in VERNIEUW_TAKEN if n in planner.TAKEN]
+    with db.pool.connection() as c:
+        rijen = c.execute("SELECT naam, laatst, bezig_sinds FROM taken WHERE naam = ANY(%s)", (namen,)).fetchall()
+    return JSONResponse({"taken": vernieuw_stand(rijen, moment, namen)})
+
+
 # ---------- Iris ----------
 
 @app.get("/iris", response_class=HTMLResponse)

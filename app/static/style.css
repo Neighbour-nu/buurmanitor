@@ -594,3 +594,13 @@ tr.uit td { opacity: .55; }
 .minisocial::before { content: ""; flex: 0 0 8px; height: 8px; border-radius: 50%; background: var(--blauw); align-self: center; }
 .minisocial.linkedin::before, .minisocial.linkedin_pagina::before { background: var(--linkedin); } .minisocial.instagram::before { background: var(--instagram); }
 .minisocial.facebook::before { background: var(--facebook); } .minisocial.threads::before { background: var(--threads); } .minisocial.youtube::before { background: var(--youtube); }
+
+/* Vandaag: knop Vernieuwen */
+.kop-rechts { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+#vernieuwen { margin: 0; }
+#vernieuwen .draai { display: inline-block; font-size: 16px; line-height: 1; }
+#vernieuwen button.bezig .draai { animation: draaien 1s linear infinite; }
+#vernieuwen button:disabled { opacity: .8; cursor: progress; }
+@keyframes draaien { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #vernieuwen button.bezig .draai { animation: none; } }
+@media (max-width: 700px) { .kop-rechts { align-items: flex-start; } }
