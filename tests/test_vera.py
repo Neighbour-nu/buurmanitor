@@ -85,6 +85,14 @@ def test_ontdubbelen():
     assert nieuws.selectie(lijst, dubbels=True, aantal=10)[2]["id"] == 3  # 'alles laten zien': niets ontdubbeld
 
 
+def test_cite_tags_weg():
+    assert nieuws.zonder_cite('<cite index="3-1,3-2">Bijlow stopte twee strafschoppen</cite> en <cite index="5">won de duels</cite>.') == \
+        "Bijlow stopte twee strafschoppen en won de duels."
+    assert nieuws.zonder_cite("Zo &lt;cite index=&quot;1&quot;&gt;ziet het er&lt;/cite&gt; uit") == "Zo ziet het er uit"
+    assert nieuws.zonder_cite("Geen tags, wel het woord citeren.") == "Geen tags, wel het woord citeren."
+    assert nieuws.zonder_cite(None) is None
+
+
 def test_koppen_per_stroom():
     nu = dt.datetime(2026, 11, 2, 12, tzinfo=TZ)
 
@@ -145,7 +153,8 @@ def test_ophalen_wegen_en_pagina(klant, monkeypatch):
     nu = dt.datetime.now(TZ)
     monkeypatch.setattr(nieuws, "keepers", lambda dagen: [
         {"soort": "keepers", "id": 7, "titel": "Bijlow redt penalty in topper", "url": "https://voetbal.nl/k", "bron": "VI", "tijd": nu - dt.timedelta(hours=2),
-         "score": 88, "samenvatting": "Feyenoord-keeper beslist de wedstrijd.", "waarom": "", "labels": ["voetbal", "🧤 Justin Bijlow"]},
+         "score": 88, "samenvatting": '<cite index="2-1">Feyenoord-keeper beslist de wedstrijd.</cite>', "waarom": '<cite index="4">Goede haak.</cite>',
+         "labels": ["voetbal", "🧤 Justin Bijlow"]},
         {"soort": "keepers", "id": 8, "titel": "Handbalkeeper stopt", "url": "https://hb.nl/k", "bron": "NOS", "tijd": nu - dt.timedelta(hours=5),
          "score": 61, "samenvatting": "", "waarom": "", "labels": ["handbal"]}])
     monkeypatch.setattr(nieuws, "politiek", lambda dagen: (_ for _ in ()).throw(RuntimeError("Promonitor slaapt")))
@@ -154,6 +163,7 @@ def test_ophalen_wegen_en_pagina(klant, monkeypatch):
     uitgelicht = pagina.split('class="nuitgelicht"')[1].split("</section>")[0]
     assert "Bijlow redt penalty in topper" in uitgelicht and "Nieuwe Archiefwet aangenomen" in uitgelicht and "Raakt je vak" in uitgelicht
     assert "Kon dit nieuws niet lezen: Promonitor slaapt" in pagina
+    assert "Feyenoord-keeper beslist de wedstrijd." in pagina and "Goede haak." in pagina and "cite" not in pagina.lower().replace("citeren", "")
     assert "Handbalkeeper stopt" in pagina and "Wielrenner wint etappe" not in pagina  # onder de 40: weg
     assert '&alles=1">Nog 1 laten zien</a>' in pagina.split('class="nkolom overig')[1]
     assert "laten zien" not in pagina.split('class="nkolom keepers')[1].split("</section>")[0]  # niets verborgen

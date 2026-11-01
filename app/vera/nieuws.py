@@ -138,6 +138,16 @@ def lees_feed(inhoud, soort="feed"):
     return uit
 
 
+CITE = re.compile(r"(?:<|&lt;)\s*/?\s*cite\b[^>]*?(?:>|&gt;)", re.I)
+
+
+def zonder_cite(tekst):
+    """Bronverwijzingen van Claude (<cite index="...">...</cite>) uit een tekst halen; de tekst ertussen blijft. Pure functie."""
+    if not tekst or "cite" not in tekst.lower():
+        return tekst
+    return re.sub(r"\s{2,}", " ", CITE.sub("", tekst)).replace(" .", ".").replace(" ,", ",").strip()
+
+
 def sleutel(titel):
     """Kop zonder bronvermelding achteraan, voor het herkennen van hetzelfde nieuws bij twee bronnen. Pure functie."""
     t = re.sub(r"\s[-|]\s[^-|]{2,40}$", "", titel or "")
@@ -320,6 +330,10 @@ def verzamel(c, dagen, lezers=None):
     for lijst in uit.values():
         for b in lijst or []:
             b["gelezen"] = (b["soort"], b["id"]) in gelezen
+            # Samenvattingen uit de werkruimtes (Claude met webzoeken) kunnen <cite>-tags bevatten: weg ermee.
+            for veld in ("titel", "samenvatting", "waarom"):
+                b[veld] = zonder_cite(b.get(veld) or "")
+            b["labels"] = [zonder_cite(x) for x in b.get("labels") or []]
     return uit, fouten
 
 
