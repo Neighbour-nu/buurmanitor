@@ -416,3 +416,6 @@ details.afspraak.klein .tijd { flex-basis: 56px; }
 .afspraak.voorbij { opacity: .5; border-left-color: #B8C0CA !important; }
 .afspraak.voorbij > summary, .afspraak.voorbij .tijd, .afspraak.voorbij .wat a { color: var(--zacht); }
 details.afspraak.voorbij[open] { opacity: .8; }
+.meldingstatus { margin-top: 10px; border-top: 1px solid var(--lijn); padding-top: 8px; }
+.meldingstatus p { margin: 4px 0; }
+.meldingstatus [hidden] { display: none !important; }

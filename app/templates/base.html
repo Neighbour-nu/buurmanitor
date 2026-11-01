@@ -6,7 +6,7 @@
 <title>{% block titel %}Buurmanitor{% endblock %}</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=18">
+<link rel="stylesheet" href="/static/style.css?v=19">
 {% block kop %}{% endblock %}
 </head>
 <body>
@@ -104,10 +104,47 @@ document.addEventListener("keydown", function (e) {
     } catch (e) { /* stil: volgende ronde opnieuw */ }
   }
   kijk(); setInterval(kijk, 30000);
-  const knop = document.getElementById("meldingen-aan");
-  if (knop && "Notification" in window && Notification.permission === "default") {
-    knop.hidden = false;
-    knop.onclick = () => Notification.requestPermission().then(() => { knop.hidden = true; });
+})();
+// Bureaubladmeldingen op Vandaag: laten zien of ze aan staan, aanzetten en een testmelding sturen.
+(function () {
+  const vak = document.getElementById("meldingstatus");
+  if (!vak) return;
+  const tekst = vak.querySelector(".tekst"), aan = document.getElementById("meldingen-aan"), test = document.getElementById("meldingen-test");
+  const KAN = "Notification" in window && window.isSecureContext;
+  function zeg(t) { tekst.textContent = t; }
+  function teken() {
+    if (!KAN) { zeg("Deze browser kan hier geen meldingen op je bureaublad geven."); aan.hidden = test.hidden = true; return; }
+    const s = Notification.permission;
+    zeg({granted: "Bureaubladmeldingen staan aan in deze browser.",
+         denied: "Bureaubladmeldingen zijn geblokkeerd voor deze site. Klik op het slotje (of de schuifjes) links van het adres, zet Meldingen op Toestaan en ververs de pagina.",
+         default: "Bureaubladmeldingen staan nog niet aan in deze browser."}[s] || s);
+    aan.hidden = s !== "default"; test.hidden = s !== "granted";
+  }
+  function vraag() {  // oudere Safari kent alleen de terugroep-vorm
+    return new Promise(klaar => { const p = Notification.requestPermission(klaar); if (p && p.then) p.then(klaar); });
+  }
+  function testmelding() {
+    try {
+      const n = new Notification("Buurmanitor: testmelding", { body: "Zie je dit, dan werken de meldingen op je bureaublad.", tag: "bm-test" });
+      n.onerror = () => zeg("De browser kon de testmelding niet tonen. Kijk bij de meldingsinstellingen van je computer.");
+      zeg("Testmelding verstuurd. Zie je niets in een hoek van je scherm? Dan houdt je computer hem tegen: kijk of je browser " +
+          "meldingen mag geven (Mac: Systeeminstellingen › Berichtgeving; Windows: Instellingen › Systeem › Meldingen) en of Niet storen of Focus uit staat.");
+    } catch (e) {
+      zeg("Deze browser kan op dit apparaat geen meldingen tonen vanaf een pagina (" + e.message + ").");
+    }
+  }
+  aan.onclick = () => {
+    zeg("Kies Toestaan in de vraag van je browser (meestal linksboven, bij de adresbalk).");
+    const stil = setTimeout(() => zeg("Zie je geen vraag? Dan houdt de browser hem stil. Kijk in de adresbalk: staat daar een " +
+      "belletje met een streep erdoor, klik erop en kies Toestaan. Anders: klik op het slotje links van het adres en zet Meldingen op Toestaan."), 2500);
+    vraag().then(() => { clearTimeout(stil); teken(); if (Notification.permission === "granted") testmelding(); });
+  };
+  test.onclick = testmelding;
+  teken();
+  // Toestemming via het slotje veranderd? Dan meteen bijwerken.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) teken(); });
+  if (navigator.permissions && navigator.permissions.query) {
+    navigator.permissions.query({ name: "notifications" }).then(p => { p.onchange = teken; }).catch(() => {});
   }
 })();
 </script>

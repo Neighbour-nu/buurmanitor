@@ -42,7 +42,11 @@
         <span>{{ naam }}</span><span class="aantal">{% if status == 'open' and aantallen.ongelezen %}<b>{{ aantallen.ongelezen }}</b>/{% endif %}{{ aantallen[status] }}</span></a>
       {% endfor %}
     </nav>
-    <p class="noot"><button id="meldingen-aan" class="knop klein" hidden>Meldingen op dit apparaat aanzetten</button></p>
+    <div class="meldingstatus" id="meldingstatus">
+      <p class="noot"><span class="tekst">Bureaubladmeldingen: even kijken…</span></p>
+      <p class="knoppenrij"><button id="meldingen-aan" class="knop klein" type="button" hidden>Meldingen op dit apparaat aanzetten</button>
+        <button id="meldingen-test" class="knop klein" type="button" hidden>Testmelding sturen</button></p>
+    </div>
   </section>
 
   <section class="kaart">
