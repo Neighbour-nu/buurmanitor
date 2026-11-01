@@ -509,8 +509,7 @@ tr.uit td { opacity: .55; }
 .kopregel-nieuws.gelezen .nkoptekst { color: var(--zacht); font-weight: 400; }
 .raster { grid-auto-flow: row dense; }
 @media (min-width: 900px) {
-  #nieuws { grid-column: span 2; grid-row: span 2; }
-  .nieuwsgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 18px; }
+  .nieuwsgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 28px; }
 }
 
 /* Nieuws: politiek in twee delen (lokaal voorop, landelijk) */
@@ -543,3 +542,11 @@ tr.uit td { opacity: .55; }
 .ngroot.gelezen { opacity: .7; }
 .ngroot.gelezen h2 { font-size: 16px; }
 .ngroot.gelezen h2 a { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Vandaag: drie kolommen (Agenda | Meldingen en Post | Taken en Werkruimtes), daaronder het nieuws over de volle breedte */
+.vandaag-boven { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; align-items: start; }
+.vkolom { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.vkolom > .kaart { margin-bottom: 0; }
+.nieuwsbreed { margin-top: 16px; }
+@media (max-width: 1000px) { .vandaag-boven { grid-template-columns: repeat(2, minmax(0, 1fr)); } .vandaag-boven > .vkolom:last-child { grid-column: 1 / -1; } }
+@media (max-width: 700px) { .vandaag-boven { grid-template-columns: 1fr; } }

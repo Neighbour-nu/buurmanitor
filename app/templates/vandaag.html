@@ -11,7 +11,25 @@
   <div class="chips">{% for k, naam in domeinen %}<span class="chip {{ k }}">{{ naam }}</span>{% endfor %}</div>
 </section>
 
-<div class="raster">
+<div class="vandaag-boven">
+  <div class="vkolom">
+  <section class="kaart">
+    <h2>Agenda vandaag <a class="klein" href="/clara">twee weken</a></h2>
+    {% if agenda is none %}<p class="noot">Nog geen agenda's gekoppeld. <a href="/clara/koppelingen">Koppel ze bij Clara</a>.</p>
+    {% else %}
+      {% for a in agenda.vandaag %}
+        <details class="afspraak klein {{ a.domein }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }} {{ 'voorbij' if a.eind <= nu }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %} data-eind="{{ a.eind.isoformat() }}">
+          <summary><span class="tijd">{% if a.heledag %}hele dag{% else %}{{ a.start.astimezone(agenda.tz).strftime('%H.%M') }}{% endif %}</span>
+            <span class="wat"><span class="atitel">{{ a.titel }}</span></span></summary>
+          <div class="open"><span class="noot">{% if not a.heledag %}{{ a.start.astimezone(agenda.tz).strftime('%H.%M') }}–{{ a.eind.astimezone(agenda.tz).strftime('%H.%M') }} · {% endif %}{{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}{% if a.link %} · <a href="{{ a.link }}" target="_blank" rel="noopener">openen</a>{% endif %}</span></div>
+        </details>
+      {% else %}<p class="noot">Geen afspraken vandaag.</p>{% endfor %}
+      {% if agenda.conflicten %}<p class="item belangrijk"><a href="/clara#overlap">{{ agenda.conflicten | length }} keer potentiële overlap</a> in de komende week.</p>{% endif %}
+      {% if agenda.uitnodigingen %}<p class="noot"><a href="/clara#uitnodigingen">{{ agenda.uitnodigingen | length }} uitnodiging{{ 'en' if agenda.uitnodigingen | length > 1 }}</a> nog te beantwoorden.</p>{% endif %}
+    {% endif %}
+  </section>
+  </div>
+  <div class="vkolom">
   <section class="kaart" id="meldingen">
     {% set mapnaam = (meldingmappen | selectattr(0, 'equalto', meldingmap) | first)[1] %}
     <h2><span>Meldingen{% if meldingmap != 'open' %} <span class="noot">· {{ mapnaam }}</span>{% endif %}</span>
@@ -48,23 +66,6 @@
         <button id="meldingen-test" class="knop klein" type="button" hidden>Testmelding sturen</button></p>
     </div>
   </section>
-
-  <section class="kaart">
-    <h2>Agenda vandaag <a class="klein" href="/clara">twee weken</a></h2>
-    {% if agenda is none %}<p class="noot">Nog geen agenda's gekoppeld. <a href="/clara/koppelingen">Koppel ze bij Clara</a>.</p>
-    {% else %}
-      {% for a in agenda.vandaag %}
-        <details class="afspraak klein {{ a.domein }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }} {{ 'voorbij' if a.eind <= nu }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %} data-eind="{{ a.eind.isoformat() }}">
-          <summary><span class="tijd">{% if a.heledag %}hele dag{% else %}{{ a.start.astimezone(agenda.tz).strftime('%H.%M') }}{% endif %}</span>
-            <span class="wat"><span class="atitel">{{ a.titel }}</span></span></summary>
-          <div class="open"><span class="noot">{% if not a.heledag %}{{ a.start.astimezone(agenda.tz).strftime('%H.%M') }}–{{ a.eind.astimezone(agenda.tz).strftime('%H.%M') }} · {% endif %}{{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}{% if a.link %} · <a href="{{ a.link }}" target="_blank" rel="noopener">openen</a>{% endif %}</span></div>
-        </details>
-      {% else %}<p class="noot">Geen afspraken vandaag.</p>{% endfor %}
-      {% if agenda.conflicten %}<p class="item belangrijk"><a href="/clara#overlap">{{ agenda.conflicten | length }} keer potentiële overlap</a> in de komende week.</p>{% endif %}
-      {% if agenda.uitnodigingen %}<p class="noot"><a href="/clara#uitnodigingen">{{ agenda.uitnodigingen | length }} uitnodiging{{ 'en' if agenda.uitnodigingen | length > 1 }}</a> nog te beantwoorden.</p>{% endif %}
-    {% endif %}
-  </section>
-
   <section class="kaart">
     <h2>Post <a class="klein" href="/bram">postkamer</a></h2>
     {% if post is none %}<p class="noot">Nog geen mailaccounts gekoppeld. <a href="/bram/instellingen">Koppel ze bij Bram</a>.</p>
@@ -82,7 +83,8 @@
       </div>
     {% endif %}
   </section>
-
+  </div>
+  <div class="vkolom">
   <section class="kaart" id="taken">
     <h2>Taken <a class="klein" href="/taken">takenbord</a></h2>
     {% if taakmelding %}<p class="item">{{ taakmelding }}</p>{% endif %}
@@ -105,8 +107,17 @@
       <button class="knop klein" type="submit">＋</button></form>
     <p class="noot"><a href="/taken?praat=1#noor">Vraag Noor</a> wat eerst moet, of om een taak in te plannen.</p>
   </section>
+  <section class="kaart">
+    <h2>Werkruimtes</h2>
+    {% for w in werkruimtes %}
+      <a class="tegel {{ w.sleutel }}" href="{{ w.url }}"><b>{{ w.naam }}</b><span>{{ w.app }}</span></a>
+    {% endfor %}
+    {% if 'https://' in werkruimtes|map(attribute='url')|join(' ') %}<p class="noot">Een werkruimte met een eigen adres draait nog als losse app; na de overstap opent hij hier, met één login.</p>{% endif %}
+  </section>
+  </div>
+</div>
 
-  <section class="kaart" id="nieuws">
+  <section class="kaart nieuwsbreed" id="nieuws">
     <h2>Nieuws <a class="klein" href="/vera">alle nieuws</a></h2>
     <div class="nieuwsgrid">
     {% for cat, naam, delen in categorieen %}
@@ -127,14 +138,4 @@
     {% endfor %}
     </div>
   </section>
-
-  <section class="kaart">
-    <h2>Werkruimtes</h2>
-    {% for w in werkruimtes %}
-      <a class="tegel {{ w.sleutel }}" href="{{ w.url }}"><b>{{ w.naam }}</b><span>{{ w.app }}</span></a>
-    {% endfor %}
-    {% if 'https://' in werkruimtes|map(attribute='url')|join(' ') %}<p class="noot">Een werkruimte met een eigen adres draait nog als losse app; na de overstap opent hij hier, met één login.</p>{% endif %}
-  </section>
-
-</div>
 {% endblock %}
