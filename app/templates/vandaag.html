@@ -47,12 +47,21 @@
       </div>
     {% endif %}
   </section>
-  <section class="kaart">
-    <h2>Werkruimtes</h2>
-    {% for w in werkruimtes %}
-      <a class="tegel {{ w.sleutel }}" href="{{ w.url }}"><b>{{ w.naam }}</b><span>{{ w.app }}</span></a>
-    {% endfor %}
-    {% if 'https://' in werkruimtes|map(attribute='url')|join(' ') %}<p class="noot">Een werkruimte met een eigen adres draait nog als losse app; na de overstap opent hij hier, met één login.</p>{% endif %}
+  <section class="kaart" id="socials">
+    <h2>Socials <a class="klein" href="/jesse">alle kanalen</a></h2>
+    {% if social.kanalen is none %}<p class="noot">De Doellijn draait hier nog niet als werkruimte; daar komen de cijfers vandaan.</p>
+    {% else %}
+      {% for k in social.kanalen if k.heeft_cijfers %}
+        <a class="minisocial {{ k.id }}" href="/zerohero/bereik/{{ k.id }}?periode=7"><span class="snaamk">{{ k.naam }}</span>
+          <span class="sgetal">{{ '–' if k.volgers is none else '{:,}'.format(k.volgers) | replace(',', '.') }}</span>
+          {% if k.volgers_delta %}<span class="sdelta {{ 'op' if k.volgers_delta > 0 else 'neer' }}">{{ '+' if k.volgers_delta > 0 }}{{ k.volgers_delta }}</span>{% endif %}</a>
+      {% else %}<p class="noot">Nog geen cijfers van je kanalen.</p>{% endfor %}
+      {% if social.beste %}<p class="noot sbestekort">Beste post deze week: <span class="schip {{ social.beste.kanaal }}">{{ social.beste.naam }}</span>
+        {% if social.beste.link %}<a href="{{ social.beste.link }}" target="_blank" rel="noopener">{{ (social.beste.tekst or 'LinkedIn-post') | truncate(70, false, '…', 0) }}</a>{% else %}{{ (social.beste.tekst or 'LinkedIn-post') | truncate(70, false, '…', 0) }}{% endif %}
+        · {{ social.beste.interacties }} interacties</p>{% endif %}
+      {% if social.pijplijn %}<p class="noot"><a href="/jesse">{{ social.pijplijn | length }} concept{{ 'en' if social.pijplijn | length != 1 }}</a> klaar om te posten.</p>{% endif %}
+    {% endif %}
+    <p class="noot"><a href="/jesse#jesse">Vraag Jesse</a> om een post of wat er werkte.</p>
   </section>
   </div>
   <div class="vkolom">

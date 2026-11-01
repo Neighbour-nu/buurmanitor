@@ -119,3 +119,34 @@ def test_vera_leest_keepersnieuws(klant):
     assert all(f"Keeper houdt stand {n}<" in alles for n in range(1, 6))
     r = klant.get(f"/vera/lees/keepers/{iid}", headers=KOP, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "https://voorbeeld.nl/1"
+
+
+def test_jesse_leest_de_doellijn(klant):
+    """Jesse leest cijfers, posts en concepten uit de echte tabellen van de Doellijn (alleen lezen)."""
+    from app.jesse import socials  # pylint: disable=import-outside-toplevel
+    from app.zerohero import main as zh  # pylint: disable=import-outside-toplevel
+    zh.q("""INSERT INTO metingen (kanaal, sleutel, datum, waarde, bron) VALUES
+            ('instagram', 'volgers', current_date - 10, 800, 'api'), ('instagram', 'volgers', current_date, 860, 'api'),
+            ('instagram', 'weergaven', current_date - 1, 2500, 'api'), ('instagram', 'weergaven', current_date - 9, 2000, 'api')
+            ON CONFLICT DO NOTHING RETURNING 1""")
+    zh.q("""INSERT INTO meta_posts (id, kanaal, tekst, gepubliceerd, link, likes, reacties, gedeeld, weergaven, interacties)
+            VALUES ('ig1', 'instagram', 'Bijlow en de kunst van het wachten', now() - interval '1 day', 'https://instagram.com/p/ig1', 180, 20, 10, 3100, NULL)
+            ON CONFLICT (id) DO NOTHING RETURNING 1""")
+    zh.q("""INSERT INTO lp_posts (url, publicatie, interacties, impressies) VALUES ('https://linkedin.com/feed/1', current_date - 2, 95, 5400)
+            ON CONFLICT (url) DO NOTHING RETURNING 1""")
+    zh.q("""INSERT INTO yt_videos (id, titel, gepubliceerd, weergaven, likes, reacties) VALUES ('abc', 'Keepersjournaal 12', now() - interval '3 days', 400, 30, 5)
+            ON CONFLICT (id) DO NOTHING RETURNING 1""")
+    zh.q("""INSERT INTO concepten (item_ids, status, blog_titel, linkedin, klaar_op) VALUES ('{1}', 'klaar', 'De stilte van Verbruggen', 'Wat doet een keeper', now())
+            RETURNING id""")
+    k = {x["id"]: x for x in socials.kanalen(7)}
+    assert k["instagram"]["volgers"] == 860 and k["instagram"]["volgers_delta"] == 60 and k["instagram"]["hoofd"] == 2500
+    posts = socials.posts(14)
+    soorten = {p["kanaal"]: p for p in posts}
+    assert soorten["instagram"]["interacties"] == 210 and soorten["linkedin"]["weergaven"] == 5400
+    assert soorten["youtube"]["link"] == "https://www.youtube.com/watch?v=abc"
+    assert socials.beste(posts)["kanaal"] == "instagram"
+    assert any(p["titel"] == "De stilte van Verbruggen" for p in socials.pijplijn())
+    pagina = klant.get("/jesse", headers=KOP).text
+    assert "Bijlow en de kunst van het wachten" in pagina and "De stilte van Verbruggen" in pagina and "Keepersjournaal 12" in pagina
+    blok = klant.get("/", headers=KOP).text.split('id="socials"')[1].split("</section>")[0]
+    assert "Instagram" in blok and "860" in blok and "+60" in blok

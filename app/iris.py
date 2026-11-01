@@ -7,14 +7,13 @@ from .kern import claude, config, gezondheid, meldingen
 from .kern.web import datum_lang
 
 PLANNING = """Stand van de bouw:
-- Klaar: de kern van Buurmanitor, de werkruimtes Politiek (Promonitor) en ZEROHERO (de Doellijn), Clara (agenda),
-  het eerste deel van Bram (mail uit Gmail en Outlook sorteren), Noor (het takenbord en de planning van taken) en
-  Vera (nieuws: keepersnieuws uit de Doellijn, lokaal politiek nieuws uit Promonitor, landelijk politiek nieuws en
-  overig nieuws, onder Nieuws).
-- Volgende fases: Bram verder (Teams, WhatsApp en Signal), Jesse (socials).
-Teams, WhatsApp, Signal en socials kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt.
-Voor de agenda is Clara er, voor mail Bram, voor taken en het inplannen ervan Noor (onder Taken), voor politiek en
-ZEROHERO de werkruimtes."""
+- Klaar: de kern van Buurmanitor, de werkruimtes Politiek (Promonitor) en ZEROHERO (de Doellijn), en het hele team:
+  Clara (agenda), Bram (mail uit Gmail en Outlook), Noor (het takenbord en de planning van taken), Vera (nieuws:
+  keepers, lokale en landelijke politiek, overig) en Jesse (socials: cijfers per kanaal, posts, concepten, voorstellen).
+- Volgende stap: Bram verder (Teams, WhatsApp en Signal).
+Teams, WhatsApp en Signal kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt.
+Voor de agenda is Clara er, voor mail Bram, voor taken Noor (onder Taken), voor nieuws Vera (onder Nieuws), voor
+socials Jesse (onder Socials), voor politiek en ZEROHERO de werkruimtes."""
 
 
 def context(c):
@@ -31,6 +30,7 @@ def context(c):
         delen.append(post)
     delen.append(_taken(c, nu))
     delen.append(_nieuws(c, nu))
+    delen.append(_socials())
     g, s = gezondheid.geheugen(), gezondheid.schijf()
     if g and s:
         delen.append(f"Server: geheugen {g['procent']} procent in gebruik, schijf {s['procent']} procent vol.")
@@ -96,6 +96,22 @@ def _nieuws(c, nu):
         return "Nieuws (van Vera): nog geen belangrijk nieuws vandaag."
     return "Nieuws (van Vera), de belangrijkste koppen:\n" + "\n".join(
         f"- [{nieuws.SOORT_NAMEN[b['soort']]}] {b['titel']} ({b['bron']}){': ' + b['waarom'] if b['waarom'] else ''}" for b in koppen)
+
+
+def _socials():
+    """Wat Jesse ziet, kort: volgers per kanaal met de groei van deze week, de beste post en wat klaarstaat."""
+    from .jesse import socials  # pylint: disable=import-outside-toplevel
+    o = socials.overzicht(7)
+    if o["kanalen"] is None:
+        return "Socials (van Jesse): de Doellijn draait hier niet, dus geen cijfers."
+    regels = [f"- {k['naam']}: {k['volgers']} volgers" + (f" ({'+' if (k['volgers_delta'] or 0) >= 0 else ''}{k['volgers_delta']} deze week)" if k["volgers_delta"] is not None else "")
+              for k in o["kanalen"] if k["heeft_cijfers"] and k["volgers"] is not None]
+    uit = ["Socials (van Jesse):"] + (regels or ["- nog geen cijfers"])
+    if o["beste"]:
+        uit.append(f"Beste post deze week: {o['beste']['naam']}, {(o['beste']['tekst'] or 'LinkedIn-post')[:100]} ({o['beste']['interacties']} interacties).")
+    if o["pijplijn"]:
+        uit.append(f"{len(o['pijplijn'])} concepten in de Doellijn staan klaar om te posten.")
+    return "\n".join(uit)
 
 
 def antwoord(c, gesprek_id):

@@ -550,3 +550,47 @@ tr.uit td { opacity: .55; }
 .nieuwsbreed { margin-top: 16px; }
 @media (max-width: 1000px) { .vandaag-boven { grid-template-columns: repeat(2, minmax(0, 1fr)); } .vandaag-boven > .vkolom:last-child { grid-column: 1 / -1; } }
 @media (max-width: 700px) { .vandaag-boven { grid-template-columns: 1fr; } }
+
+/* Jesse: socials */
+:root { --linkedin: #0A66C2; --instagram: #C13584; --facebook: #1877F2; --threads: #1A1A1A; --youtube: #D32F2F; }
+.sectiekop { margin: 0; }
+.skanalen { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.skanaal { display: flex; flex-direction: column; gap: 2px; background: var(--wit); border: 1px solid var(--lijn); border-top: 4px solid var(--blauw);
+           border-radius: 6px; padding: 10px 14px; color: var(--inkt); text-decoration: none; }
+.skanaal:hover { border-color: var(--blauw); }
+.skanaal.linkedin, .skanaal.linkedin_pagina { border-top-color: var(--linkedin); } .skanaal.instagram { border-top-color: var(--instagram); }
+.skanaal.facebook { border-top-color: var(--facebook); } .skanaal.threads { border-top-color: var(--threads); } .skanaal.youtube { border-top-color: var(--youtube); }
+.skanaal.leeg { opacity: .6; }
+.snaam { font-family: var(--kop); font-weight: 600; text-transform: uppercase; font-size: 14px; letter-spacing: .03em; color: var(--blauwdonker); }
+.sgroot { font-family: var(--kop); font-weight: 600; font-size: 28px; line-height: 1.1; }
+.sklein { font-size: 14px; margin-top: 4px; }
+.slabel { font-size: 12px; color: var(--zacht); }
+.sdelta { font-family: Barlow, sans-serif; font-size: 13px; font-weight: 600; border-radius: 3px; padding: 0 4px; vertical-align: middle; }
+.sdelta.op { color: #2E7D32; background: #E8F5E9; } .sdelta.neer { color: #B71C1C; background: #FDE4E4; }
+.sraster { display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .sraster { grid-template-columns: 1fr; } }
+.spost { display: flex; flex-direction: column; gap: 2px; padding: 8px 0 8px 10px; border-bottom: 1px solid var(--lijn); border-left: 3px solid var(--lijn); margin-bottom: 2px; }
+.spost.linkedin, .spost.linkedin_pagina { border-left-color: var(--linkedin); } .spost.instagram { border-left-color: var(--instagram); }
+.spost.facebook { border-left-color: var(--facebook); } .spost.threads { border-left-color: var(--threads); } .spost.youtube { border-left-color: var(--youtube); }
+.stekst { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.smeta { font-size: 13px; color: var(--zacht); }
+.schip { display: inline-block; font-family: var(--kop); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .04em;
+         color: var(--wit); background: var(--blauw); border-radius: 3px; padding: 1px 6px; align-self: flex-start; }
+.schip.linkedin, .schip.linkedin_pagina { background: var(--linkedin); } .schip.instagram { background: var(--instagram); }
+.schip.facebook { background: var(--facebook); } .schip.threads { background: var(--threads); } .schip.youtube { background: var(--youtube); }
+.sbeste { background: var(--ijs); border-radius: 6px; padding: 8px 10px 2px; margin-bottom: 10px; }
+.sbeste .spost { border-bottom: 0; }
+.sconcept { padding: 6px 0; border-bottom: 1px solid var(--lijn); display: flex; flex-direction: column; }
+.sconcept:last-of-type { border-bottom: 0; }
+.spostvoorstel textarea { width: 100%; font: inherit; font-size: 14px; }
+.spostvoorstel .breed { flex: 1 1 100%; }
+#jesse { scroll-margin-top: 80px; margin-top: 16px; }
+
+/* Vandaag: socials */
+.minisocial { display: flex; align-items: baseline; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--lijn); color: var(--inkt); text-decoration: none; }
+.minisocial:hover .snaamk { text-decoration: underline; }
+.minisocial .snaamk { flex: 1; min-width: 0; font-weight: 500; }
+.minisocial .sgetal { font-family: var(--kop); font-weight: 600; font-size: 17px; }
+.minisocial::before { content: ""; flex: 0 0 8px; height: 8px; border-radius: 50%; background: var(--blauw); align-self: center; }
+.minisocial.linkedin::before, .minisocial.linkedin_pagina::before { background: var(--linkedin); } .minisocial.instagram::before { background: var(--instagram); }
+.minisocial.facebook::before { background: var(--facebook); } .minisocial.threads::before { background: var(--threads); } .minisocial.youtube::before { background: var(--youtube); }

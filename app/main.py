@@ -16,6 +16,7 @@ from . import iris, personas
 from .bram import sync as bram_sync, web as bram_web  # noqa: F401  (sync registreert de planner-taak 'post')
 from .clara import sync as clara_sync, web as clara_web  # noqa: F401  (sync registreert de planner-taak)
 from .taken import noor, web as taken_web
+from .jesse import socials as jesse_socials, web as jesse_web
 from .vera import nieuws as vera_nieuws, web as vera_web  # noqa: F401  (nieuws registreert de planner-taak)
 from .kern import claude, config, db, gezondheid, meldingen, planner, prefix, web
 from .kern.db import q, q1, uitvoeren
@@ -63,6 +64,7 @@ app.include_router(clara_web.router)
 app.include_router(bram_web.router)
 app.include_router(taken_web.router)
 app.include_router(vera_web.router)
+app.include_router(jesse_web.router)
 if politiek:
     app.mount("/politiek", prefix.Voorvoegsel(politiek.app, "/politiek"))
 if zerohero:
@@ -125,12 +127,13 @@ def vandaag(request: Request):
         post = bram_vandaag(c)
         taken = noor.vandaag_overzicht(c, nu)
         stromen, _ = vera_nieuws.verzamel(c, 2)
+        social = jesse_socials.overzicht(7)
         koppen = vera_nieuws.koppen_per_soort(stromen, nu, per={"keepers": 4, "politiek": 3, "landelijk": 2, "overig": 4})
     urgent = [m for m in open_ if m["niveau"] == "urgent"]
     return templates.TemplateResponse("vandaag.html", ctx(
         request, "vandaag", nu=nu, meldingen=open_, urgent=urgent, werkruimtes=config.werkruimtes(), agenda=agenda,
         lijst_meldingen=lijst_meldingen, meldingmap=meldingmap, meldingmappen=meldingen.MAPPEN, aantallen=aantallen,
-        post=post, taken=taken, koppen=koppen, categorieen=vera_nieuws.CATEGORIEEN, deelnamen=vera_nieuws.DEEL_NAMEN,
+        post=post, taken=taken, koppen=koppen, social=social, categorieen=vera_nieuws.CATEGORIEEN, deelnamen=vera_nieuws.DEEL_NAMEN,
         taakmelding=request.query_params.get("melding", "")[:300]))
 
 

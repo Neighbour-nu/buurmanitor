@@ -387,5 +387,14 @@ MIGRATIES = [
     "ALTER TABLE vera_bronnen DROP CONSTRAINT IF EXISTS vera_bronnen_stroom_check",
     "ALTER TABLE vera_bronnen ADD CONSTRAINT vera_bronnen_stroom_check CHECK (stroom IN ('overig', 'landelijk'))",
     _vera_bronnen("landelijk"),
+    # ---------- Jesse: socials ----------
+    # Postvoorstellen uit het gesprek met Jesse: tekst om te kopiëren. Jesse post nooit zelf.
+    """CREATE TABLE IF NOT EXISTS jesse_voorstellen (
+        id serial PRIMARY KEY,
+        gesprek_id int REFERENCES gesprekken(id) ON DELETE SET NULL,
+        kanaal text NOT NULL,
+        voor text NOT NULL DEFAULT '',
+        tekst text NOT NULL,
+        status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'bewaard', 'weg')),
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
 ]
-
