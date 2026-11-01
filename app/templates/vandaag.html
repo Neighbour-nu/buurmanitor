@@ -30,6 +30,54 @@
   </section>
   </div>
   <div class="vkolom">
+  <section class="kaart">
+    <h2>Post <a class="klein" href="/bram">postkamer</a></h2>
+    {% if post is none %}<p class="noot">Nog geen mailaccounts gekoppeld. <a href="/bram/instellingen">Koppel ze bij Bram</a>.</p>
+    {% else %}
+      <p class="noot postteller"><a href="/bram?map=actie">{% if post.actie %}<b>{{ post.actie }} actie nodig</b>{% else %}niets voor actie{% endif %}</a>
+        · <a href="/bram?map=lezen">{{ post.lezen }} lezen</a> · <a href="/bram?map=weg">{{ post.weg }} kan weg</a></p>
+      <div class="minipost">
+      {% for b in post.lijst %}
+        <a class="minibericht {{ 'ongelezen' if not b.gelezen }} {{ b.groep }}" href="/bram/bericht/{{ b.id }}" title="{{ b.regel or b.onderwerp }}">
+          <span class="van">{{ b.van_naam or b.van_adres }}</span>
+          <span class="onderwerp">{% if b.groep == 'actie' %}<span class="stip" aria-label="actie nodig"></span>{% endif %}{{ b.onderwerp or '(geen onderwerp)' }}</span>
+          <span class="wanneer">{{ datum_kort(b.ontvangen) }}</span>
+        </a>
+      {% else %}<p class="noot">Geen mail die op je wacht.</p>{% endfor %}
+      </div>
+    {% endif %}
+  </section>
+  <section class="kaart">
+    <h2>Werkruimtes</h2>
+    {% for w in werkruimtes %}
+      <a class="tegel {{ w.sleutel }}" href="{{ w.url }}"><b>{{ w.naam }}</b><span>{{ w.app }}</span></a>
+    {% endfor %}
+    {% if 'https://' in werkruimtes|map(attribute='url')|join(' ') %}<p class="noot">Een werkruimte met een eigen adres draait nog als losse app; na de overstap opent hij hier, met één login.</p>{% endif %}
+  </section>
+  </div>
+  <div class="vkolom">
+  <section class="kaart" id="taken">
+    <h2>Taken <a class="klein" href="/taken">takenbord</a></h2>
+    {% if taakmelding %}<p class="item">{{ taakmelding }}</p>{% endif %}
+    {% if taken.open %}
+      <p class="noot taakteller">{% for s, naam in [('actief', 'actief'), ('wachtend', 'wachtend'), ('gepland', 'gepland'), ('nieuw', 'nieuw'), ('triage', 'triage')] if taken.tel[s] %}{{ ' · ' if not loop.first }}{% if s == 'actief' %}<b>{{ taken.tel[s] }} {{ naam }}</b>{% else %}{{ taken.tel[s] }} {{ naam }}{% endif %}{% endfor %}</p>
+      <div class="minitaken">
+      {% for t in taken.lijst %}
+        <div class="minitaak prio-{{ t.prio }}">
+          <form method="post" action="/taken/{{ t.id }}/status"><input type="hidden" name="status" value="afgerond"><input type="hidden" name="terug" value="/">
+            <button class="vink" type="submit" title="Afgerond" aria-label="{{ t.titel }} afronden">✓</button></form>
+          <a href="/taken?bewerk={{ t.id }}#formulier" title="{{ t.titel }}">{{ t.titel }}</a>
+          <span class="reden {{ 'te-laat' if t.reden == 'te laat' }}">{{ t.reden }}</span>
+        </div>
+      {% else %}<p class="noot" style="margin: 6px 8px">Niets wat vandaag om aandacht vraagt.</p>{% endfor %}
+      </div>
+      {% if taken.wachtend %}<p class="noot">Je wacht op {{ taken.wachtend | join(', ') }}.</p>{% endif %}
+    {% else %}<p class="noot">Geen open taken.</p>{% endif %}
+    <form class="snelle-taak" method="post" action="/taken/nieuw"><input type="hidden" name="terug" value="/">
+      <input type="text" name="titel" maxlength="160" required placeholder="Snel een taak toevoegen" aria-label="Nieuwe taak">
+      <button class="knop klein" type="submit">＋</button></form>
+    <p class="noot"><a href="/taken?praat=1#noor">Vraag Noor</a> wat eerst moet, of om een taak in te plannen.</p>
+  </section>
   <section class="kaart" id="meldingen">
     {% set mapnaam = (meldingmappen | selectattr(0, 'equalto', meldingmap) | first)[1] %}
     <h2><span>Meldingen{% if meldingmap != 'open' %} <span class="noot">· {{ mapnaam }}</span>{% endif %}</span>
@@ -65,54 +113,6 @@
       <p class="knoppenrij"><button id="meldingen-aan" class="knop klein" type="button" hidden>Meldingen op dit apparaat aanzetten</button>
         <button id="meldingen-test" class="knop klein" type="button" hidden>Testmelding sturen</button></p>
     </div>
-  </section>
-  <section class="kaart">
-    <h2>Post <a class="klein" href="/bram">postkamer</a></h2>
-    {% if post is none %}<p class="noot">Nog geen mailaccounts gekoppeld. <a href="/bram/instellingen">Koppel ze bij Bram</a>.</p>
-    {% else %}
-      <p class="noot postteller"><a href="/bram?map=actie">{% if post.actie %}<b>{{ post.actie }} actie nodig</b>{% else %}niets voor actie{% endif %}</a>
-        · <a href="/bram?map=lezen">{{ post.lezen }} lezen</a> · <a href="/bram?map=weg">{{ post.weg }} kan weg</a></p>
-      <div class="minipost">
-      {% for b in post.lijst %}
-        <a class="minibericht {{ 'ongelezen' if not b.gelezen }} {{ b.groep }}" href="/bram/bericht/{{ b.id }}" title="{{ b.regel or b.onderwerp }}">
-          <span class="van">{{ b.van_naam or b.van_adres }}</span>
-          <span class="onderwerp">{% if b.groep == 'actie' %}<span class="stip" aria-label="actie nodig"></span>{% endif %}{{ b.onderwerp or '(geen onderwerp)' }}</span>
-          <span class="wanneer">{{ datum_kort(b.ontvangen) }}</span>
-        </a>
-      {% else %}<p class="noot">Geen mail die op je wacht.</p>{% endfor %}
-      </div>
-    {% endif %}
-  </section>
-  </div>
-  <div class="vkolom">
-  <section class="kaart" id="taken">
-    <h2>Taken <a class="klein" href="/taken">takenbord</a></h2>
-    {% if taakmelding %}<p class="item">{{ taakmelding }}</p>{% endif %}
-    {% if taken.open %}
-      <p class="noot taakteller">{% for s, naam in [('actief', 'actief'), ('wachtend', 'wachtend'), ('gepland', 'gepland'), ('nieuw', 'nieuw'), ('triage', 'triage')] if taken.tel[s] %}{{ ' · ' if not loop.first }}{% if s == 'actief' %}<b>{{ taken.tel[s] }} {{ naam }}</b>{% else %}{{ taken.tel[s] }} {{ naam }}{% endif %}{% endfor %}</p>
-      <div class="minitaken">
-      {% for t in taken.lijst %}
-        <div class="minitaak prio-{{ t.prio }}">
-          <form method="post" action="/taken/{{ t.id }}/status"><input type="hidden" name="status" value="afgerond"><input type="hidden" name="terug" value="/">
-            <button class="vink" type="submit" title="Afgerond" aria-label="{{ t.titel }} afronden">✓</button></form>
-          <a href="/taken?bewerk={{ t.id }}#formulier" title="{{ t.titel }}">{{ t.titel }}</a>
-          <span class="reden {{ 'te-laat' if t.reden == 'te laat' }}">{{ t.reden }}</span>
-        </div>
-      {% else %}<p class="noot" style="margin: 6px 8px">Niets wat vandaag om aandacht vraagt.</p>{% endfor %}
-      </div>
-      {% if taken.wachtend %}<p class="noot">Je wacht op {{ taken.wachtend | join(', ') }}.</p>{% endif %}
-    {% else %}<p class="noot">Geen open taken.</p>{% endif %}
-    <form class="snelle-taak" method="post" action="/taken/nieuw"><input type="hidden" name="terug" value="/">
-      <input type="text" name="titel" maxlength="160" required placeholder="Snel een taak toevoegen" aria-label="Nieuwe taak">
-      <button class="knop klein" type="submit">＋</button></form>
-    <p class="noot"><a href="/taken?praat=1#noor">Vraag Noor</a> wat eerst moet, of om een taak in te plannen.</p>
-  </section>
-  <section class="kaart">
-    <h2>Werkruimtes</h2>
-    {% for w in werkruimtes %}
-      <a class="tegel {{ w.sleutel }}" href="{{ w.url }}"><b>{{ w.naam }}</b><span>{{ w.app }}</span></a>
-    {% endfor %}
-    {% if 'https://' in werkruimtes|map(attribute='url')|join(' ') %}<p class="noot">Een werkruimte met een eigen adres draait nog als losse app; na de overstap opent hij hier, met één login.</p>{% endif %}
   </section>
   </div>
 </div>
