@@ -28,32 +28,39 @@ def _terug(pad, **melding):
 
 @router.get("/vera", response_class=HTMLResponse)
 def overzicht(request: Request, soort: str = "alles", dagen: int = 1, alles: int = 0):
-    soort = soort if soort in nieuws.SOORT_NAMEN or soort == "alles" else "alles"
+    """Nieuws in drie categorieën (keepers, politiek, overig); politiek in twee delen: lokaal voorop, dan landelijk."""
+    categorieen = {cat: (naam, delen) for cat, naam, delen in nieuws.CATEGORIEEN}
+    soort = soort if soort in categorieen or soort == "alles" else "alles"
     dagen = dagen if dagen in dict(PERIODES) else 1
     nu = dt.datetime.now(config.TZ)
     with db.pool.connection() as c:
         stromen, fouten = nieuws.verzamel(c, max(dagen, 2))
-        bronnen = c.execute("SELECT count(*) FILTER (WHERE actief) AS aan, count(*) FILTER (WHERE actief AND fout <> '') AS fout FROM vera_bronnen").fetchone()
     grens = nu - dt.timedelta(days=dagen)
     for s in stromen:
         if stromen[s] is not None:
             stromen[s] = [b for b in stromen[s] if b["tijd"] and b["tijd"] >= grens]
     boven = nieuws.uitgelicht(stromen, nu) if soort == "alles" else []
     gekozen = {(b["soort"], b["id"]) for b in boven}
-    aantal = 40 if alles or soort != "alles" else 10
     kolommen = []
-    for s, naam in nieuws.SOORTEN:
-        if soort not in ("alles", s):
+    for cat, (naam, delen) in categorieen.items():
+        if soort not in ("alles", cat):
             continue
-        rest = [b for b in stromen[s] if (s, b["id"]) not in gekozen] if stromen[s] is not None else None
-        # Ontdubbelen, ook tegen het uitgelichte bericht bovenaan; met 'alles laten zien' juist alles.
-        lijst = nieuws.selectie(rest, drempel=0 if alles else 40, aantal=aantal, al=[b for b in boven if b["soort"] == s], dubbels=bool(alles))
-        kolommen.append({"soort": s, "naam": naam, "lijst": lijst, "totaal": len(stromen[s] or []),
-                         "meer": len(rest) - len(lijst) if lijst is not None else 0, "fout": fouten.get(s), "link": WERKRUIMTE_LINK.get(s),
-                         "ongewogen": any(b["score"] is None for b in lijst or [])})
+        getoond, deellijst = [b for b in boven if b["soort"] in delen], []
+        for i, s in enumerate(delen):
+            # Lokaal krijgt de meeste ruimte; landelijk een kortere lijst eronder (of ernaast, op het tabblad Politiek).
+            aantal = 40 if alles or soort != "alles" else (10 if len(delen) == 1 else (7 if i == 0 else 4))
+            rest = [b for b in stromen[s] if (s, b["id"]) not in gekozen] if stromen[s] is not None else None
+            # Ontdubbelen, ook tegen wat al bovenaan of in het lokale deel staat; met 'alles laten zien' juist alles.
+            lijst = nieuws.selectie(rest, drempel=0 if alles else 40, aantal=aantal, al=getoond, dubbels=bool(alles))
+            getoond += lijst or []
+            deellijst.append({"soort": s, "naam": nieuws.DEEL_NAMEN.get(s, "") if len(delen) > 1 else "", "lijst": lijst,
+                              "totaal": len(stromen[s] or []), "meer": len(rest) - len(lijst) if lijst is not None else 0,
+                              "fout": fouten.get(s), "link": WERKRUIMTE_LINK.get(s), "ongewogen": any(b["score"] is None for b in lijst or [])})
+        kolommen.append({"soort": cat, "naam": naam, "delen": deellijst, "totaal": sum(d["totaal"] for d in deellijst)})
     return templates.TemplateResponse("vera.html", ctx(
         request, "vera", p=personas.get("vera"), kolommen=kolommen, uitgelicht=boven, soort=soort, dagen=dagen, alles=alles,
-        periodes=PERIODES, soortnamen=nieuws.SOORT_NAMEN, tabs=TABS, bronnen=bronnen, nu=nu, sleutel_ok=bool(config.ANTHROPIC_API_KEY)))
+        periodes=PERIODES, soortnamen=nieuws.SOORT_NAMEN, tabs=TABS, nu=nu, sleutel_ok=bool(config.ANTHROPIC_API_KEY),
+        eigen=nieuws.STROMEN))
 
 
 @router.get("/vera/lees/{soort}/{bid:int}")
@@ -98,10 +105,10 @@ def bronnen_scherm(request: Request, melding: str = "", fout: str = "", g: int |
     with db.pool.connection() as c:
         paneel = gesprek.gesprek_paneel(c, g)
         lijst = c.execute("""SELECT b.*, (SELECT count(*) FROM vera_berichten m WHERE m.bron_id = b.id AND m.binnen > now() - interval '7 days') AS week
-                             FROM vera_bronnen b ORDER BY b.rubriek, b.naam""").fetchall()
+                             FROM vera_bronnen b ORDER BY b.stroom = 'landelijk' DESC, b.rubriek, b.naam""").fetchall()
         besteed = nieuws.vandaag_besteed(c)
     return templates.TemplateResponse("vera_bronnen.html", ctx(
-        request, "vera", bronnen=lijst, melding=melding, fout=fout, paneel=paneel, besteed=besteed, plafond=nieuws.DAGPLAFOND_EUR,
+        request, "vera", stromen=nieuws.STROMEN, bronnen=lijst, melding=melding, fout=fout, paneel=paneel, besteed=besteed, plafond=nieuws.DAGPLAFOND_EUR,
         sleutel_ok=bool(config.ANTHROPIC_API_KEY)))
 
 
@@ -111,13 +118,14 @@ async def bron_toevoegen(request: Request):
     f = await request.form()
     naam, url = str(f.get("naam") or "").strip()[:100], str(f.get("url") or "").strip()[:500]
     soort = "google" if f.get("soort") == "google" else "feed"
+    stroom = "landelijk" if f.get("stroom") == "landelijk" else "overig"
     rubriek = str(f.get("rubriek") or "Algemeen").strip()[:40] or "Algemeen"
     if not naam or not url:
         return _terug("/vera/bronnen", fout="Geef de bron een naam en een adres of zoekopdracht.")
     if soort == "feed" and urlsplit(url).scheme not in ("http", "https"):
         return _terug("/vera/bronnen", fout="Een feed heeft een adres dat begint met https://.")
     with db.pool.connection() as c:
-        c.execute("INSERT INTO vera_bronnen (naam, url, soort, rubriek) VALUES (%s, %s, %s, %s)", (naam, url, soort, rubriek))
+        c.execute("INSERT INTO vera_bronnen (naam, url, soort, rubriek, stroom) VALUES (%s, %s, %s, %s, %s)", (naam, url, soort, rubriek, stroom))
     return _terug("/vera/bronnen", melding=f"Bron '{naam}' toegevoegd. Vera haalt hem binnen een kwartier op.")
 
 

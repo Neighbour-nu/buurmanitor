@@ -17,14 +17,17 @@ from . import nieuws
 
 TAG = re.compile(r"<(bron|wijzig|bronactie)>\s*(\{.*?\})\s*</\1>", re.S)
 ACTIES = ("aan", "uit", "weg")
-UITLEG = """# Bronnen voor overig nieuws
-Martijn vraagt je bronnen toe te voegen, aan te passen of uit te zetten voor zijn overige nieuws. Keepersnieuws (de
-Doellijn) en politiek nieuws (Promonitor) hebben hun eigen bronnen; daar ga jij niet over. Zeg dat als hij erom vraagt.
+UITLEG = """# Jouw bronnen
+Martijn vraagt je bronnen toe te voegen, aan te passen of uit te zetten. Jij leest twee stromen: "landelijk" (landelijk
+politiek nieuws: Den Haag, kabinet, Kamer, en wat dat voor gemeenten betekent) en "overig" (al het andere nieuws).
+Keepersnieuws (de Doellijn) en lokaal politiek nieuws over Helmond en de regio (Promonitor) hebben hun eigen bronnen;
+daar ga jij niet over. Zeg dat als hij erom vraagt.
 
 Je kunt voorstellen klaarzetten; Martijn ziet ze als knop en beslist zelf. Per voorstel precies één regel aan het eind.
 
 Een nieuwe bron:
-<bron>{"naam": "Computable", "soort": "site", "url": "https://www.computable.nl", "rubriek": "FB/IM"}</bron>
+<bron>{"naam": "Computable", "soort": "site", "url": "https://www.computable.nl", "rubriek": "FB/IM", "stroom": "overig"}</bron>
+"stroom" is "landelijk" voor landelijke politiek en "overig" voor de rest.
 "soort" is "feed" (het adres van een RSS- of Atom-feed), "site" (het adres van een website; het systeem zoekt dan zelf
 de feed) of "google" (een zoekopdracht voor Google News, met OR en aanhalingstekens, bijvoorbeeld
 "archiefwet" OR "Woo" OR informatiehuishouding). Weet je het feedadres niet zeker, kies dan "site" met de homepage,
@@ -33,7 +36,7 @@ voor een onderwerp; een feed is beter voor één vaste bron.
 "rubriek" is een kort label, zoals Algemeen, Tech, FB/IM, Nijmegen of Sport. Gebruik bij voorkeur een bestaande rubriek.
 
 Een bestaande bron aanpassen (alleen wat verandert), bijvoorbeeld een betere zoekopdracht:
-<wijzig>{"id": 3, "url": "...", "naam": "...", "rubriek": "..."}</wijzig>
+<wijzig>{"id": 3, "url": "...", "naam": "...", "rubriek": "...", "stroom": "landelijk"}</wijzig>
 Een bron aan- of uitzetten of verwijderen:
 <bronactie>{"id": 3, "actie": "uit"}</bronactie>
 "actie" is aan, uit of weg.
@@ -56,13 +59,16 @@ def voorstellen_uit(tekst, bekend=()):
         naam = str(v.get("naam") or "").strip()[:100]
         url = str(v.get("url") or "").strip()[:500]
         rubriek = str(v.get("rubriek") or "").strip()[:40]
+        stroom = str(v.get("stroom") or "")
+        stroom = stroom if stroom in ("overig", "landelijk") else ""
         if m.group(1) == "bron":
             soort = str(v.get("soort") or "")
             if soort not in ("feed", "site", "google") or not naam or not url:
                 continue
             if soort in ("feed", "site") and urllib.parse.urlsplit(url).scheme not in ("http", "https"):
                 continue
-            uit.append({"soort": "nieuw", "bron_id": None, "gegevens": {"naam": naam, "soort": soort, "url": url, "rubriek": rubriek or "Algemeen"}})
+            uit.append({"soort": "nieuw", "bron_id": None, "gegevens": {"naam": naam, "soort": soort, "url": url, "rubriek": rubriek or "Algemeen",
+                                                                      "stroom": stroom or "overig"}})
             continue
         try:
             bid = int(v.get("id"))
@@ -75,7 +81,7 @@ def voorstellen_uit(tekst, bekend=()):
             if actie in ACTIES:
                 uit.append({"soort": actie, "bron_id": bid, "gegevens": {}})
             continue
-        g = {k: w for k, w in (("naam", naam), ("url", url), ("rubriek", rubriek)) if w}
+        g = {k: w for k, w in (("naam", naam), ("url", url), ("rubriek", rubriek), ("stroom", stroom)) if w}
         if g:
             uit.append({"soort": "wijzig", "bron_id": bid, "gegevens": g})
     return TAG.sub("", tekst).strip(), uit
@@ -145,13 +151,13 @@ def context(c):
     bronnen = c.execute("""SELECT b.*, (SELECT count(*) FROM vera_berichten m WHERE m.bron_id = b.id AND m.binnen > now() - interval '7 days') AS week,
                                   (SELECT round(avg(score)) FROM vera_berichten m WHERE m.bron_id = b.id AND m.score IS NOT NULL) AS gemiddeld
                            FROM vera_bronnen b ORDER BY b.rubriek, b.naam""").fetchall()
-    regels = [f"- [id {b['id']}] {b['naam']} ({'Google News: ' if b['soort'] == 'google' else 'feed: '}{b['url']}; rubriek {b['rubriek']}; "
+    regels = [f"- [id {b['id']}] {b['naam']} ({'Google News: ' if b['soort'] == 'google' else 'feed: '}{b['url']}; stroom {b['stroom']}; rubriek {b['rubriek']}; "
               f"{'aan' if b['actief'] else 'UIT'}; {b['week']} berichten deze week"
               + (f"; gemiddelde score {b['gemiddeld']}" if b["gemiddeld"] is not None else "")
               + (f"; FOUT: {b['fout']}" if b["fout"] else "") + ")" for b in bronnen]
     rubrieken = sorted({b["rubriek"] for b in bronnen})
     return "\n\n".join([f"# Wie Martijn is\n{nieuws.PROFIEL}",
-                        "# Zijn bronnen voor overig nieuws\n" + ("\n".join(regels) or "(nog geen)"),
+                        "# Jouw bronnen (landelijke politiek en overig nieuws)\n" + ("\n".join(regels) or "(nog geen)"),
                         "Rubrieken die er al zijn: " + (", ".join(rubrieken) or "geen")])
 
 
@@ -185,8 +191,9 @@ def toepassen(c, v):
     g = v["gegevens"]
     if v["soort"] == "nieuw":
         soort = "google" if g.get("soort") == "google" else "feed"
-        bid = c.execute("INSERT INTO vera_bronnen (naam, url, soort, rubriek) VALUES (%s, %s, %s, %s) RETURNING id",
-                        (g["naam"], g["url"], soort, g.get("rubriek") or "Algemeen")).fetchone()["id"]
+        stroom = "landelijk" if g.get("stroom") == "landelijk" else "overig"
+        bid = c.execute("INSERT INTO vera_bronnen (naam, url, soort, rubriek, stroom) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                        (g["naam"], g["url"], soort, g.get("rubriek") or "Algemeen", stroom)).fetchone()["id"]
         return bid, f"Bron '{g['naam']}' toegevoegd. Vera haalt hem binnen een kwartier op."
     b = c.execute("SELECT * FROM vera_bronnen WHERE id = %s", (v["bron_id"],)).fetchone()
     if not b:
@@ -198,6 +205,8 @@ def toepassen(c, v):
         c.execute("UPDATE vera_bronnen SET actief = %s WHERE id = %s", (v["soort"] == "aan", b["id"]))
         return b["id"], f"Bron '{b['naam']}' staat {v['soort']}."
     velden = {k: g[k] for k in ("naam", "url", "rubriek") if g.get(k)}
+    if g.get("stroom") in ("overig", "landelijk"):
+        velden["stroom"] = g["stroom"]
     if g.get("site") and g.get("soort") == "feed":
         velden["soort"] = "feed"
     if velden:
@@ -212,9 +221,11 @@ def beschrijf(v, bron=None):
     naam = (bron or {}).get("naam") or "bron"
     if v["soort"] == "nieuw":
         wat = "Google News: " + g["url"] if g.get("soort") == "google" else (g.get("url") or "")
-        return f"Nieuwe bron: {g['naam']} ({g.get('rubriek') or 'Algemeen'}) · {wat}"
+        voor = " · voor landelijke politiek" if g.get("stroom") == "landelijk" else ""
+        return f"Nieuwe bron: {g['naam']} ({g.get('rubriek') or 'Algemeen'}) · {wat}{voor}"
     if v["soort"] == "wijzig":
-        delen = [f"{naam} aanpassen"] + [f"{k}: {g[k]}" for k in ("naam", "rubriek", "url") if g.get(k)]
+        delen = [f"{naam} aanpassen"] + [f"{k}: {g[k]}" for k in ("naam", "rubriek", "url") if g.get(k)] + (
+            [f"voor: {nieuws.STROMEN[g['stroom']].lower()}"] if g.get("stroom") in nieuws.STROMEN else [])
         return " · ".join(delen)
     return {"aan": f"{naam} aanzetten", "uit": f"{naam} uitzetten", "weg": f"{naam} verwijderen"}[v["soort"]]
 

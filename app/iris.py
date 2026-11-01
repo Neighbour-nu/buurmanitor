@@ -9,7 +9,8 @@ from .kern.web import datum_lang
 PLANNING = """Stand van de bouw:
 - Klaar: de kern van Buurmanitor, de werkruimtes Politiek (Promonitor) en ZEROHERO (de Doellijn), Clara (agenda),
   het eerste deel van Bram (mail uit Gmail en Outlook sorteren), Noor (het takenbord en de planning van taken) en
-  Vera (nieuws: keepersnieuws uit de Doellijn, politiek nieuws uit Promonitor en overig nieuws, onder Nieuws).
+  Vera (nieuws: keepersnieuws uit de Doellijn, lokaal politiek nieuws uit Promonitor, landelijk politiek nieuws en
+  overig nieuws, onder Nieuws).
 - Volgende fases: Bram verder (Teams, WhatsApp en Signal), Jesse (socials).
 Teams, WhatsApp, Signal en socials kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt.
 Voor de agenda is Clara er, voor mail Bram, voor taken en het inplannen ervan Noor (onder Taken), voor politiek en

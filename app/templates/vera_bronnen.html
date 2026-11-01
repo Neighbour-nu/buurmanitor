@@ -3,8 +3,8 @@
 {% block inhoud %}
 <section class="kopregel">
   <div>
-    <h1>Bronnen voor overig nieuws</h1>
-    <p class="motto">Keepersnieuws komt uit de Doellijn en politiek nieuws uit Promonitor; hun bronnen beheer je daar. Hier staan de bronnen die Vera zelf leest.</p>
+    <h1>Bronnen van Vera</h1>
+    <p class="motto">Keepersnieuws komt uit de Doellijn en lokaal politiek nieuws uit Promonitor; hun bronnen beheer je daar. Hier staan de bronnen die Vera zelf leest: voor landelijke politiek en voor overig nieuws.</p>
   </div>
   <div class="knoppen"><a class="knop" href="/vera">Terug naar Nieuws</a>
     <form method="post" action="/vera/vernieuwen" class="inline"><button class="knop vol" type="submit">Nu ophalen</button></form></div>
@@ -23,6 +23,7 @@
         <div class="tekst">{{ m.tekst }}</div></div>
     {% else %}
       <p class="noot">Zeg Vera wat je wilt volgen. Bijvoorbeeld: "Ik wil nieuws over de nieuwe Archiefwet en de Woo",
+        "Volg wat de Tweede Kamer over jeugdzorg besluit",
         "Voeg Computable en AG Connect toe", "Iets over Nijmegen" of "Zet Tweakers uit, dat is te veel productnieuws".
         Vera stelt bronnen voor en test meteen of ze werken; jij klikt op Toevoegen.</p>
     {% endfor %}
@@ -57,11 +58,12 @@
 <section class="kaart">
   <h2>Bronnen</h2>
   <div class="tabel-scroll"><table class="tabel">
-    <thead><tr><th>Naam</th><th>Rubriek</th><th>Soort</th><th>Laatste keer</th><th>Week</th><th></th></tr></thead>
+    <thead><tr><th>Naam</th><th>Voor</th><th>Rubriek</th><th>Soort</th><th>Laatste keer</th><th>Week</th><th></th></tr></thead>
     <tbody>
     {% for b in bronnen %}
       <tr class="{{ 'uit' if not b.actief }}">
         <td><b>{{ b.naam }}</b><br><span class="noot breekbaar">{{ b.url }}</span></td>
+        <td>{{ stromen[b.stroom] }}</td>
         <td>{{ b.rubriek }}</td>
         <td>{{ 'Google News' if b.soort == 'google' else 'RSS-feed' }}</td>
         <td>{% if b.fout %}<span class="label rood" title="{{ b.fout }}">fout</span> <span class="noot">{{ b.fout[:80] }}</span>{% elif b.laatst %}{{ geleden(b.laatst) }}<br><span class="noot">{{ b.status }}</span>{% else %}<span class="noot">nog niet</span>{% endif %}</td>
@@ -70,7 +72,7 @@
           {% if b.actief %}<button class="knop klein" formaction="/vera/bronnen/{{ b.id }}/uit">Uitzetten</button>{% else %}<button class="knop klein" formaction="/vera/bronnen/{{ b.id }}/aan">Aanzetten</button>{% endif %}
           <button class="knop klein" formaction="/vera/bronnen/{{ b.id }}/weg" onclick="return confirm('Deze bron verwijderen?')">Verwijderen</button></form></td>
       </tr>
-    {% else %}<tr><td colspan="6" class="noot">Nog geen bronnen.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="7" class="noot">Nog geen bronnen.</td></tr>{% endfor %}
     </tbody>
   </table></div>
 </section>
@@ -79,8 +81,9 @@
   <h2>Bron toevoegen</h2>
   <form method="post" action="/vera/bronnen" class="velden">
     <label>Naam <input type="text" name="naam" maxlength="100" required placeholder="bijvoorbeeld Computable"></label>
+    <label>Voor <select name="stroom">{% for w, n in stromen.items() %}<option value="{{ w }}">{{ n }}</option>{% endfor %}</select></label>
     <label>Rubriek <input type="text" name="rubriek" maxlength="40" value="Algemeen" list="rubrieken"></label>
-    <datalist id="rubrieken"><option value="Algemeen"><option value="Tech"><option value="FB/IM"><option value="Nijmegen"><option value="Sport"></datalist>
+    <datalist id="rubrieken"><option value="Algemeen"><option value="Tech"><option value="FB/IM"><option value="Nijmegen"><option value="Sport"><option value="Den Haag"><option value="Gemeenten"></datalist>
     <label>Soort <select name="soort"><option value="feed">RSS- of Atom-feed (adres)</option><option value="google">Google News (zoekopdracht)</option></select></label>
     <label class="breed">Adres of zoekopdracht <input type="text" name="url" maxlength="500" required placeholder='https://… of bijvoorbeeld "archiefwet" OR "Woo"'></label>
     <div class="knoppenrij breed"><button class="knop vol" type="submit">Toevoegen</button></div>

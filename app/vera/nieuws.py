@@ -1,9 +1,12 @@
-"""Vera, de nieuwsredactie. Drie stromen op één plek:
+"""Vera, de nieuwsredactie. Vier stromen op één plek, in drie categorieën:
 
 - Keepersnieuws: uit de Doellijn (werkruimte ZEROHERO, tabel items), daar al gewogen en samengevat.
-- Politiek nieuws: uit Promonitor (werkruimte Politiek, tabel stukken met bron 'nieuws'), daar al gewogen.
-- Overig nieuws: Vera haalt het zelf op uit haar eigen bronnen (RSS en Google News) en weegt het met Claude
-  (licht model, met een dagplafond). Zonder Claude-sleutel staat het nieuwste bovenaan.
+- Politiek, lokaal en regionaal: uit Promonitor (werkruimte Politiek, tabel stukken met bron 'nieuws'), daar al gewogen.
+  Dit is het belangrijkste politieke nieuws, voor het raadswerk.
+- Politiek, landelijk: Vera haalt het zelf op uit haar eigen bronnen (stroom 'landelijk') en weegt het vanuit het
+  raadswerk: wat er in Den Haag speelt en wat dat voor gemeenten betekent.
+- Overig nieuws: ook uit Vera's eigen bronnen (stroom 'overig').
+Vera weegt haar eigen berichten met Claude (licht model, met een dagplafond). Zonder Claude-sleutel staat het nieuwste bovenaan.
 
 Vera leest de werkruimtes alleen; ze verandert daar niets. Wat je aanklikt, onthoudt ze zelf (vera_gelezen).
 """
@@ -24,8 +27,13 @@ GOOGLE = "https://news.google.com/rss/search?hl=nl&gl=NL&ceid=NL:nl&q="
 DAGPLAFOND_EUR = float(os.environ.get("VERA_DAGPLAFOND_EUR", "0.30"))
 BEWAAR_DAGEN = 30
 
-SOORTEN = (("keepers", "Keepersnieuws"), ("politiek", "Politiek nieuws"), ("overig", "Overig nieuws"))
+SOORTEN = (("keepers", "Keepersnieuws"), ("politiek", "Politiek lokaal"), ("landelijk", "Politiek landelijk"), ("overig", "Overig nieuws"))
 SOORT_NAMEN = dict(SOORTEN)
+# De categorieën op het scherm, met de stromen erin (de eerste is de belangrijkste).
+CATEGORIEEN = (("keepers", "Keepersnieuws", ("keepers",)), ("politiek", "Politiek nieuws", ("politiek", "landelijk")),
+               ("overig", "Overig nieuws", ("overig",)))
+DEEL_NAMEN = {"politiek": "Lokaal en regionaal", "landelijk": "Landelijk"}
+STROMEN = {"overig": "Overig nieuws", "landelijk": "Politiek landelijk"}  # Vera's eigen bronnen
 
 STANDAARD_BRONNEN = [
     # (naam, url of zoekopdracht, soort, rubriek); soort: feed of google (zoekopdracht in Google News)
@@ -35,6 +43,13 @@ STANDAARD_BRONNEN = [
     ("Google: informatiemanagement", '"functioneel beheer" OR informatiemanagement OR informatievoorziening OR informatiebeheer', "google", "FB/IM"),
     ("Google: digitale overheid", 'site:ibestuur.nl OR "digitale overheid" OR informatiehuishouding', "google", "FB/IM"),
     ("Google: AI in organisaties", '"kunstmatige intelligentie" OR "generatieve AI" overheid OR organisaties OR werkvloer', "google", "Tech"),
+]
+
+STANDAARD_LANDELIJK = [
+    ("NOS Politiek", "https://feeds.nos.nl/nosnieuwspolitiek", "feed", "Den Haag"),
+    ("Google: Tweede Kamer en kabinet", '"Tweede Kamer" OR kabinet OR minister OR coalitie', "google", "Den Haag"),
+    ("Google: Rijk en gemeenten", 'kabinet OR Kamer gemeenten OR gemeentefonds OR jeugdzorg OR Wmo OR "Binnenlandse Zaken"', "google", "Gemeenten"),
+    ("Google: GroenLinks-PvdA landelijk", '"GroenLinks-PvdA" Kamer OR Kamerfractie OR partij', "google", "Partij"),
 ]
 
 PROFIEL = """Martijn Buurman werkt in informatiemanagement en functioneel beheer (FB/IM): hij schrijft boeken en geeft
@@ -54,6 +69,26 @@ Geef elk bericht een score van 0 tot 100. Wees streng: de meeste berichten score
 - 0 tot 39: niet relevant (sportuitslagen, ongelukken, misdaad, showbizz, productnieuws en kortingen, reclame).
 
 Geef per bericht ook "waarom": één korte zin in het Nederlands waarom het (niet) voor Martijn telt. Geen gedachtestreepjes.
+Antwoord alleen met JSON: [{{"id": 1, "score": 72, "waarom": "..."}}, ...]"""
+
+PROFIEL_LANDELIJK = """Martijn Buurman is gemeenteraadslid in Helmond voor PRO Helmond, de lokale partij van GroenLinks en PvdA,
+in de oppositie. Zijn portefeuilles: digitalisering, pleegzorg en mantelzorg; hij werkt ook aan sport, wonen en de
+begroting. Het lokale nieuws krijgt hij via een andere stroom; hier gaat het om wat er landelijk speelt."""
+
+SYSTEEM_LANDELIJK = """Je bent Vera, de nieuwsredactie van Martijn Buurman. Je weegt landelijk politiek nieuws op hoe belangrijk het voor hem is.
+
+{profiel}
+
+Geef elk bericht een score van 0 tot 100. Wees streng: de meeste berichten scoren onder de 50.
+- 80 tot 100: grote politieke gebeurtenissen (kabinet, coalitie, verkiezingen, begroting en Prinsjesdag), of besluiten
+  met directe gevolgen voor gemeenten (gemeentefonds, jeugdzorg, Wmo, pleegzorg, mantelzorg, wonen, bestaanszekerheid,
+  digitale overheid en informatiehuishouding).
+- 60 tot 79: belangrijke Kamerdebatten, wetsvoorstellen en standpunten, ook van GroenLinks-PvdA in de Kamer.
+- 40 tot 59: achtergrond.
+- 0 tot 39: niet relevant (peilingen zonder nieuws, personalia, incidenten, buitenlandse politiek zonder Nederlandse kant).
+
+Geef per bericht ook "waarom": één korte zin in het Nederlands waarom het (niet) voor Martijn telt, liefst met wat het
+betekent voor gemeenten of voor Helmond. Geen gedachtestreepjes.
 Antwoord alleen met JSON: [{{"id": 1, "score": 72, "waarom": "..."}}, ...]"""
 
 
@@ -111,9 +146,10 @@ def sleutel(titel):
 
 def ophalen(c, haal=_haal):
     """Alle actieve bronnen van Vera ophalen. Geeft (nieuw, fouten)."""
-    bronnen = c.execute("SELECT * FROM vera_bronnen WHERE actief ORDER BY id").fetchall()
-    recent = [(r["id"], sleutel(r["titel"])) for r in c.execute(
-        "SELECT id, titel FROM vera_berichten WHERE binnen > now() - interval '4 days'").fetchall()]
+    # Landelijke politiek eerst: staat hetzelfde bericht ook in een algemene feed, dan hoort het bij de politiek.
+    bronnen = c.execute("SELECT * FROM vera_bronnen WHERE actief ORDER BY stroom = 'landelijk' DESC, id").fetchall()
+    recent = [(r["id"], sleutel(r["titel"]), r["stroom"]) for r in c.execute(
+        "SELECT id, titel, stroom FROM vera_berichten WHERE binnen > now() - interval '4 days'").fetchall()]
     grens = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=48)
     nieuw, fouten = 0, []
     for b in bronnen:
@@ -123,21 +159,27 @@ def ophalen(c, haal=_haal):
             for m in berichten:
                 if m["datum"] and m["datum"] < grens:
                     continue
-                if c.execute("SELECT 1 FROM vera_berichten WHERE guid = %s OR url = %s", (m["guid"], m["link"])).fetchone():
+                al = c.execute("SELECT id, stroom FROM vera_berichten WHERE guid = %s OR url = %s", (m["guid"], m["link"])).fetchone()
+                if al:
+                    if b["stroom"] == "landelijk" and al["stroom"] == "overig":
+                        _naar_landelijk(c, al["id"])
                     continue
                 k = sleutel(m["titel"])
-                dubbel = next((i for i, s in recent if s == k or difflib.SequenceMatcher(None, s, k).ratio() > 0.88), None)
+                dubbel, dubbel_stroom = next(((i, st) for i, s, st in recent if s == k or difflib.SequenceMatcher(None, s, k).ratio() > 0.88),
+                                             (None, None))
+                if dubbel and b["stroom"] == "landelijk" and dubbel_stroom == "overig":
+                    _naar_landelijk(c, dubbel)
                 if dubbel:
                     naam = m["bronnaam"] or b["naam"]
                     c.execute("""UPDATE vera_berichten SET ook_bij = left(ook_bij || CASE WHEN ook_bij = '' THEN '' ELSE ', ' END || %s, 300)
                                  WHERE id = %s AND bron <> %s AND position(%s in ook_bij) = 0""", (naam, dubbel, naam, naam))
                     continue
-                r = c.execute("""INSERT INTO vera_berichten (bron_id, guid, titel, url, samenvatting, bron, rubriek, gepubliceerd)
-                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (guid) DO NOTHING RETURNING id""",
+                r = c.execute("""INSERT INTO vera_berichten (bron_id, guid, titel, url, samenvatting, bron, rubriek, gepubliceerd, stroom)
+                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (guid) DO NOTHING RETURNING id""",
                               (b["id"], m["guid"], m["titel"], m["link"], m["samenvatting"], m["bronnaam"] or b["naam"], b["rubriek"],
-                               m["datum"])).fetchone()
+                               m["datum"], b["stroom"])).fetchone()
                 if r:
-                    recent.append((r["id"], k))
+                    recent.append((r["id"], k, b["stroom"]))
                     aantal += 1
             nieuw += aantal
             c.execute("UPDATE vera_bronnen SET laatst = now(), status = %s, fout = '' WHERE id = %s",
@@ -148,6 +190,11 @@ def ophalen(c, haal=_haal):
     c.execute("DELETE FROM vera_berichten WHERE binnen < now() - make_interval(days => %s)", (BEWAAR_DAGEN,))
     c.execute("DELETE FROM vera_gelezen WHERE tijd < now() - make_interval(days => %s)", (BEWAAR_DAGEN * 2,))
     return nieuw, fouten
+
+
+def _naar_landelijk(c, bid):
+    """Een bericht uit een algemene feed blijkt landelijke politiek: verhuizen en opnieuw wegen (met de politieke blik)."""
+    c.execute("UPDATE vera_berichten SET stroom = 'landelijk', score = NULL, waarom = '' WHERE id = %s AND stroom = 'overig'", (bid,))
 
 
 # ---------------------------------------------------------------- wegen
@@ -170,14 +217,17 @@ def wegen(c, per_keer=25, maximum=150):
     """Ongewogen berichten wegen met Claude, tot het dagplafond. Geeft een korte uitslag."""
     if not config.ANTHROPIC_API_KEY:
         return "geen Claude-sleutel; het nieuwste staat bovenaan"
-    rijen = c.execute("""SELECT id, titel, samenvatting, bron, rubriek FROM vera_berichten WHERE score IS NULL
-                         ORDER BY id DESC LIMIT %s""", (maximum,)).fetchall()
+    rijen = c.execute("""SELECT id, titel, samenvatting, bron, rubriek, stroom FROM vera_berichten WHERE score IS NULL
+                         ORDER BY stroom = 'landelijk' DESC, id DESC LIMIT %s""", (maximum,)).fetchall()
     gewogen = 0
-    systeem = SYSTEEM.format(profiel=PROFIEL)
-    for i in range(0, len(rijen), per_keer):
+    systemen = {"overig": SYSTEEM.format(profiel=PROFIEL), "landelijk": SYSTEEM_LANDELIJK.format(profiel=PROFIEL_LANDELIJK)}
+    groepen = []
+    for stroom in ("landelijk", "overig"):
+        deel = [r for r in rijen if r["stroom"] == stroom]
+        groepen += [(systemen[stroom], deel[i:i + per_keer]) for i in range(0, len(deel), per_keer)]
+    for systeem, groep in groepen:
         if vandaag_besteed(c) >= DAGPLAFOND_EUR:
             return f"{gewogen} gewogen; dagplafond van € {DAGPLAFOND_EUR:.2f} bereikt"
-        groep = rijen[i:i + per_keer]
         lijst = "\n\n".join(f"[{n}] {r['titel']}\nBron: {r['bron']} ({r['rubriek']})\n{(r['samenvatting'] or '')[:300]}"
                             for n, r in enumerate(groep, 1))
         try:
@@ -246,16 +296,17 @@ def politiek(dagen):
                         if x]} for r in rijen]
 
 
-def overig(c, dagen):
-    rijen = c.execute("""SELECT * FROM vera_berichten WHERE binnen > now() - make_interval(days => %s) AND NOT verborgen
-                         ORDER BY score DESC NULLS LAST, coalesce(gepubliceerd, binnen) DESC LIMIT 80""", (dagen,)).fetchall()
-    return [{"soort": "overig", "id": r["id"], "titel": r["titel"], "url": r["url"], "bron": r["bron"], "tijd": r["gepubliceerd"] or r["binnen"],
+def eigen(c, dagen, stroom="overig"):
+    """Vera's eigen berichten van één stroom (overig of landelijk)."""
+    rijen = c.execute("""SELECT * FROM vera_berichten WHERE binnen > now() - make_interval(days => %s) AND NOT verborgen AND stroom = %s
+                         ORDER BY score DESC NULLS LAST, coalesce(gepubliceerd, binnen) DESC LIMIT 80""", (dagen, stroom)).fetchall()
+    return [{"soort": stroom, "id": r["id"], "titel": r["titel"], "url": r["url"], "bron": r["bron"], "tijd": r["gepubliceerd"] or r["binnen"],
              "score": r["score"], "samenvatting": r["samenvatting"], "waarom": r["waarom"] or "",
              "labels": [r["rubriek"]] + ([f"ook bij {r['ook_bij']}"] if r["ook_bij"] else [])} for r in rijen]
 
 
 def verzamel(c, dagen, lezers=None):
-    """Alle drie de stromen, met wat al gelezen is. Een werkruimte die niet bereikbaar is, geeft een foutregel."""
+    """Alle stromen, met wat al gelezen is. Een werkruimte die niet bereikbaar is, geeft een foutregel."""
     lezers = lezers or {"keepers": keepers, "politiek": politiek}
     uit, fouten = {}, {}
     for soort in ("keepers", "politiek"):
@@ -263,7 +314,8 @@ def verzamel(c, dagen, lezers=None):
             uit[soort] = lezers[soort](dagen)
         except Exception as e:  # noqa: BLE001  (een werkruimte die hapert, mag de rest niet tegenhouden)
             uit[soort], fouten[soort] = [], str(e)[:200]
-    uit["overig"] = overig(c, dagen)
+    uit["landelijk"] = eigen(c, dagen, "landelijk")
+    uit["overig"] = eigen(c, dagen, "overig")
     gelezen = {(r["soort"], r["bericht"]) for r in c.execute("SELECT soort, bericht FROM vera_gelezen").fetchall()}
     for lijst in uit.values():
         for b in lijst or []:
@@ -329,14 +381,17 @@ def selectie(lijst, drempel=40, aantal=12, al=(), dubbels=False):
 
 
 def uitgelicht(stromen, nu, uren=36, drempel=65):
-    """Het beste bericht per stroom van de laatste anderhalve dag, voor bovenaan de pagina. Pure functie."""
+    """Het beste bericht per categorie van de laatste anderhalve dag, voor bovenaan de pagina. Pure functie.
+    Bij politiek gaat lokaal voor: landelijk komt alleen bovenaan als er geen belangrijk lokaal nieuws is."""
     grens = nu - dt.timedelta(hours=uren)
     uit = []
-    for soort, _ in SOORTEN:
-        kandidaten = [b for b in stromen.get(soort) or [] if b["score"] is not None and b["score"] >= drempel
-                      and b["tijd"] and b["tijd"] >= grens and not b.get("gelezen")]
-        if kandidaten:
-            uit.append(max(kandidaten, key=lambda b: (b["score"], b["tijd"])))
+    for _cat, _naam, delen in CATEGORIEEN:
+        for soort in delen:
+            kandidaten = [b for b in stromen.get(soort) or [] if b["score"] is not None and b["score"] >= drempel
+                          and b["tijd"] and b["tijd"] >= grens and not b.get("gelezen")]
+            if kandidaten:
+                uit.append(max(kandidaten, key=lambda b: (b["score"], b["tijd"])))
+                break
     return uit
 
 
@@ -350,23 +405,27 @@ def koppen(c, nu, aantal=5):
 
 def koppen_per_soort(stromen, nu, per=3, uren=36, drempel=40):
     """De belangrijkste koppen per stroom van de laatste anderhalve dag, voor Vandaag. Pure functie.
-    Ongelezen eerst, dan op belang; ongewogen nieuws telt mee als er (nog) niets gewogen is. None: stroom niet beschikbaar."""
+    Ongelezen eerst, dan op belang; ongewogen nieuws telt mee als er (nog) niets gewogen is. None: stroom niet beschikbaar.
+    per: een aantal voor elke stroom, of per stroom ({"politiek": 3, "landelijk": 2}). Landelijk nieuws dat ook lokaal
+    al staat, valt weg."""
     grens, uit = nu - dt.timedelta(hours=uren), {}
     nul = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
     for soort, _ in SOORTEN:
+        n = per.get(soort, 3) if isinstance(per, dict) else per
         lijst = stromen.get(soort)
         if lijst is None:
             uit[soort] = None
             continue
         recent = [b for b in lijst if b["tijd"] and b["tijd"] >= grens and (b["score"] is None or b["score"] >= drempel)]
         recent.sort(key=lambda b: (bool(b.get("gelezen")), b["score"] is None, -(b["score"] or 0), -(b["tijd"] or nul).timestamp()))
-        uit[soort] = ontdubbel(recent)[:per]
+        al = (uit.get("politiek") or ()) if soort == "landelijk" else ()
+        uit[soort] = ontdubbel(recent, al)[:n]
     return uit
 
 
 def url_van(c, soort, bid, lezers_url=None):
     """Het adres van één bericht (voor doorklikken). None als het niet (meer) bestaat."""
-    if soort == "overig":
+    if soort in STROMEN:
         r = c.execute("SELECT url FROM vera_berichten WHERE id = %s", (bid,)).fetchone()
         return r["url"] if r else None
     if lezers_url:

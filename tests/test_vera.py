@@ -155,8 +155,8 @@ def test_ophalen_wegen_en_pagina(klant, monkeypatch):
     assert "Bijlow redt penalty in topper" in uitgelicht and "Nieuwe Archiefwet aangenomen" in uitgelicht and "Raakt je vak" in uitgelicht
     assert "Kon dit nieuws niet lezen: Promonitor slaapt" in pagina
     assert "Handbalkeeper stopt" in pagina and "Wielrenner wint etappe" not in pagina  # onder de 40: weg
-    assert '&alles=1">Nog 1 laten zien</a>' in pagina.split('class="nkolom overig"')[1]
-    assert "laten zien" not in pagina.split('class="nkolom keepers"')[1].split("</section>")[0]  # niets verborgen
+    assert '&alles=1">Nog 1 laten zien</a>' in pagina.split('class="nkolom overig')[1]
+    assert "laten zien" not in pagina.split('class="nkolom keepers')[1].split("</section>")[0]  # niets verborgen
     assert "Wielrenner wint etappe" in klant.get("/vera?soort=overig&alles=1", headers=KOP).text
     assert "Handbalkeeper stopt" not in klant.get("/vera?soort=overig", headers=KOP).text
     # Doorklikken: naar de bron, en daarna gelezen.
@@ -223,7 +223,7 @@ def test_vera_voorstellen_lezen():
     rest, v = gesprek.voorstellen_uit(tekst, {3})
     assert rest == "Ik stel twee bronnen voor."
     assert [(x["soort"], x["bron_id"]) for x in v] == [("nieuw", None), ("nieuw", None), ("uit", 3), ("wijzig", 3)]
-    assert v[1]["gegevens"] == {"naam": "Archiefwet", "soort": "google", "url": '"Archiefwet" OR Woo', "rubriek": "Algemeen"}
+    assert v[1]["gegevens"] == {"naam": "Archiefwet", "soort": "google", "url": '"Archiefwet" OR Woo', "rubriek": "Algemeen", "stroom": "overig"}
     assert gesprek.beschrijf(v[0]) == "Nieuwe bron: Computable (FB/IM) · https://www.computable.nl"
     assert gesprek.beschrijf(v[2], {"naam": "Tweakers"}) == "Tweakers uitzetten"
 
@@ -293,3 +293,93 @@ def test_gesprek_bronnen_toevoegen(klant, monkeypatch):
         c.execute("UPDATE vera_bronnen SET actief = true WHERE id = %s", (tid,))
         c.execute("DELETE FROM gesprekken WHERE persona = 'vera'")
     assert "al+afgehandeld" in klant.post(f"/vera/voorstel/{vs[0]['id']}", headers=FORM, data={"actie": "doe"}, follow_redirects=False).headers["location"]
+
+
+
+# ---------------------------------------------------------------- landelijke politiek
+
+def test_politiek_lokaal_voor_landelijk():
+    nu = dt.datetime(2026, 11, 2, 12, tzinfo=TZ)
+
+    def b(soort, i, titel, score, gelezen=False):
+        return {"soort": soort, "id": i, "titel": titel, "bron": "x", "score": score, "tijd": nu - dt.timedelta(hours=1), "gelezen": gelezen}
+    stromen = {"keepers": [], "overig": [],
+               "politiek": [b("politiek", 1, "College wil sporthallen weer zelf beheren", 70)],
+               "landelijk": [b("landelijk", 2, "Kabinet valt over asielwet", 95), b("landelijk", 3, "Kamer stemt in met hogere bijdrage gemeentefonds", 80),
+                             b("landelijk", 4, "College wil sporthallen weer zelf beheren - NOS", 75), b("landelijk", 5, "Nieuwe regels voor de Wmo", 60)]}
+    # Bovenaan: lokaal gaat voor, ook als landelijk hoger scoort.
+    assert [(x["soort"], x["id"]) for x in nieuws.uitgelicht(stromen, nu)] == [("politiek", 1)]
+    stromen["politiek"][0]["score"] = 50  # geen belangrijk lokaal nieuws: dan landelijk bovenaan
+    assert [(x["soort"], x["id"]) for x in nieuws.uitgelicht(stromen, nu)] == [("landelijk", 2)]
+    # Vandaag: lokaal en landelijk apart, met eigen aantallen; landelijk wat al lokaal staat, valt weg.
+    k = nieuws.koppen_per_soort(stromen, nu, per={"politiek": 3, "landelijk": 2})
+    assert [x["id"] for x in k["politiek"]] == [1] and [x["id"] for x in k["landelijk"]] == [2, 3]
+    k = nieuws.koppen_per_soort(stromen, nu, per={"politiek": 3, "landelijk": 5})
+    assert 4 not in [x["id"] for x in k["landelijk"]]
+    assert [c[0] for c in nieuws.CATEGORIEEN] == ["keepers", "politiek", "overig"] and nieuws.CATEGORIEEN[1][2] == ("politiek", "landelijk")
+
+
+def test_landelijk_ophalen_wegen_en_tonen(klant, monkeypatch):
+    from app.kern import claude, db  # pylint: disable=import-outside-toplevel
+    with db.pool.connection() as c:
+        bronnen = {r["naam"]: r for r in c.execute("SELECT * FROM vera_bronnen")}
+        assert bronnen["NOS Politiek"]["stroom"] == "landelijk" and bronnen["Google: Tweede Kamer en kabinet"]["stroom"] == "landelijk"
+        assert bronnen["NOS Nieuws"]["stroom"] == "overig"
+        c.execute("DELETE FROM vera_berichten")
+        c.execute("DELETE FROM vera_gelezen")
+        c.execute("UPDATE vera_bronnen SET actief = (naam IN ('NOS Nieuws', 'NOS Politiek'))")
+        # Een politiek bericht dat eerder via de algemene feed binnenkwam, staat nog bij overig.
+        c.execute("""INSERT INTO vera_berichten (guid, titel, url, bron, rubriek, stroom, score, waarom)
+                     VALUES ('https://nos.nl/p2', 'Kamer wil meer geld voor jeugdzorg', 'https://nos.nl/p2', 'NOS Nieuws', 'Algemeen', 'overig', 66, 'oud')""")
+    feeds = {"https://feeds.nos.nl/nosnieuwspolitiek": rss([("Kabinet presenteert plan voor gemeentefinanciën", "https://nos.nl/p1", "Gemeenten krijgen meer ruimte.", 1),
+                                                           ("Kamer wil meer geld voor jeugdzorg", "https://nos.nl/p2", "", 2)]),
+             "https://feeds.nos.nl/nosnieuwsalgemeen": rss([("Kabinet presenteert plan voor gemeentefinanciën", "https://nos.nl/p1", "", 1),
+                                                           ("Storm op komst", "https://nos.nl/s", "", 1)])}
+    volgorde = []
+    with db.pool.connection() as c:
+        nieuws.ophalen(c, haal=lambda url: volgorde.append(url) or feeds[url])
+        assert volgorde[0] == "https://feeds.nos.nl/nosnieuwspolitiek"  # landelijk eerst
+        rijen = {r["titel"]: r for r in c.execute("SELECT titel, stroom, score FROM vera_berichten")}
+        assert rijen["Kabinet presenteert plan voor gemeentefinanciën"]["stroom"] == "landelijk"
+        assert rijen["Storm op komst"]["stroom"] == "overig"
+        assert rijen["Kamer wil meer geld voor jeugdzorg"]["stroom"] == "landelijk" and rijen["Kamer wil meer geld voor jeugdzorg"]["score"] is None  # verhuisd, opnieuw wegen
+    # Wegen: landelijk met de politieke blik, overig met de gewone.
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "sk-test")
+    systemen = []
+
+    def nep(c, persona, systeem, berichten, model=None, **kw):
+        import json, re  # pylint: disable=import-outside-toplevel,multiple-imports
+        systemen.append("landelijk" if "landelijk politiek nieuws" in systeem else "overig")
+        return json.dumps([{"id": int(n), "score": 85 if "gemeente" in t.lower() else 70, "waarom": "Raakt gemeenten."}
+                           for n, t in re.findall(r"^\[(\d+)\] (.+)$", berichten[0]["content"], re.M)])
+    monkeypatch.setattr(claude, "gesprek", nep)
+    with db.pool.connection() as c:
+        nieuws.wegen(c)
+    assert systemen == ["landelijk", "overig"]
+    # Het scherm: Politiek in twee delen, lokaal (Promonitor) voorop, landelijk eronder.
+    nu = dt.datetime.now(TZ)
+    monkeypatch.setattr(nieuws, "keepers", lambda dagen: [])
+    monkeypatch.setattr(nieuws, "politiek", lambda dagen: [
+        {"soort": "politiek", "id": 9, "titel": "College wil sporthallen weer zelf beheren", "url": "https://ed.nl/9", "bron": "ED Helmond",
+         "tijd": nu - dt.timedelta(hours=1), "score": 88, "samenvatting": "", "waarom": "Dossier sport.", "labels": []},
+        {"soort": "politiek", "id": 10, "titel": "Woonpartners bouwt in Brandevoort", "url": "https://ed.nl/10", "bron": "ED Helmond",
+         "tijd": nu - dt.timedelta(hours=2), "score": 70, "samenvatting": "", "waarom": "", "labels": []}])
+    pagina = klant.get("/vera", headers=KOP).text
+    kolom = pagina.split('class="nkolom politiek')[1].split("</section>")[0]
+    assert "Lokaal en regionaal" in kolom and "Landelijk" in kolom and kolom.index("Woonpartners") < kolom.index("Kamer wil meer geld voor jeugdzorg")
+    assert "College wil sporthallen" in pagina.split('class="nuitgelicht"')[1].split("</section>")[0]  # lokaal bovenaan
+    tab = klant.get("/vera?soort=politiek", headers=KOP).text
+    assert "Kabinet presenteert plan voor gemeentefinanciën" in tab and "Storm op komst" not in tab
+    with db.pool.connection() as c:
+        lid = c.execute("SELECT id FROM vera_berichten WHERE titel = 'Kamer wil meer geld voor jeugdzorg'").fetchone()["id"]
+    assert klant.get(f"/vera/lees/landelijk/{lid}", headers=KOP, follow_redirects=False).headers["location"] == "https://nos.nl/p2"
+    # Vandaag: onder Politiek nieuws eerst lokaal, dan landelijk.
+    blok = klant.get("/", headers=KOP).text.split('class="nieuwsblok politiek"')[1].split('class="nieuwsblok overig"')[0]
+    assert blok.index("Lokaal en regionaal") < blok.index("College wil sporthallen") < blok.index("Landelijk") < blok.index("Kabinet presenteert plan")
+    # Een landelijke bron toevoegen via het formulier.
+    klant.post("/vera/bronnen", headers=FORM, data={"naam": "Parlement.com", "url": "https://www.parlement.com/rss", "soort": "feed", "stroom": "landelijk"})
+    with db.pool.connection() as c:
+        assert c.execute("SELECT stroom FROM vera_bronnen WHERE naam = 'Parlement.com'").fetchone()["stroom"] == "landelijk"
+        c.execute("DELETE FROM vera_bronnen WHERE naam = 'Parlement.com'")
+        c.execute("UPDATE vera_bronnen SET actief = true")
+        c.execute("DELETE FROM vera_berichten")

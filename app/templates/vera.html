@@ -43,37 +43,44 @@
 {% endif %}
 
 <div class="nraster {{ 'enkel' if soort != 'alles' }}">
-  {% for k in kolommen %}{% set s, naam, lijst, totaal, fout, link = k.soort, k.naam, k.lijst, k.totaal, k.fout, k.link %}
-  <section class="nkolom {{ s }}" aria-label="{{ naam }}">
-    <h2><span>{{ naam }}</span>{% if lijst is not none %} <span class="aantal" title="berichten in deze periode">{{ totaal }}</span>{% endif %}</h2>
-    {% if fout %}<p class="item urgent">Kon dit nieuws niet lezen: {{ fout }}</p>{% endif %}
-    {% if lijst is none %}
-      <p class="noot">{{ 'De Doellijn' if s == 'keepers' else 'Promonitor' }} draait hier nog niet als werkruimte; daarom staat dit nieuws er nog niet.</p>
-    {% else %}
-      <div class="nlijst">
-      {% for b in lijst %}
-        <article class="nitem {{ 'gelezen' if b.gelezen }}">
-          {{ score(b) }}
-          <div class="ninhoud">
-            <a href="/vera/lees/{{ b.soort }}/{{ b.id }}" target="_blank" rel="noopener" class="nlink" title="{{ b.titel }}">{{ b.titel }}</a>
-            {{ meta(b) }}
-            {% if b.samenvatting %}<p class="nsam">{{ b.samenvatting }}</p>{% endif %}
-            {% if b.waarom %}<p class="nwaarom">{{ b.waarom }}</p>{% endif %}
-          </div>
-          {% if s == 'overig' %}<form method="post" action="/vera/verberg/{{ b.id }}" class="nweg"><input type="hidden" name="terug" value="/vera?soort={{ soort }}&dagen={{ dagen }}">
-            <button type="submit" title="Niet interessant: weg" aria-label="{{ b.titel }} verbergen">×</button></form>{% endif %}
-        </article>
-      {% else %}<p class="noot">Niets belangrijks in deze periode.</p>{% endfor %}
+  {% for k in kolommen %}
+  <section class="nkolom {{ k.soort }} {{ 'gedeeld' if k.delen | length > 1 }}" aria-label="{{ k.naam }}">
+    <h2><span>{{ k.naam }}</span> <span class="aantal" title="berichten in deze periode">{{ k.totaal }}</span></h2>
+    <div class="ndelen">
+    {% for d in k.delen %}{% set s, lijst = d.soort, d.lijst %}
+      <div class="ndeel {{ s }}">
+      {% if d.naam %}<h3 class="ndeelkop"><span>{{ d.naam }}</span>{% if lijst is not none %} <span class="aantal">{{ d.totaal }}</span>{% endif %}</h3>{% endif %}
+      {% if d.fout %}<p class="item urgent">Kon dit nieuws niet lezen: {{ d.fout }}</p>{% endif %}
+      {% if lijst is none %}
+        <p class="noot">{{ 'De Doellijn' if s == 'keepers' else 'Promonitor' }} draait hier nog niet als werkruimte; daarom staat dit nieuws er nog niet.</p>
+      {% else %}
+        <div class="nlijst">
+        {% for b in lijst %}
+          <article class="nitem {{ 'gelezen' if b.gelezen }}">
+            {{ score(b) }}
+            <div class="ninhoud">
+              <a href="/vera/lees/{{ b.soort }}/{{ b.id }}" target="_blank" rel="noopener" class="nlink" title="{{ b.titel }}">{{ b.titel }}</a>
+              {{ meta(b) }}
+              {% if b.samenvatting %}<p class="nsam">{{ b.samenvatting }}</p>{% endif %}
+              {% if b.waarom %}<p class="nwaarom">{{ b.waarom }}</p>{% endif %}
+            </div>
+            {% if s in eigen %}<form method="post" action="/vera/verberg/{{ b.id }}" class="nweg"><input type="hidden" name="terug" value="/vera?soort={{ soort }}&dagen={{ dagen }}">
+              <button type="submit" title="Niet interessant: weg" aria-label="{{ b.titel }} verbergen">×</button></form>{% endif %}
+          </article>
+        {% else %}<p class="noot">Niets belangrijks in deze periode.</p>{% endfor %}
+        </div>
+        <p class="noot nvoet">
+          {%- set delen = [] %}
+          {%- if d.meer and not alles %}{% set _ = delen.append('<a href="/vera?soort=' ~ k.soort ~ '&dagen=' ~ dagen ~ '&alles=1">Nog ' ~ d.meer ~ ' laten zien</a>') %}
+          {%- elif alles and loop.first %}{% set _ = delen.append('<a href="/vera?soort=' ~ soort ~ '&dagen=' ~ dagen ~ '">Alleen het belangrijkste</a>') %}{% endif %}
+          {%- if d.link %}{% set _ = delen.append('<a href="' ~ d.link[0] ~ '">' ~ d.link[1] ~ '</a>') %}{% endif %}
+          {%- if d.ongewogen and not sleutel_ok %}{% set _ = delen.append('nog niet gewogen (geen Claude-sleutel)') %}{% endif %}
+          {{ delen | join(' · ') | safe }}
+        </p>
+      {% endif %}
       </div>
-      <p class="noot nvoet">
-        {%- set delen = [] %}
-        {%- if k.meer and not alles %}{% set _ = delen.append('<a href="/vera?soort=' ~ s ~ '&dagen=' ~ dagen ~ '&alles=1">Nog ' ~ k.meer ~ ' laten zien</a>') %}
-        {%- elif alles and loop.first %}{% set _ = delen.append('<a href="/vera?soort=' ~ soort ~ '&dagen=' ~ dagen ~ '">Alleen het belangrijkste</a>') %}{% endif %}
-        {%- if link %}{% set _ = delen.append('<a href="' ~ link[0] ~ '">' ~ link[1] ~ '</a>') %}{% endif %}
-        {%- if k.ongewogen and not sleutel_ok %}{% set _ = delen.append('nog niet gewogen (geen Claude-sleutel)') %}{% endif %}
-        {{ delen | join(' · ') | safe }}
-      </p>
-    {% endif %}
+    {% endfor %}
+    </div>
   </section>
   {% endfor %}
 </div>

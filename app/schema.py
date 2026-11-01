@@ -4,12 +4,15 @@ Politiek (Promonitor) en ZEROHERO (de Doellijn) hebben hun eigen database; die t
 Migraties draaien bij elke start en zijn veilig om opnieuw uit te voeren.
 """
 
-def _vera_bronnen():
-    from .vera.nieuws import STANDAARD_BRONNEN  # pylint: disable=import-outside-toplevel
-    waarden = ", ".join("(" + ", ".join("'" + x.replace("'", "''") + "'" for x in b) + ")" for b in STANDAARD_BRONNEN)
-    return f"""WITH vlag AS (INSERT INTO instellingen (sleutel, waarde) VALUES ('vera_bronnen_klaargezet', '1')
+def _vera_bronnen(stroom="overig"):
+    """De standaardbronnen van Vera één keer klaarzetten (een vlag in instellingen onthoudt dat het gebeurd is)."""
+    from .vera.nieuws import STANDAARD_BRONNEN, STANDAARD_LANDELIJK  # pylint: disable=import-outside-toplevel
+    lijst, vlag = (STANDAARD_BRONNEN, "vera_bronnen_klaargezet") if stroom == "overig" else (STANDAARD_LANDELIJK, "vera_landelijk_klaargezet")
+    waarden = ", ".join("(" + ", ".join("'" + x.replace("'", "''") + "'" for x in b) + ")" for b in lijst)
+    kolommen, extra = ("naam, url, soort, rubriek", "") if stroom == "overig" else ("naam, url, soort, rubriek, stroom", ", 'landelijk'")
+    return f"""WITH vlag AS (INSERT INTO instellingen (sleutel, waarde) VALUES ('{vlag}', '1')
                              ON CONFLICT (sleutel) DO NOTHING RETURNING 1)
-               INSERT INTO vera_bronnen (naam, url, soort, rubriek) SELECT * FROM (VALUES {waarden}) AS v(naam, url, soort, rubriek)
+               INSERT INTO vera_bronnen ({kolommen}) SELECT *{extra} FROM (VALUES {waarden}) AS v(naam, url, soort, rubriek)
                WHERE EXISTS (SELECT 1 FROM vlag)"""
 
 
@@ -378,5 +381,11 @@ MIGRATIES = [
         aangemaakt timestamptz NOT NULL DEFAULT now())""",
     # De standaardbronnen één keer klaarzetten (daarna beheer je ze zelf op Nieuws › Bronnen).
     _vera_bronnen(),
+    # Landelijk politiek nieuws: een tweede stroom in Vera's eigen bronnen (naast 'overig').
+    "ALTER TABLE vera_bronnen ADD COLUMN IF NOT EXISTS stroom text NOT NULL DEFAULT 'overig'",
+    "ALTER TABLE vera_berichten ADD COLUMN IF NOT EXISTS stroom text NOT NULL DEFAULT 'overig'",
+    "ALTER TABLE vera_bronnen DROP CONSTRAINT IF EXISTS vera_bronnen_stroom_check",
+    "ALTER TABLE vera_bronnen ADD CONSTRAINT vera_bronnen_stroom_check CHECK (stroom IN ('overig', 'landelijk'))",
+    _vera_bronnen("landelijk"),
 ]
 

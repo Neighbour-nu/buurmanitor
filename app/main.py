@@ -125,12 +125,12 @@ def vandaag(request: Request):
         post = bram_vandaag(c)
         taken = noor.vandaag_overzicht(c, nu)
         stromen, _ = vera_nieuws.verzamel(c, 2)
-        koppen = vera_nieuws.koppen_per_soort(stromen, nu, per=4)
+        koppen = vera_nieuws.koppen_per_soort(stromen, nu, per={"keepers": 4, "politiek": 3, "landelijk": 2, "overig": 4})
     urgent = [m for m in open_ if m["niveau"] == "urgent"]
     return templates.TemplateResponse("vandaag.html", ctx(
         request, "vandaag", nu=nu, meldingen=open_, urgent=urgent, werkruimtes=config.werkruimtes(), agenda=agenda,
         lijst_meldingen=lijst_meldingen, meldingmap=meldingmap, meldingmappen=meldingen.MAPPEN, aantallen=aantallen,
-        post=post, taken=taken, koppen=koppen, soortnamen=vera_nieuws.SOORT_NAMEN,
+        post=post, taken=taken, koppen=koppen, categorieen=vera_nieuws.CATEGORIEEN, deelnamen=vera_nieuws.DEEL_NAMEN,
         taakmelding=request.query_params.get("melding", "")[:300]))
 
 

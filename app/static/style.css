@@ -512,3 +512,16 @@ tr.uit td { opacity: .55; }
   #nieuws { grid-column: span 2; grid-row: span 2; }
   .nieuwsgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 18px; }
 }
+
+/* Nieuws: politiek in twee delen (lokaal voorop, landelijk) */
+.ndeelkop { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--kop); font-weight: 600; text-transform: uppercase;
+            letter-spacing: .04em; font-size: 13px; color: var(--politiek); margin: 6px 0 2px; padding: 4px 0 2px; border-bottom: 2px solid var(--rozig); }
+.ndeelkop .aantal { color: var(--zacht); font-family: Barlow, sans-serif; text-transform: none; letter-spacing: 0; }
+.ndeel.landelijk { margin-top: 10px; }
+.ndeel.landelijk .ndeelkop { color: var(--zacht); border-bottom-color: var(--lijn); }
+.nraster.enkel .nkolom.gedeeld .ndelen { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 0 28px; }
+.nraster.enkel .nkolom.gedeeld .nlijst { display: block; }
+.nraster.enkel .nkolom.gedeeld .ndeel.landelijk { margin-top: 6px; }
+@media (max-width: 900px) { .nraster.enkel .nkolom.gedeeld .ndelen { grid-template-columns: 1fr; } }
+.nieuwsdeel { font-size: 12px; font-weight: 600; color: var(--zacht); margin: 6px 0 0 11px; text-transform: uppercase; letter-spacing: .04em; }
+.nieuwsdeel.landelijk { margin-top: 10px; }

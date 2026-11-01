@@ -109,17 +109,20 @@
   <section class="kaart" id="nieuws">
     <h2>Nieuws <a class="klein" href="/vera">alle nieuws</a></h2>
     <div class="nieuwsgrid">
-    {% for soort, lijst in koppen.items() %}
-      <div class="nieuwsblok {{ soort }}">
-        <h3><a href="/vera?soort={{ soort }}">{{ soortnamen[soort] }}</a></h3>
-        {% if lijst is none %}<p class="noot">{{ 'De Doellijn' if soort == 'keepers' else 'Promonitor' }} draait hier nog niet als werkruimte.</p>
-        {% else %}
-          {% for b in lijst %}
-          <a class="kopregel-nieuws {{ 'gelezen' if b.gelezen }}" href="/vera/lees/{{ b.soort }}/{{ b.id }}" target="_blank" rel="noopener" title="{{ b.waarom or b.titel }}">
-            <span class="nkoptekst">{{ b.titel }}</span>
-            <span class="bron">{{ b.bron }}{% if b.ook %} +{{ b.ook | length }}{% endif %}{% if b.tijd %} · {{ geleden(b.tijd) }}{% endif %}</span></a>
-          {% else %}<p class="noot">Nog niets belangrijks.</p>{% endfor %}
-        {% endif %}
+    {% for cat, naam, delen in categorieen %}
+      <div class="nieuwsblok {{ cat }}">
+        <h3><a href="/vera?soort={{ cat }}">{{ naam }}</a></h3>
+        {% for soort in delen %}{% set lijst = koppen[soort] %}
+          {% if delen | length > 1 %}<h4 class="nieuwsdeel {{ soort }}">{{ deelnamen[soort] }}</h4>{% endif %}
+          {% if lijst is none %}<p class="noot">{{ 'De Doellijn' if soort == 'keepers' else 'Promonitor' }} draait hier nog niet als werkruimte.</p>
+          {% else %}
+            {% for b in lijst %}
+            <a class="kopregel-nieuws {{ 'gelezen' if b.gelezen }}" href="/vera/lees/{{ b.soort }}/{{ b.id }}" target="_blank" rel="noopener" title="{{ b.waarom or b.titel }}">
+              <span class="nkoptekst">{{ b.titel }}</span>
+              <span class="bron">{{ b.bron }}{% if b.ook %} +{{ b.ook | length }}{% endif %}{% if b.tijd %} · {{ geleden(b.tijd) }}{% endif %}</span></a>
+            {% else %}<p class="noot">Nog niets belangrijks.</p>{% endfor %}
+          {% endif %}
+        {% endfor %}
       </div>
     {% endfor %}
     </div>
