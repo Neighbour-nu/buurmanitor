@@ -95,11 +95,23 @@ def bram_vandaag(c):
     return tel
 
 
+def _meldingen_in_map(c, map_, limiet=50):
+    volgorde = "gelezen, CASE niveau WHEN 'urgent' THEN 0 WHEN 'belangrijk' THEN 1 ELSE 2 END, id DESC" if map_ == "open" \
+        else "coalesce(afgehandeld, tijd) DESC, id DESC"
+    return c.execute(f"SELECT * FROM meldingen WHERE status = %s ORDER BY {volgorde} LIMIT %s", (map_, limiet)).fetchall()
+
+
 @app.get("/", response_class=HTMLResponse)
 def vandaag(request: Request):
     nu = dt.datetime.now(config.TZ)
+    # De meldingen staan op Vandaag, met de mappen (Open, Opgelost, Archief, Prullenbak) eronder.
+    meldingmap = request.query_params.get("meldingen", "open")
+    if meldingmap not in {m[0] for m in meldingen.MAPPEN}:
+        meldingmap = "open"
     with db.pool.connection() as c:
         open_ = meldingen.open_meldingen(c, 12)
+        lijst_meldingen = _meldingen_in_map(c, meldingmap)
+        aantallen = meldingen.aantallen(c)
         besteed, _ = claude.verbruik_maand(c)
         agenda = clara_vandaag(c, nu)
         post = bram_vandaag(c)
@@ -107,6 +119,7 @@ def vandaag(request: Request):
     g, s = gezondheid.geheugen(), gezondheid.schijf()
     return templates.TemplateResponse("vandaag.html", ctx(
         request, "vandaag", nu=nu, meldingen=open_, urgent=urgent, werkruimtes=config.werkruimtes(), agenda=agenda,
+        lijst_meldingen=lijst_meldingen, meldingmap=meldingmap, meldingmappen=meldingen.MAPPEN, aantallen=aantallen,
         team=personas.alle().values(), post=post, geheugen=g, schijf=s, backups=gezondheid.backups(), besteed=besteed,
         plafond=config.MAANDPLAFOND_EUR, fase=config.FASE))
 
@@ -189,21 +202,15 @@ def iris_nieuw(request: Request):
 
 # ---------- Meldingen ----------
 
-@app.get("/meldingen", response_class=HTMLResponse)
-def meldingen_scherm(request: Request, map: str = "open"):  # pylint: disable=redefined-builtin
-    mappen = {m[0]: m for m in meldingen.MAPPEN}
-    if map not in mappen:
-        map = "open"
-    with db.pool.connection() as c:
-        volgorde = "gelezen, id DESC" if map == "open" else "coalesce(afgehandeld, tijd) DESC, id DESC"
-        alle = c.execute(f"SELECT * FROM meldingen WHERE status = %s ORDER BY {volgorde} LIMIT 200", (map,)).fetchall()
-        aantallen = meldingen.aantallen(c)
-    return templates.TemplateResponse("meldingen.html", ctx(request, "meldingen", alle=alle, map=map, mappen=meldingen.MAPPEN,
-                                                            huidig=mappen[map], aantallen=aantallen))
+@app.get("/meldingen")
+def meldingen_scherm(map: str = "open"):  # pylint: disable=redefined-builtin
+    """De meldingen staan nu op Vandaag; oude links komen daar uit, in de goede map."""
+    mappen = {m[0] for m in meldingen.MAPPEN}
+    return RedirectResponse(("/?meldingen=" + map if map in mappen and map != "open" else "/") + "#meldingen", status_code=303)
 
 
 def _terug_meldingen(request):
-    terug = request.headers.get("referer") or "/meldingen"
+    terug = request.headers.get("referer") or "/#meldingen"
     return RedirectResponse(terug if web.herkomst_toegestaan(None, terug, config.TOEGESTANE_HOSTS) else "/", status_code=303)
 
 
@@ -230,7 +237,7 @@ def melding_afhandelen(request: Request, mid: int, actie: str):
 def meldingen_alles_gelezen(request: Request):
     controleer_herkomst(request)
     uitvoeren("UPDATE meldingen SET gelezen = true WHERE NOT gelezen")
-    return RedirectResponse("/meldingen", status_code=303)
+    return RedirectResponse("/#meldingen", status_code=303)
 
 
 @app.get("/api/meldingen")

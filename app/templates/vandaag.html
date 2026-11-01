@@ -10,19 +10,39 @@
   </div>
   <div class="chips">{% for k, naam in domeinen %}<span class="chip {{ k }}">{{ naam }}</span>{% endfor %}</div>
 </section>
-<p><button id="meldingen-aan" class="knop" hidden>Meldingen op dit apparaat aanzetten</button></p>
 
 <div class="raster">
-  <section class="kaart">
-    <h2>Meldingen <a class="klein" href="/meldingen">alles</a></h2>
-    {% for m in meldingen %}
-      <div class="item {{ m.niveau }}"><b>{{ m.titel }}</b><br><span class="noot">{{ m.bron }} · {{ geleden(m.tijd) }}{% if m.link %} · <a href="{{ m.link }}">bekijk</a>{% endif %}</span>
+  <section class="kaart" id="meldingen">
+    {% set mapnaam = (meldingmappen | selectattr(0, 'equalto', meldingmap) | first)[1] %}
+    <h2><span>Meldingen{% if meldingmap != 'open' %} <span class="noot">· {{ mapnaam }}</span>{% endif %}</span>
+      {% if meldingmap == 'open' and aantallen.ongelezen %}<form method="post" action="/meldingen/alles-gelezen" class="inline"><button class="knop klein" type="submit">Alles gelezen</button></form>{% endif %}</h2>
+    <div class="meldinglijst">
+    {% for m in lijst_meldingen %}
+      <div class="item {{ m.niveau }} {{ 'gelezen' if m.gelezen and meldingmap == 'open' }}" id="m{{ m.id }}"><b>{{ m.titel }}</b>{% if meldingmap == 'open' and not m.gelezen %} <span class="label groen">nieuw</span>{% endif %}<br>
+        {% if m.tekst %}<span class="meldingtekst">{{ m.tekst }}</span><br>{% endif %}
+        <span class="noot">{{ m.bron }} · {{ geleden(m.tijd) }}{% if m.afgehandeld and meldingmap != 'open' %} · {{ {'opgelost': 'afgevinkt', 'archief': 'gearchiveerd', 'verwijderd': 'verwijderd'}[meldingmap] }} {{ geleden(m.afgehandeld) }}{% endif %}{% if m.link %} · <a href="{{ m.link }}">bekijk</a>{% endif %}</span>
         <form method="post" class="knoppenrij melding-acties">
-          <button class="knop klein vol" formaction="/meldingen/{{ m.id }}/opgelost" title="Afvinken: je hebt het opgelost">✓ Opgelost</button>
-          <button class="knop klein" formaction="/meldingen/{{ m.id }}/archief">Archiveren</button>
-          <button class="knop klein" formaction="/meldingen/{{ m.id }}/verwijder">Verwijderen</button>
+          {% if meldingmap == 'open' %}
+            <button class="knop klein vol" formaction="/meldingen/{{ m.id }}/opgelost" title="Afvinken: je hebt het opgelost">✓ Opgelost</button>
+            <button class="knop klein" formaction="/meldingen/{{ m.id }}/archief">Archiveren</button>
+            <button class="knop klein" formaction="/meldingen/{{ m.id }}/verwijder">Verwijderen</button>
+          {% elif meldingmap == 'verwijderd' %}
+            <button class="knop klein" formaction="/meldingen/{{ m.id }}/terug">Terugzetten</button>
+          {% else %}
+            <button class="knop klein" formaction="/meldingen/{{ m.id }}/terug">Terug naar Open</button>
+            {% if meldingmap == 'opgelost' %}<button class="knop klein" formaction="/meldingen/{{ m.id }}/archief">Archiveren</button>{% endif %}
+            <button class="knop klein" formaction="/meldingen/{{ m.id }}/verwijder">Verwijderen</button>
+          {% endif %}
         </form></div>
-    {% else %}<p class="noot">Geen open meldingen.</p>{% endfor %}
+    {% else %}<p class="noot">{% if meldingmap == 'open' %}Geen open meldingen.{% elif meldingmap == 'opgelost' %}Nog niets afgevinkt.{% elif meldingmap == 'archief' %}Het archief is leeg.{% else %}De prullenbak is leeg.{% endif %}</p>{% endfor %}
+    </div>
+    <nav class="meldingmappen" aria-label="Mappen voor meldingen">
+      {% for status, naam, uitleg in meldingmappen %}
+      <a href="/{{ '' if status == 'open' else '?meldingen=' ~ status }}#meldingen" class="{{ 'actief' if status == meldingmap }}" title="{{ uitleg }}" {% if status == meldingmap %}aria-current="page"{% endif %}>
+        <span>{{ naam }}</span><span class="aantal">{% if status == 'open' and aantallen.ongelezen %}<b>{{ aantallen.ongelezen }}</b>/{% endif %}{{ aantallen[status] }}</span></a>
+      {% endfor %}
+    </nav>
+    <p class="noot"><button id="meldingen-aan" class="knop klein" hidden>Meldingen op dit apparaat aanzetten</button></p>
   </section>
 
   <section class="kaart">

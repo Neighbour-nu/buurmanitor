@@ -149,7 +149,7 @@ def test_schermen_starten():
         print("  (overgeslagen: geen TEST_DATABASE_URL)")
         return
     with TestClient(main.app) as k:
-        for pad in ["/", "/iris", "/iris?g=0", "/meldingen", "/gezondheid", "/api/meldingen?na=0"]:
+        for pad in ["/", "/iris", "/iris?g=0", "/gezondheid", "/api/meldingen?na=0"]:
             assert k.get(pad, headers=KOP).status_code == 200, pad
         assert k.get("/gezond").text == "ok"
         # Iris zonder sleutel: het gesprek wordt bewaard met een nette melding, geen fout.
@@ -164,50 +164,52 @@ def test_schermen_starten():
 
 
 def _meldingen_afvinken_archiveren_verwijderen(k):
-    """Meldingen afvinken, archiveren, verwijderen en terugzetten (binnen dezelfde app als test_schermen_starten)."""
-    form = KOP | {"Origin": "https://buurmanitor.neighbour.nu", "Referer": "https://buurmanitor.neighbour.nu/meldingen"}
+    """Meldingen op Vandaag afvinken, archiveren, verwijderen en terugzetten, met de mappen onder de lijst
+    (binnen dezelfde app als test_schermen_starten). Het oude scherm Meldingen verwijst naar Vandaag."""
+    form = KOP | {"Origin": "https://buurmanitor.neighbour.nu", "Referer": "https://buurmanitor.neighbour.nu/"}
+
+    def lijst(pagina):
+        return pagina.split('id="meldingen"')[1].split('class="meldingmappen"')[0]
     with _db() as c:
         c.execute("DELETE FROM meldingen")
         ids = [meldingen.melden(c, "belangrijk", "test", f"Melding {n}", sleutel=f"m{n}") for n in range(4)]
-    pagina = k.get("/meldingen", headers=KOP).text
-    assert all(f"Melding {n}" in pagina for n in range(4)) and "Gelezen" in pagina and "✓ Opgelost" in pagina
+    pagina = k.get("/", headers=KOP).text
+    assert all(f"Melding {n}" in lijst(pagina) for n in range(4)) and "✓ Opgelost" in pagina and "Alles gelezen" in pagina
     for m in ("Open", "Opgelost", "Archief", "Prullenbak"):
-        assert f"<b>{m}</b>" in pagina
-    assert 'href="/meldingen?map=opgelost"' in pagina and "4 nieuw" in pagina
-    # Afvinken, archiveren en verwijderen: weg uit Open, uit de banner en uit het dashboard.
+        assert f"<span>{m}</span>" in pagina
+    assert 'href="/?meldingen=opgelost#meldingen"' in pagina and "<b>4</b>/4" in pagina
+    assert ">Meldingen<" not in pagina.split('class="menu"')[1].split("</nav>")[0]  # geen eigen tabblad meer
+    r = k.get("/meldingen?map=archief", headers=KOP, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/?meldingen=archief#meldingen"
+    assert k.get("/meldingen", headers=KOP, follow_redirects=False).headers["location"] == "/#meldingen"
+    # Afvinken, archiveren en verwijderen: weg uit Open, uit de banner, en terug op Vandaag.
     for mid, actie in zip(ids, ("opgelost", "archief", "verwijder")):
         r = k.post(f"/meldingen/{mid}/{actie}", headers=form, follow_redirects=False)
-        assert r.status_code == 303 and r.headers["location"].endswith("/meldingen")
+        assert r.status_code == 303 and r.headers["location"] == "https://buurmanitor.neighbour.nu/"
     with _db() as c:
         assert [m["id"] for m in meldingen.open_meldingen(c)] == [ids[3]]
         assert [m["id"] for m in meldingen.nieuw_sinds(c, 0)] == [ids[3]]
         n = meldingen.aantallen(c)
         assert (n["open"], n["opgelost"], n["archief"], n["verwijderd"], n["ongelezen"]) == (1, 1, 1, 1, 1)
-        # Verwijderd blijft bewaard: dezelfde sleutel komt niet opnieuw.
-        assert meldingen.melden(c, "belangrijk", "test", "Melding 2 opnieuw", sleutel="m2") is None
-    open_ = k.get("/meldingen", headers=KOP).text.split('id="lijst"')[1].split("<aside")[0]
+        assert meldingen.melden(c, "belangrijk", "test", "Melding 2 opnieuw", sleutel="m2") is None  # verwijderd blijft bewaard
+    open_ = lijst(k.get("/", headers=KOP).text)
     assert "Melding 3" in open_ and "Melding 0" not in open_
     for status, titel in (("opgelost", "Melding 0"), ("archief", "Melding 1"), ("verwijderd", "Melding 2")):
-        lijst = k.get(f"/meldingen?map={status}", headers=KOP).text.split('id="lijst"')[1].split("<aside")[0]
-        assert titel in lijst and "Melding 3" not in lijst, status
-    assert "Terugzetten" in k.get("/meldingen?map=verwijderd", headers=KOP).text
+        l_ = lijst(k.get(f"/?meldingen={status}", headers=KOP).text)
+        assert titel in l_ and "Melding 3" not in l_, status
+    assert "Terugzetten" in k.get("/?meldingen=verwijderd", headers=KOP).text
+    assert "Terug naar Open" in k.get("/?meldingen=opgelost", headers=KOP).text
     # Terugzetten: weer in Open (al gelezen), niet opnieuw in de banner.
-    assert k.post(f"/meldingen/{ids[2]}/terug", headers=form, follow_redirects=False).status_code == 303
+    r = k.post(f"/meldingen/{ids[2]}/terug", headers=form | {"Referer": "https://buurmanitor.neighbour.nu/?meldingen=verwijderd"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].endswith("/?meldingen=verwijderd")
     with _db() as c:
         assert meldingen.aantallen(c)["open"] == 2 and [m["id"] for m in meldingen.nieuw_sinds(c, 0)] == [ids[3]]
-    # Onbekende actie of melding, of een formulier van een andere site: geweigerd.
+    # Alles gelezen, onbekende actie of melding, of een formulier van een andere site.
+    assert k.post("/meldingen/alles-gelezen", headers=form, follow_redirects=False).headers["location"] == "/#meldingen"
     assert k.post(f"/meldingen/{ids[3]}/weg", headers=form).status_code == 404
     assert k.post("/meldingen/999999/opgelost", headers=form).status_code == 404
     assert k.post(f"/meldingen/{ids[3]}/opgelost", headers=KOP | {"Origin": "https://kwaadwillend.nl"}).status_code == 403
-    assert k.get("/meldingen?map=onzin", headers=KOP).status_code == 200
-    # Ook op Vandaag: afvinken, archiveren en verwijderen, en daarna terug naar Vandaag.
-    vandaag = k.get("/", headers=KOP).text
-    assert f'formaction="/meldingen/{ids[3]}/opgelost"' in vandaag and f'formaction="/meldingen/{ids[3]}/archief"' in vandaag
-    assert f'formaction="/meldingen/{ids[3]}/verwijder"' in vandaag
-    r = k.post(f"/meldingen/{ids[3]}/opgelost", headers=form | {"Referer": "https://buurmanitor.neighbour.nu/"}, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "https://buurmanitor.neighbour.nu/"
-    assert "Melding 3" not in k.get("/", headers=KOP).text
-
+    assert k.get("/?meldingen=onzin", headers=KOP).status_code == 200
 
 if __name__ == "__main__":
     for naam, functie in list(globals().items()):

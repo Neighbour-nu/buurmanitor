@@ -360,3 +360,13 @@ details.bulklijst ul { margin: 4px 0 6px; padding-left: 18px; font-size: 13px; m
 .taakformulier .velden { align-items: end; }
 @media (max-width: 760px) { .kanban { grid-template-columns: repeat(6, minmax(220px, 80vw)); } }
 a.ikoon { text-decoration: none; display: inline-block; }
+
+/* Meldingen op Vandaag, met de mappen in een klein vak eronder */
+.meldinglijst { max-height: 520px; overflow-y: auto; }
+.meldinglijst .item.gelezen { opacity: .75; }
+.meldingtekst { font-size: 14px; }
+.meldingmappen { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; border: 1px solid var(--lijn); border-radius: 6px; padding: 4px; margin-top: 10px; }
+.meldingmappen a { display: flex; justify-content: space-between; gap: 6px; padding: 4px 8px; border-radius: 4px; font-size: 14px; color: var(--inkt); text-decoration: none; }
+.meldingmappen a:hover { background: var(--ijs); }
+.meldingmappen a.actief { background: var(--ijs); font-weight: 600; color: var(--blauwdonker); }
+.meldingmappen .aantal { color: var(--zacht); font-variant-numeric: tabular-nums; }
