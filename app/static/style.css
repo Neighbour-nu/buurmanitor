@@ -384,3 +384,30 @@ details.afspraak.klein .tijd { flex-basis: 56px; }
 .minibericht .van, .minibericht .onderwerp { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .minibericht .wanneer { font-size: 12px; font-variant-numeric: tabular-nums; }
 .minibericht .stip { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--rooddonker, #B71C1C); margin-right: 5px; vertical-align: 1px; }
+
+/* Noor: gesprek boven het takenbord */
+.noorgesprek { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 16px; }
+.noorgesprek .berichten { max-height: 42vh; overflow: auto; }
+.noorgesprek textarea { width: 100%; min-height: 70px; }
+.noorgesprek .bericht.user { margin-left: 8%; } .noorgesprek .bericht.assistant { margin-right: 0; }
+.noor-voorstellen h3 { margin: 4px 0 8px; font-size: 15px; }
+.noor-voorstellen .voorstel { justify-content: space-between; }
+.noor-voorstellen .voorstel > span:first-child { flex: 1 1 100%; overflow-wrap: anywhere; }
+@media (max-width: 900px) { .noorgesprek { grid-template-columns: 1fr; } }
+
+/* Vandaag: taken */
+.taakteller { margin: 0 0 6px; }
+.minitaken { border: 1px solid var(--lijn); border-radius: 6px; overflow: hidden; }
+.minitaak { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--lijn); border-left: 3px solid var(--lijn); }
+.minitaak:last-child { border-bottom: 0; }
+.minitaak.prio-hoog { border-left-color: #C62828; } .minitaak.prio-middel { border-left-color: #E0A100; } .minitaak.prio-laag { border-left-color: #9AA5B1; }
+.minitaak a { flex: 1 1 auto; min-width: 0; color: var(--inkt); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.minitaak a:hover { text-decoration: underline; }
+.minitaak .reden { font-size: 12px; color: var(--zacht); white-space: nowrap; }
+.minitaak .reden.te-laat { color: #C62828; font-weight: 600; }
+.minitaak form { margin: 0; }
+.minitaak .vink { border: 1px solid var(--lijn); background: var(--wit); border-radius: 4px; width: 24px; height: 24px; padding: 0; cursor: pointer; color: var(--zacht); line-height: 1; }
+.minitaak .vink:hover { border-color: #2E7D32; color: #2E7D32; }
+.snelle-taak { display: flex; gap: 6px; margin-top: 8px; }
+.snelle-taak input { flex: 1 1 auto; min-width: 0; }
+#noor, #taken { scroll-margin-top: 80px; }

@@ -13,8 +13,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from urllib.parse import urlencode
 
 from ..clara import bronnen as agenda_bronnen, kluis, sync as agenda_sync, web as clara_web
-from ..kern import config, db
+from ..kern import claude, config, db
 from ..kern.web import DAGEN, controleer_herkomst, ctx, templates
+from . import noor
 
 router = APIRouter()
 STATUSSEN = (("nieuw", "Nieuw"), ("triage", "Triage"), ("gepland", "Gepland"), ("actief", "Actief"),
@@ -161,9 +162,39 @@ def nieuw(c, velden, bericht_id=None):
 
 # ---------------------------------------------------------------- schermen
 
+def _terug_adres(f, standaard):
+    """Terug naar Vandaag als de knop daar stond, anders naar het bord. Pure functie."""
+    return "/#taken" if str(f.get("terug") or "") == "/" else standaard
+
+
+def _paneel(c, g=None):
+    """Het gesprek met Noor: het gekozen gesprek, anders het laatste, met de open en uitgevoerde voorstellen."""
+    if g:
+        gs = c.execute("SELECT * FROM gesprekken WHERE id = %s AND persona = 'noor'", (g,)).fetchone()
+    elif g is None:
+        gs = c.execute("SELECT * FROM gesprekken WHERE persona = 'noor' AND NOT gearchiveerd ORDER BY bijgewerkt DESC LIMIT 1").fetchone()
+    else:
+        gs = None
+    uit = {"gesprek": gs, "berichten": [], "voorstellen": [], "klaar": [],
+           "eerdere": c.execute("""SELECT id, titel, bijgewerkt FROM gesprekken WHERE persona = 'noor' AND NOT gearchiveerd
+                                   ORDER BY bijgewerkt DESC LIMIT 10""").fetchall()}
+    if gs:
+        uit["berichten"] = c.execute("SELECT * FROM gesprek_berichten WHERE gesprek_id = %s ORDER BY id", (gs["id"],)).fetchall()
+        rijen = c.execute("""SELECT v.*, t.titel AS taak_titel, t.startdatum, t.starttijd, t.einddatum, t.eindtijd FROM taak_voorstellen v
+                             LEFT JOIN takenbord t ON t.id = v.taak_id WHERE v.gesprek_id = %s ORDER BY v.id""", (gs["id"],)).fetchall()
+        for v in rijen:
+            if v["status"] == "open":
+                taak = {"titel": v["taak_titel"], "startdatum": v["startdatum"], "starttijd": v["starttijd"],
+                        "einddatum": v["einddatum"], "eindtijd": v["eindtijd"]}
+                uit["voorstellen"].append(dict(v, tekst=noor.beschrijf(v["soort"], noor.gegevens_terug(v["gegevens"]), taak)))
+            elif v["status"] == "uitgevoerd":
+                uit["klaar"].append(v)
+    return uit
+
+
 @router.get("/taken", response_class=HTMLResponse)
 def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, wacht: int = 0, alles: int = 0,
-         melding: str = "", fout: str = ""):
+         melding: str = "", fout: str = "", praat: int = 0, g: int | None = None):
     nieuw_ = nieuw_ or int(request.query_params.get("nieuw") or 0)
     vandaag = dt.datetime.now(config.TZ).date()
     with db.pool.connection() as c:
@@ -188,11 +219,12 @@ def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, w
                     formulier |= uit_bericht(b)
         mail = c.execute("SELECT id, onderwerp, van_naam FROM post_berichten WHERE id = %s", (formulier["bericht_id"],)).fetchone() \
             if formulier and formulier.get("bericht_id") else None
+        paneel = _paneel(c, g) if praat else None
     kolommen = [(s, naam, [t for t in taken if t["status"] == s]) for s, naam in STATUSSEN]
     return templates.TemplateResponse("taken.html", ctx(
         request, "taken", kolommen=kolommen, formulier=formulier, statussen=STATUSSEN, prios=PRIO, prio_namen=PRIO_NAMEN,
         doelen=doelen, vandaag=vandaag, DAGEN=DAGEN, melding=melding, fout=fout, wacht=wacht, mail=mail, alles=alles,
-        afgerond_dagen=AFGEROND_DAGEN))
+        afgerond_dagen=AFGEROND_DAGEN, praat=praat, paneel=paneel, sleutel_ok=bool(config.ANTHROPIC_API_KEY)))
 
 
 @router.post("/taken/nieuw")
@@ -201,7 +233,7 @@ async def taak_nieuw(request: Request):
     f = await request.form()
     velden = uit_formulier(f)
     if not velden["titel"]:
-        return _terug("/taken?nieuw=1", fout="Geef de taak een korte titel.")
+        return _terug(_terug_adres(f, "/taken?nieuw=1"), fout="Geef de taak een korte titel.")
     bericht_id = int(f.get("bericht_id")) if str(f.get("bericht_id") or "").isdigit() else None
 
     def doe():
@@ -209,7 +241,7 @@ async def taak_nieuw(request: Request):
             tid = nieuw(c, velden, bericht_id)
             return tid, agenda_bijwerken(c, tid)
     tid, agenda = await asyncio.to_thread(doe)
-    return _terug(f"/taken#taak-{tid}", melding=f"Taak '{velden['titel']}' staat bij {STATUS_NAMEN[velden['status']]}" + (f", {agenda}" if agenda else "") + ".")
+    return _terug(_terug_adres(f, f"/taken#taak-{tid}"), melding=f"Taak '{velden['titel']}' staat bij {STATUS_NAMEN[velden['status']]}" + (f", {agenda}" if agenda else "") + ".")
 
 
 @router.post("/taken/{tid:int}")
@@ -254,7 +286,7 @@ async def taak_status(request: Request, tid: int):
     t = await asyncio.to_thread(doe)
     if status == "wachtend" and not t["wacht_op"]:
         return _terug(f"/taken?bewerk={tid}&wacht=1#formulier", melding=f"'{t['titel']}' staat bij Wachtend op. Op wie wacht je?")
-    return _terug(f"/taken#taak-{tid}", melding=f"'{t['titel']}' staat nu bij {STATUS_NAMEN[status]}.")
+    return _terug(_terug_adres(f, f"/taken#taak-{tid}"), melding=f"'{t['titel']}' staat nu bij {STATUS_NAMEN[status]}.")
 
 
 @router.post("/taken/{tid:int}/weg")
@@ -274,3 +306,91 @@ async def taak_weg(request: Request, tid: int):
             return t
     t = await asyncio.to_thread(doe)
     return _terug("/taken", melding=f"Taak '{t['titel']}' verwijderd" + (" (ook uit de agenda)" if t["agenda_extern"] else "") + ".")
+
+
+# ---------------------------------------------------------------- Noor
+
+def _gesprek_adres(gid):
+    return "/taken?praat=1" + (f"&g={gid}" if gid else "") + "#noor"
+
+
+@router.post("/taken/gesprek/vraag")
+async def noor_vraag(request: Request):
+    controleer_herkomst(request)
+    f = await request.form()
+    vraag = str(f.get("vraag") or "").strip()
+    gid = int(f.get("gesprek") or 0) or None
+    if not vraag:
+        return _terug(_gesprek_adres(gid))
+    with db.pool.connection() as c:
+        if gid and not c.execute("SELECT 1 FROM gesprekken WHERE id = %s AND persona = 'noor'", (gid,)).fetchone():
+            gid = None
+        if not gid:
+            gid = c.execute("INSERT INTO gesprekken (persona, titel, kader) VALUES ('noor', %s, 'taken') RETURNING id",
+                            (" ".join(vraag.split())[:80],)).fetchone()["id"]
+        c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'user', %s)", (gid, vraag))
+        c.execute("UPDATE gesprekken SET gearchiveerd = false WHERE id = %s", (gid,))
+
+    def antwoorden():
+        with db.pool.connection() as c:
+            try:
+                noor.antwoord(c, gid)
+            except claude.ClaudeFout as e:
+                c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)",
+                          (gid, f"(Ik kan nu niet antwoorden: {e})"))
+    await asyncio.to_thread(antwoorden)
+    return _terug(_gesprek_adres(gid))
+
+
+@router.post("/taken/gesprek/nieuw")
+async def noor_nieuw(request: Request):
+    controleer_herkomst(request)
+    return _terug("/taken?praat=1&g=0#noor")
+
+
+def toepassen(c, v):
+    """Een voorstel van Noor uitvoeren (na de klik). Geeft de uitslag in één zin."""
+    g = noor.gegevens_terug(v["gegevens"])
+    if v["soort"] == "nieuw":
+        velden = {"titel": "", "beschrijving": "", "prio": "middel", "status": "nieuw", "wacht_op": "", "startdatum": None, "starttijd": None,
+                  "einddatum": None, "eindtijd": None, "doel": ""} | g
+        if velden["startdatum"] or velden["einddatum"]:
+            velden["status"] = velden["status"] if velden["status"] != "nieuw" else "gepland"
+        tid = nieuw(c, velden)
+        agenda = agenda_bijwerken(c, tid)
+        return tid, f"Taak '{velden['titel']}' staat bij {STATUS_NAMEN[velden['status']]}" + (f", {agenda}" if agenda else "") + "."
+    t = c.execute("SELECT * FROM takenbord WHERE id = %s", (v["taak_id"],)).fetchone()
+    if not t:
+        return None, "Die taak bestaat niet meer."
+    sets = ", ".join(f"{k} = %({k})s" for k in g)
+    status = g.get("status", t["status"])
+    c.execute(f"""UPDATE takenbord SET {sets + ', ' if sets else ''}bijgewerkt = now(),
+                  afgerond = CASE WHEN %(_status)s = 'afgerond' THEN coalesce(afgerond, now()) END WHERE id = %(_id)s""",
+              g | {"_status": status, "_id": t["id"]})
+    agenda = agenda_bijwerken(c, t["id"])
+    return t["id"], f"'{g.get('titel') or t['titel']}' bijgewerkt" + (f", {agenda}" if agenda else "") + "."
+
+
+@router.post("/taken/voorstel/{vid:int}")
+async def noor_voorstel(request: Request, vid: int):
+    controleer_herkomst(request)
+    f = await request.form()
+    with db.pool.connection() as c:
+        v = c.execute("SELECT * FROM taak_voorstellen WHERE id = %s AND status = 'open'", (vid,)).fetchone()
+        if not v:
+            return _terug("/taken?praat=1#noor", fout="Dit voorstel is al afgehandeld.")
+        if f.get("actie") == "weg":
+            c.execute("UPDATE taak_voorstellen SET status = 'afgewezen' WHERE id = %s", (vid,))
+            return _terug(_gesprek_adres(v["gesprek_id"]))
+
+    def doe():
+        with db.pool.connection() as c:
+            tid, uitslag = toepassen(c, v)
+            c.execute("UPDATE taak_voorstellen SET status = 'uitgevoerd', uitslag = %s, taak_id = coalesce(taak_id, %s) WHERE id = %s",
+                      (uitslag[:500], tid, vid))
+            c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)", (v["gesprek_id"], f"(Gedaan: {uitslag})"))
+            c.execute("INSERT INTO logboek (persona, actie, details) VALUES ('noor', 'voorstel uitgevoerd', %s)",
+                      (json.dumps({"soort": v["soort"], "taak": tid, "uitslag": uitslag[:200]}),))
+            return uitslag
+    uitslag = await asyncio.to_thread(doe)
+    return _terug(_gesprek_adres(v["gesprek_id"]), melding=uitslag)

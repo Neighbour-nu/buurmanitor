@@ -314,4 +314,14 @@ MIGRATIES = [
         aangemaakt timestamptz NOT NULL DEFAULT now(),
         bijgewerkt timestamptz NOT NULL DEFAULT now(),
         afgerond timestamptz)""",
+    # Noor: voorstellen uit het gesprek over het takenbord (een nieuwe taak, of een taak wijzigen). Pas na Martijns klik.
+    """CREATE TABLE IF NOT EXISTS taak_voorstellen (
+        id serial PRIMARY KEY,
+        gesprek_id int REFERENCES gesprekken(id) ON DELETE CASCADE,
+        soort text NOT NULL CHECK (soort IN ('nieuw', 'wijzig')),
+        taak_id int REFERENCES takenbord(id) ON DELETE CASCADE,
+        gegevens jsonb NOT NULL DEFAULT '{}',
+        status text NOT NULL DEFAULT 'open',
+        uitslag text NOT NULL DEFAULT '',
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
 ]

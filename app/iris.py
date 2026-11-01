@@ -7,11 +7,12 @@ from .kern import claude, config, gezondheid, meldingen
 from .kern.web import datum_lang
 
 PLANNING = """Stand van de bouw:
-- Klaar: de kern van Buurmanitor, de werkruimtes Politiek (Promonitor) en ZEROHERO (de Doellijn), Clara (agenda) en
-  het eerste deel van Bram (mail uit Gmail en Outlook sorteren).
-- Volgende fases: Bram verder (Teams, WhatsApp en Signal), Noor (taken), Vera (nieuws), Jesse (socials).
-Teams, WhatsApp, Signal, taken, nieuws en socials kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt.
-Voor de agenda is Clara er, voor mail Bram, voor politiek en ZEROHERO de werkruimtes."""
+- Klaar: de kern van Buurmanitor, de werkruimtes Politiek (Promonitor) en ZEROHERO (de Doellijn), Clara (agenda),
+  het eerste deel van Bram (mail uit Gmail en Outlook sorteren) en Noor (het takenbord en de planning van taken).
+- Volgende fases: Bram verder (Teams, WhatsApp en Signal), Vera (nieuws), Jesse (socials).
+Teams, WhatsApp, Signal, nieuws en socials kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt.
+Voor de agenda is Clara er, voor mail Bram, voor taken en het inplannen ervan Noor (onder Taken), voor politiek en
+ZEROHERO de werkruimtes."""
 
 
 def context(c):
@@ -26,6 +27,7 @@ def context(c):
     post = _post(c)
     if post:
         delen.append(post)
+    delen.append(_taken(c, nu))
     g, s = gezondheid.geheugen(), gezondheid.schijf()
     if g and s:
         delen.append(f"Server: geheugen {g['procent']} procent in gebruik, schijf {s['procent']} procent vol.")
@@ -63,6 +65,20 @@ def _post(c):
     actie = [r for r in rijen if web.groep(r) == "actie"]
     uit = [f"Post (van Bram): {len(rijen)} berichten in de inboxen, {len(actie)} vragen om actie."]
     uit += [f"- {r['van_naam']}: {r['regel'] or r['onderwerp']} ({r['koppeling']})" for r in actie[:10]]
+    return "\n".join(uit)
+
+
+def _taken(c, nu):
+    """Wat Noor ziet, kort: wat vandaag om aandacht vraagt en op wie Martijn wacht."""
+    from .taken import noor  # pylint: disable=import-outside-toplevel
+    o = noor.vandaag_overzicht(c, nu)
+    if not o["open"]:
+        return "Taken (van Noor): geen open taken."
+    tel = ", ".join(f"{n} {s}" for s, n in o["tel"].items() if n)
+    uit = [f"Taken (van Noor): {o['open']} open ({tel})."]
+    uit += [f"- {t['titel']} ({t['reden']}, prio {t['prio']})" for t in o["lijst"]]
+    if o["wachtend"]:
+        uit.append("Martijn wacht op: " + ", ".join(o["wachtend"]) + ".")
     return "\n".join(uit)
 
 

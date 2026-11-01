@@ -15,11 +15,53 @@
     <p class="motto">Sleep een taak naar een andere kolom. Met een datum staat de taak ook in je agenda.</p>
   </div>
   <div class="knoppen">
+    <a class="knop {{ 'vol' if praat }}" href="{{ '/taken' if praat else '/taken?praat=1#noor' }}">💬 {{ 'Gesprek sluiten' if praat else 'Vraag Noor' }}</a>
     <a class="knop vol" href="/taken?nieuw=1#formulier">＋ Nieuwe taak</a>
   </div>
 </section>
 {% if melding %}<p class="item">{{ melding }}</p>{% endif %}
 {% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+
+{% if praat %}
+<section class="kaart noorgesprek" id="noor">
+  <div class="noor-praat">
+    <h2><span>Vraag het Noor <span class="noot">· taken en planning</span></span>
+      <form method="post" action="/taken/gesprek/nieuw" class="inline"><button class="knop klein" type="submit">Nieuw gesprek</button></form></h2>
+    {% if not sleutel_ok %}<p class="item urgent">Er is nog geen Claude-sleutel ingesteld.</p>{% endif %}
+    <div class="berichten" id="berichten">
+    {% for m in paneel.berichten %}
+      <div class="bericht {{ m.rol }}"><span class="noot">{{ 'Jij' if m.rol == 'user' else 'Noor' }} · {{ geleden(m.tijd) }}</span>
+        <div class="tekst">{{ m.tekst }}</div></div>
+    {% else %}
+      <p class="noot">Noor kent je takenbord en je agenda voor de komende twee weken, met de vrije blokken. Vraag bijvoorbeeld:
+        "Wat moet ik deze week echt doen?", "Plan het rapport voor de commissie in, ik heb er zes uur voor nodig",
+        "Kan de presentatie er nog bij?" of "Help me de kolom Nieuw te triëren".</p>
+    {% endfor %}
+    </div>
+    <form method="post" action="/taken/gesprek/vraag" id="vraag-noor">
+      <input type="hidden" name="gesprek" value="{{ paneel.gesprek.id if paneel.gesprek else '' }}">
+      <textarea name="vraag" required placeholder="Vraag Noor iets over je taken of je planning" autofocus></textarea>
+      <p><button class="knop vol" type="submit">Stuur</button> <span class="noot">Noor verandert pas iets als jij op de knop drukt.</span></p>
+    </form>
+  </div>
+  <div class="noor-voorstellen">
+    <h3>Voorstellen</h3>
+    {% for v in paneel.voorstellen %}
+      <form method="post" action="/taken/voorstel/{{ v.id }}" class="voorstel">
+        <span>{{ '＋' if v.soort == 'nieuw' else '✎' }} {{ v.tekst }}</span>
+        <span class="knoppenrij"><button class="knop klein vol" type="submit" name="actie" value="doe">{{ 'Aanmaken' if v.soort == 'nieuw' else 'Doorvoeren' }}</button>
+          <button class="knop klein" type="submit" name="actie" value="weg" formnovalidate>Niet doen</button></span>
+      </form>
+    {% else %}<p class="noot">Nog geen open voorstellen. Als Noor een taak wil aanmaken of inplannen, verschijnt die hier als knop.</p>{% endfor %}
+    {% for v in paneel.klaar[-5:] %}<p class="noot">✓ {{ v.uitslag }}</p>{% endfor %}
+    {% if paneel.eerdere %}
+    <details class="gesprekken"><summary>Eerdere gesprekken ({{ paneel.eerdere | length }})</summary>
+      {% for e in paneel.eerdere %}<div class="gesprekregel"><a href="/taken?praat=1&g={{ e.id }}#noor">{{ e.titel or 'Gesprek' }}</a> <span class="noot">{{ geleden(e.bijgewerkt) }}</span></div>{% endfor %}
+    </details>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
 
 {% if formulier %}
 <section class="kaart taakformulier" id="formulier">
@@ -101,6 +143,9 @@
       vorm.submit();
     });
   });
+  // Het gesprek met Noor: naar het laatste bericht scrollen.
+  const lijst = document.getElementById("berichten");
+  if (lijst) lijst.scrollTop = lijst.scrollHeight;
   // Het veld 'Wachtend op' alleen tonen als die kolom gekozen is.
   const keuze = document.getElementById("status-keuze"), wacht = document.querySelector(".wacht-veld");
   if (keuze && wacht) { const toon = () => { wacht.hidden = keuze.value !== "wachtend"; }; keuze.addEventListener("change", toon); toon(); }

@@ -79,6 +79,29 @@
     {% endif %}
   </section>
 
+  <section class="kaart" id="taken">
+    <h2>Taken <a class="klein" href="/taken">takenbord</a></h2>
+    {% if taakmelding %}<p class="item">{{ taakmelding }}</p>{% endif %}
+    {% if taken.open %}
+      <p class="noot taakteller">{% for s, naam in [('actief', 'actief'), ('wachtend', 'wachtend'), ('gepland', 'gepland'), ('nieuw', 'nieuw'), ('triage', 'triage')] if taken.tel[s] %}{{ ' · ' if not loop.first }}{% if s == 'actief' %}<b>{{ taken.tel[s] }} {{ naam }}</b>{% else %}{{ taken.tel[s] }} {{ naam }}{% endif %}{% endfor %}</p>
+      <div class="minitaken">
+      {% for t in taken.lijst %}
+        <div class="minitaak prio-{{ t.prio }}">
+          <form method="post" action="/taken/{{ t.id }}/status"><input type="hidden" name="status" value="afgerond"><input type="hidden" name="terug" value="/">
+            <button class="vink" type="submit" title="Afgerond" aria-label="{{ t.titel }} afronden">✓</button></form>
+          <a href="/taken?bewerk={{ t.id }}#formulier" title="{{ t.titel }}">{{ t.titel }}</a>
+          <span class="reden {{ 'te-laat' if t.reden == 'te laat' }}">{{ t.reden }}</span>
+        </div>
+      {% else %}<p class="noot" style="margin: 6px 8px">Niets wat vandaag om aandacht vraagt.</p>{% endfor %}
+      </div>
+      {% if taken.wachtend %}<p class="noot">Je wacht op {{ taken.wachtend | join(', ') }}.</p>{% endif %}
+    {% else %}<p class="noot">Geen open taken.</p>{% endif %}
+    <form class="snelle-taak" method="post" action="/taken/nieuw"><input type="hidden" name="terug" value="/">
+      <input type="text" name="titel" maxlength="160" required placeholder="Snel een taak toevoegen" aria-label="Nieuwe taak">
+      <button class="knop klein" type="submit">＋</button></form>
+    <p class="noot"><a href="/taken?praat=1#noor">Vraag Noor</a> wat eerst moet, of om een taak in te plannen.</p>
+  </section>
+
   <section class="kaart">
     <h2>Werkruimtes</h2>
     {% for w in werkruimtes %}
@@ -91,7 +114,7 @@
     <h2>Het team</h2>
     {% for p in team %}
       {% set actief = p.fase <= fase %}
-      <div class="persoon"><b>{% if p.sleutel in ('iris', 'clara') %}<a href="/{{ p.sleutel }}">{{ p.naam }}</a>{% else %}{{ p.naam }}{% endif %}</b> <span class="noot">{{ p.rol }}</span>
+      <div class="persoon"><b>{% set pad = {'iris': '/iris', 'clara': '/clara', 'bram': '/bram', 'noor': '/taken?praat=1#noor'}.get(p.sleutel) %}{% if pad and actief %}<a href="{{ pad }}">{{ p.naam }}</a>{% else %}{{ p.naam }}{% endif %}</b> <span class="noot">{{ p.rol }}</span>
         <span class="label {{ 'groen' if actief }}">{{ 'actief' if actief else 'fase ' ~ p.fase }}</span></div>
     {% endfor %}
   </section>

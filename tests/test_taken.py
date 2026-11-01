@@ -166,3 +166,100 @@ def test_taak_uit_een_mail(klant):
                                                                         ("Onderwerp 2", "nieuw", "hoog")]
         c.execute("DELETE FROM takenbord")
         c.execute("DELETE FROM post_koppelingen")
+
+
+# ---------------------------------------------------------------- Noor
+
+def test_noor_voorstellen_lezen():
+    from app.taken import noor  # pylint: disable=import-outside-toplevel
+    tekst = ('Ik zou het rapport donderdag doen.\n'
+             '<taak>{"titel": "Rapport: hoofdstuk 1", "prio": "hoog", "status": "gepland", "startdatum": "2026-11-12", "starttijd": "09:00", "eindtijd": "12:00"}</taak>\n'
+             '<wijzig>{"id": 4, "status": "wachtend", "wacht_op": "de griffie", "einddatum": ""}</wijzig>\n'
+             '<wijzig>{"id": 99, "status": "actief"}</wijzig>\n'          # onbekende taak: vervalt
+             '<wijzig>{"id": 4, "prio": "superhoog"}</wijzig>\n'          # ongeldige prioriteit: vervalt
+             '<taak>{"titel": "", "prio": "laag"}</taak>\n'                # geen titel: vervalt
+             '<taak>{"titel": "Bellen", "startdatum": "morgen"}</taak>\n'  # onleesbare datum: vervalt
+             '<wijzig>{"id": 4, "titel": "", "starttijd": "14.30"}</wijzig>')
+    rest, v = noor.voorstellen_uit(tekst, {4, 5})
+    assert rest == "Ik zou het rapport donderdag doen."
+    assert [x["soort"] for x in v] == ["nieuw", "wijzig", "wijzig"]
+    assert v[0]["gegevens"] == {"titel": "Rapport: hoofdstuk 1", "prio": "hoog", "status": "gepland", "startdatum": dt.date(2026, 11, 12),
+                                "starttijd": dt.time(9), "eindtijd": dt.time(12)}
+    assert v[1]["taak_id"] == 4 and v[1]["gegevens"] == {"status": "wachtend", "wacht_op": "de griffie", "einddatum": None}
+    assert v[2]["gegevens"] == {"starttijd": dt.time(14, 30)}  # lege titel telt niet als wijziging
+    assert noor.beschrijf("nieuw", v[0]["gegevens"]) == "Nieuwe taak: Rapport: hoofdstuk 1 · prio hoog · Gepland · do 12-11 09.00-12.00"
+    taak = {"titel": "Motie OV", "startdatum": None, "starttijd": None, "einddatum": dt.date(2026, 11, 20), "eindtijd": None}
+    assert noor.beschrijf("wijzig", v[1]["gegevens"], taak) == "Motie OV · naar Wachtend op · zonder datum (uit de agenda) · wacht op de griffie"
+    # Opslaan als JSON en weer terug.
+    assert noor.gegevens_terug(noor._json(v[0]["gegevens"])) == v[0]["gegevens"]  # pylint: disable=protected-access
+
+
+def test_noor_wat_vandaag_telt():
+    from app.taken import noor  # pylint: disable=import-outside-toplevel
+    n = iter(range(1, 100))
+
+    def taak(titel, **kw):
+        return {"id": next(n), "titel": titel, "status": "nieuw", "prio": "middel", "startdatum": None, "starttijd": None,
+                "einddatum": None, "eindtijd": None, "wacht_op": ""} | kw
+    taken = [taak("Ooit", prio="laag"),
+             taak("Rapport", status="gepland", startdatum=D, starttijd=dt.time(9), eindtijd=dt.time(12)),
+             taak("Te laat", einddatum=D - dt.timedelta(days=1)),
+             taak("Bezig", status="actief"),
+             taak("Deze week", einddatum=D + dt.timedelta(days=3)),
+             taak("Belangrijk", prio="hoog"),
+             taak("Klaar", status="afgerond", einddatum=D - dt.timedelta(days=5)),
+             taak("Wachten", status="wachtend", wacht_op="Jan", prio="hoog")]
+    lijst = noor.voor_vandaag(taken, D)
+    assert [(t["titel"], t["reden"]) for t in lijst] == [("Te laat", "te laat"), ("Rapport", "vandaag 09.00"), ("Bezig", "actief"),
+                                                         ("Deze week", "af do 12-11"), ("Belangrijk", "hoog")]
+    assert noor.moment(taken[1]) == "ma 09-11 09.00-12.00" and noor.moment(taken[2]) == "deadline zo 08-11"
+
+
+def test_noor_gesprek_en_vandaag(klant, monkeypatch):
+    from app.kern import claude, db  # pylint: disable=import-outside-toplevel
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM takenbord")
+        oud = web.nieuw(c, {"titel": "Motie OV voorbereiden", "beschrijving": "", "prio": "hoog", "status": "nieuw"})
+        web.nieuw(c, {"titel": "Bellen met Jan", "beschrijving": "", "prio": "middel", "status": "wachtend", "wacht_op": "Jan"})
+    gezien = {}
+
+    def nep(c, persona, systeem, berichten, **kw):
+        gezien.update(persona=persona, systeem=systeem)
+        return ("Zet de motie in triage met hoge prioriteit, en voeg de presentatie toe.\n"
+                f'<wijzig>{{"id": {oud}, "status": "triage"}}</wijzig>\n'
+                '<taak>{"titel": "Presentatie congres", "prio": "middel", "status": "nieuw"}</taak>')
+    monkeypatch.setattr(claude, "gesprek", nep)
+    assert "Vraag Noor" in klant.get("/taken", headers=KOP).text
+    r = klant.post("/taken/gesprek/vraag", headers=FORM, data={"vraag": "Wat moet ik eerst doen?"}, follow_redirects=False)
+    assert r.status_code == 303 and "#noor" in r.headers["location"]
+    assert gezien["persona"] == "noor" and f"[taak {oud}] Motie OV voorbereiden" in gezien["systeem"] and "wacht op Jan" in gezien["systeem"]
+    pagina = klant.get(r.headers["location"], headers=KOP).text
+    assert "Zet de motie in triage" in pagina and "Motie OV voorbereiden · naar Triage" in pagina
+    assert "Nieuwe taak: Presentatie congres · prio middel · Nieuw" in pagina
+    with db.pool.connection() as c:
+        vs = c.execute("SELECT * FROM taak_voorstellen ORDER BY id").fetchall()
+        assert [v["soort"] for v in vs] == ["wijzig", "nieuw"]
+        assert c.execute("SELECT status FROM takenbord WHERE id = %s", (oud,)).fetchone()["status"] == "nieuw"  # nog niets veranderd
+    # Doorvoeren en niet doen.
+    r = klant.post(f"/taken/voorstel/{vs[0]['id']}", headers=FORM, data={"actie": "doe"}, follow_redirects=False)
+    assert "bijgewerkt" in r.headers["location"]
+    klant.post(f"/taken/voorstel/{vs[1]['id']}", headers=FORM, data={"actie": "weg"})
+    with db.pool.connection() as c:
+        assert c.execute("SELECT status FROM takenbord WHERE id = %s", (oud,)).fetchone()["status"] == "triage"
+        assert not c.execute("SELECT 1 FROM takenbord WHERE titel = 'Presentatie congres'").fetchone()
+        assert [v["status"] for v in c.execute("SELECT status FROM taak_voorstellen ORDER BY id")] == ["uitgevoerd", "afgewezen"]
+    assert "al+afgehandeld" in klant.post(f"/taken/voorstel/{vs[0]['id']}", headers=FORM, data={"actie": "doe"}, follow_redirects=False).headers["location"]
+    # Vandaag: de taken, afvinken en snel toevoegen; daarna terug op Vandaag.
+    pagina = klant.get("/", headers=KOP).text
+    assert 'id="taken"' in pagina and "Motie OV voorbereiden" in pagina and ">hoog<" in pagina and "Je wacht op Jan." in pagina
+    assert '<b>' not in pagina.split('class="noot taakteller">')[1].split("</p>")[0]  # niets actief
+    assert 'href="/taken?praat=1#noor">Noor</a>' in pagina
+    r = klant.post("/taken/nieuw", headers=FORM, data={"titel": "Fietsband plakken", "terug": "/"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/?melding=") and r.headers["location"].endswith("#taken")
+    assert "Fietsband plakken" in klant.get(r.headers["location"], headers=KOP).text.split('id="taken"')[1].split("</section>")[0]
+    r = klant.post(f"/taken/{oud}/status", headers=FORM, data={"status": "afgerond", "terug": "/"}, follow_redirects=False)
+    assert r.headers["location"].endswith("#taken")
+    assert "Motie OV voorbereiden" not in klant.get("/", headers=KOP).text.split('id="taken"')[1].split("</section>")[0].split("</p>", 1)[1]
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM takenbord")
+        c.execute("DELETE FROM gesprekken WHERE persona = 'noor'")

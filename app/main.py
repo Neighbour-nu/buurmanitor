@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from . import iris, personas
 from .bram import sync as bram_sync, web as bram_web  # noqa: F401  (sync registreert de planner-taak 'post')
 from .clara import sync as clara_sync, web as clara_web  # noqa: F401  (sync registreert de planner-taak)
-from .taken import web as taken_web
+from .taken import noor, web as taken_web
 from .kern import claude, config, db, gezondheid, meldingen, planner, prefix, web
 from .kern.db import q, q1, uitvoeren
 from .kern.web import controleer_herkomst, ctx, templates
@@ -122,12 +122,13 @@ def vandaag(request: Request):
         besteed, _ = claude.verbruik_maand(c)
         agenda = clara_vandaag(c, nu)
         post = bram_vandaag(c)
+        taken = noor.vandaag_overzicht(c, nu)
     urgent = [m for m in open_ if m["niveau"] == "urgent"]
     g, s = gezondheid.geheugen(), gezondheid.schijf()
     return templates.TemplateResponse("vandaag.html", ctx(
         request, "vandaag", nu=nu, meldingen=open_, urgent=urgent, werkruimtes=config.werkruimtes(), agenda=agenda,
         lijst_meldingen=lijst_meldingen, meldingmap=meldingmap, meldingmappen=meldingen.MAPPEN, aantallen=aantallen,
-        team=personas.alle().values(), post=post, geheugen=g, schijf=s, backups=gezondheid.backups(), besteed=besteed,
+        team=personas.alle().values(), post=post, taken=taken, taakmelding=request.query_params.get("melding", "")[:300], geheugen=g, schijf=s, backups=gezondheid.backups(), besteed=besteed,
         plafond=config.MAANDPLAFOND_EUR, fase=config.FASE))
 
 
