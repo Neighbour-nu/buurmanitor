@@ -15,7 +15,7 @@
   <nav class="postmappen" aria-label="Mappen en accounts">
     <form method="post" action="/bram/vernieuwen"><button class="knop vol breed-knop" type="submit">↻ Nu bijwerken</button></form>
     {% for m, naam, _ in mappen %}
-    <a href="/bram?{{ 'map=' ~ m ~ '&' if m != 'alles' }}{{ 'account=' ~ account if account }}" class="pmap {{ 'actief' if map == m }}" {% if map == m %}aria-current="page"{% endif %}>
+    <a href="/bram?{{ 'map=' ~ m ~ '&' if m != 'alles' }}{{ 'account=' ~ account if account }}" class="pmap {{ 'actief' if map == m }}" {% if map == m %}aria-current="page"{% endif %}{% if m in groep_namen and m != map %} data-groep="{{ m }}"{% endif %}>
       <span>{{ naam }}</span><span class="aantal">{% if per_map['ongelezen_' ~ m] %}<b>{{ per_map['ongelezen_' ~ m] }}</b>{% else %}{{ per_map[m] or '' }}{% endif %}</span></a>
     {% endfor %}
     <div class="pmappen-kop">Mailboxen</div>
@@ -41,14 +41,14 @@
         <button class="knop klein" name="actie" value="gelezen">Gelezen</button>
         <button class="knop klein" name="actie" value="ongelezen">Ongelezen</button>
         <button class="knop klein" name="actie" value="uitschrijven" onclick="return confirm('Uitschrijven bij de afzenders van de geselecteerde berichten?')">Uitschrijven</button>
-        <span class="pverplaats"><select name="groep" aria-label="Verplaats naar"><option value="">Verplaats naar…</option>{% for g, naam, _ in groepen %}<option value="{{ g }}">{{ naam }}</option>{% endfor %}</select>
-          <button class="knop klein" name="actie" value="verplaats">Verplaats</button></span>
+        <span class="pverplaats" role="group" aria-label="Verplaats naar"><span class="noot">Naar</span>{% for g, naam, _ in groepen if g != map %}<button class="knop klein" name="actie" value="verplaats:{{ g }}" title="Verplaats naar {{ naam }}">{{ naam }}</button>{% endfor %}</span>
+        <input type="hidden" name="actie" id="sleep-actie" disabled>
         {% if praat %}<button class="knop klein vol" type="button" id="vraag-over-selectie">💬 Vraag Bram hierover</button>{% endif %}
       </span>
     </div>
 
     {% for b in lijst %}
-    <div class="prij {{ 'ongelezen' if not b.gelezen }} {{ 'hoog' if b.prioriteit == 'hoog' }}" id="b{{ b.id }}">
+    <div class="prij {{ 'ongelezen' if not b.gelezen }} {{ 'hoog' if b.prioriteit == 'hoog' }}" id="b{{ b.id }}" draggable="true">
       <label class="pkies"><input type="checkbox" name="bericht" value="{{ b.id }}" aria-label="Selecteer {{ b.onderwerp }}"></label>
       <span class="pdot {{ b.domein }}" title="{{ b.koppeling }}"></span>
       <a class="pvan" href="/bram/bericht/{{ b.id }}" title="{{ b.van_adres }}">{{ b.van_naam }}</a>
@@ -139,6 +139,25 @@
   // Bij de knoppen per regel telt alleen dat ene bericht, niet wat er verder is aangevinkt.
   lijst.querySelectorAll(".psnel button").forEach(k => k.addEventListener("click", () => vakjes.forEach(v => { v.checked = false; })));
   bijwerken();
+  // Slepen naar een map links (Actie nodig, Lezen, Kan weg): het gesleepte bericht, of alles wat is aangevinkt.
+  const sleepActie = document.getElementById("sleep-actie");
+  vakjes.forEach(v => v.closest(".prij").addEventListener("dragstart", function (e) {
+    if (!v.checked) { vakjes.forEach(x => { x.checked = x === v; }); bijwerken(); }
+    e.dataTransfer.setData("text/plain", "bram");
+    e.dataTransfer.effectAllowed = "move";
+  }));
+  document.querySelectorAll(".pmap[data-groep]").forEach(m => {
+    m.addEventListener("dragover", e => { e.preventDefault(); m.classList.add("sleep-hier"); });
+    m.addEventListener("dragleave", () => m.classList.remove("sleep-hier"));
+    m.addEventListener("drop", e => {
+      e.preventDefault();
+      m.classList.remove("sleep-hier");
+      if (!vakjes.some(v => v.checked)) return;
+      sleepActie.disabled = false;
+      sleepActie.value = "verplaats:" + m.dataset.groep;
+      lijst.submit();
+    });
+  });
   // Het gesprek: wat is aangevinkt, gaat mee met de vraag (Bram leest die berichten dan helemaal; hooguit vijf).
   const vraag = document.getElementById("vraag-bram");
   if (vraag) {

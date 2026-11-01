@@ -219,7 +219,7 @@ def test_koppelen_sorteren_en_opruimen(klant, monkeypatch):
     # Eén lijst voor alle mailboxen, met mappen links; de knoppen voor de selectie staan in de balk erboven.
     pagina = klant.get("/bram", headers=KOP).text
     assert all(x in pagina for x in ("Club vraagt een lezing op 12 maart.", "Black Friday", "Je reis is gewijzigd"))
-    assert 'action="/bram/bulk"' in pagina and 'name="bericht"' in pagina and 'value="verplaats"' in pagina
+    assert 'action="/bram/bulk"' in pagina and 'name="bericht"' in pagina and 'value="verplaats:lezen"' in pagina
     assert all(f'href="/bram?map={m}' in pagina for m in ("actie", "lezen", "weg"))
     actie = lijst_in(klant.get("/bram?map=actie", headers=KOP).text)
     weg = lijst_in(klant.get("/bram?map=weg", headers=KOP).text)
@@ -571,6 +571,13 @@ def test_verplaatsen_en_afzenderregels(klant, monkeypatch):
     assert "2+berichten+verplaatst+naar+Lezen" in r.headers["location"]
     assert groep_op_scherm("Onderwerp v1") == groep_op_scherm("Onderwerp v3") == "lezen"
     assert "fout=" in klant.post("/bram/bulk", headers=FORM, data={"bericht": str(ids["v1"]), "actie": "verplaats"}, follow_redirects=False).headers["location"]
+    # Met één knop per map: meteen daarheen.
+    r = klant.post("/bram/bulk", headers=FORM, data={"bericht": [str(ids["v1"]), str(ids["v3"])], "actie": "verplaats:weg"}, follow_redirects=False)
+    assert "2+berichten+verplaatst+naar+Kan+weg" in r.headers["location"]
+    assert groep_op_scherm("Onderwerp v1") == groep_op_scherm("Onderwerp v3") == "weg"
+    assert "fout=" in klant.post("/bram/bulk", headers=FORM, data={"bericht": str(ids["v1"]), "actie": "verplaats:onzin"}, follow_redirects=False).headers["location"]
+    pagina = klant.get("/bram?map=weg", headers=KOP).text
+    assert 'value="verplaats:actie"' in pagina and 'value="verplaats:weg"' not in pagina and 'data-groep="lezen"' in pagina
     klant.post(f"/bram/bericht/{ids['v1']}/verplaats", headers=FORM, data={"groep": "actie"})
     klant.post(f"/bram/bericht/{ids['v3']}/verplaats", headers=FORM, data={"groep": "weg"})
     assert klant.post(f"/bram/bericht/{ids['v1']}/verplaats", headers=KOP, data={"groep": "weg"}).status_code == 403

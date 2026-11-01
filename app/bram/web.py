@@ -382,9 +382,11 @@ async def bulk(request: Request):
     controleer_herkomst(request)
     f = await request.form()
     actie = str(f.get("actie") or "archiveren")
+    naar = str(f.get("groep", ""))
+    if actie.startswith("verplaats:"):  # één knop per map: meteen daarheen
+        actie, naar = "verplaats", actie.split(":", 1)[1]
     if actie not in BULK:
         raise HTTPException(400)
-    naar = str(f.get("groep", ""))
     if actie == "verplaats" and naar not in GROEP_NAMEN:
         return _terug(_lijst_uit_formulier(f), fout="Kies waar de berichten heen moeten.")
     ids = [int(x) for x in f.getlist("bericht") if str(x).isdigit()]

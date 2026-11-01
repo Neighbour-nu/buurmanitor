@@ -334,3 +334,6 @@ main.breed { max-width: 1440px; }
 details.bulklijst ul { margin: 4px 0 6px; padding-left: 18px; font-size: 13px; max-height: 160px; overflow: auto; }
 @media (max-width: 1200px) { .postvak.met-gesprek { grid-template-columns: 200px minmax(0, 1fr); } .postgesprek { grid-column: 1 / -1; position: static; max-height: none; } }
 @media (max-width: 900px) { .postvak.met-gesprek { grid-template-columns: 1fr; } }
+.pverplaats .noot { margin-right: 2px; }
+.pmap.sleep-hier { outline: 2px dashed var(--blauw); outline-offset: -2px; background: var(--ijs); }
+.prij[draggable=true] { cursor: grab; }
