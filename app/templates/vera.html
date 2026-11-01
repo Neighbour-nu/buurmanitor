@@ -8,6 +8,12 @@
 {% macro meta(b) -%}
   <span class="nmeta">{{ b.bron }}{% if b.tijd %} · {{ geleden(b.tijd) }}{% endif %}{% for l in b.labels %} · <span class="nlabel">{{ l }}</span>{% endfor %}{% if b.ook %} · <span class="nlabel" title="Hetzelfde nieuws bij {{ b.ook | join(', ') }}">ook bij {{ b.ook[:2] | join(', ') }}{% if b.ook | length > 2 %} +{{ b.ook | length - 2 }}{% endif %}</span>{% endif %}</span>
 {%- endmacro %}
+{% macro leesknop(b) -%}
+  <form method="post" action="/vera/gelezen/{{ b.soort }}/{{ b.id }}" class="nlees">
+    <input type="hidden" name="aan" value="{{ '0' if b.gelezen else '1' }}"><input type="hidden" name="terug" value="/vera?soort={{ soort }}&dagen={{ dagen }}{{ '&alles=1' if alles }}">
+    <button type="submit" title="{{ 'Weer als ongelezen' if b.gelezen else 'Markeer als gelezen' }}" aria-label="{{ b.titel }}: {{ 'weer als ongelezen' if b.gelezen else 'markeer als gelezen' }}" aria-pressed="{{ 'true' if b.gelezen else 'false' }}">✓</button>
+  </form>
+{%- endmacro %}
 {% block inhoud %}
 <section class="kopregel">
   <div>
@@ -31,8 +37,8 @@
 {% if uitgelicht %}
 <section class="nuitgelicht" aria-label="Uitgelicht">
   {% for b in uitgelicht %}
-  <article class="ngroot {{ b.soort }}" data-soort="{{ b.soort }}">
-    <div class="nkop"><span class="nsoort">{{ soortnamen[b.soort] }}</span>{{ score(b) }}</div>
+  <article class="ngroot {{ b.soort }} {{ 'gelezen' if b.gelezen }}" data-soort="{{ b.soort }}">
+    <div class="nkop"><span class="nsoort">{{ soortnamen[b.soort] }}</span><span class="nkoprechts">{{ score(b) }}{{ leesknop(b) }}</span></div>
     <h2><a href="/vera/lees/{{ b.soort }}/{{ b.id }}" target="_blank" rel="noopener" class="nlink">{{ b.titel }}</a></h2>
     {% if b.samenvatting %}<p class="nsam">{{ b.samenvatting }}</p>{% endif %}
     {% if b.waarom %}<p class="nwaarom">{{ b.waarom }}</p>{% endif %}
@@ -64,8 +70,9 @@
               {% if b.samenvatting %}<p class="nsam">{{ b.samenvatting }}</p>{% endif %}
               {% if b.waarom %}<p class="nwaarom">{{ b.waarom }}</p>{% endif %}
             </div>
+            <div class="nacties">{{ leesknop(b) }}
             {% if s in eigen %}<form method="post" action="/vera/verberg/{{ b.id }}" class="nweg"><input type="hidden" name="terug" value="/vera?soort={{ soort }}&dagen={{ dagen }}">
-              <button type="submit" title="Niet interessant: weg" aria-label="{{ b.titel }} verbergen">×</button></form>{% endif %}
+              <button type="submit" title="Niet interessant: weg" aria-label="{{ b.titel }} verbergen">×</button></form>{% endif %}</div>
           </article>
         {% else %}<p class="noot">Niets belangrijks in deze periode.</p>{% endfor %}
         </div>
@@ -86,9 +93,27 @@
 </div>
 
 <script>
-// Doorgeklikt: meteen grijs (de pagina zelf blijft open).
-document.querySelectorAll("a.nlink").forEach(a => a.addEventListener("click", () => {
-  const blok = a.closest(".nitem, .ngroot"); if (blok) blok.classList.add("gelezen");
-}));
+// Gelezen: alleen de titel blijft, grijs. Doorklikken telt ook als lezen. De knop zet het zonder herladen om.
+(function () {
+  function zet(blok, aan) {
+    blok.classList.toggle("gelezen", aan);
+    const f = blok.querySelector("form.nlees"); if (!f) return;
+    f.querySelector("[name=aan]").value = aan ? "0" : "1";
+    const k = f.querySelector("button");
+    k.title = aan ? "Weer als ongelezen" : "Markeer als gelezen"; k.setAttribute("aria-pressed", aan ? "true" : "false");
+  }
+  document.querySelectorAll("a.nlink").forEach(a => a.addEventListener("click", () => {
+    const blok = a.closest(".nitem, .ngroot"); if (blok) zet(blok, true);
+  }));
+  document.querySelectorAll("form.nlees").forEach(f => f.addEventListener("submit", async e => {
+    e.preventDefault();
+    const blok = f.closest(".nitem, .ngroot"), aan = f.querySelector("[name=aan]").value === "1";
+    zet(blok, aan);
+    try {
+      const r = await fetch(f.action, { method: "POST", body: new FormData(f), headers: { "X-Vera": "1" }, credentials: "same-origin" });
+      if (!r.ok) throw new Error(r.status);
+    } catch (fout) { zet(blok, !aan); }  // lukte niet: terug zoals het was
+  }));
+})();
 </script>
 {% endblock %}

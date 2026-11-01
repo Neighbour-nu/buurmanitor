@@ -4,7 +4,7 @@ import datetime as dt
 from urllib.parse import urlencode, urlsplit
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .. import personas
 import json
@@ -74,6 +74,25 @@ def lees(soort: str, bid: int):
             raise HTTPException(404, "Dit bericht bestaat niet meer.")
         c.execute("INSERT INTO vera_gelezen (soort, bericht) VALUES (%s, %s) ON CONFLICT DO NOTHING", (soort, bid))
     return RedirectResponse(url, status_code=303)
+
+
+@router.post("/vera/gelezen/{soort}/{bid:int}")
+async def gelezen(request: Request, soort: str, bid: int):
+    """Een artikel als gelezen markeren (aan=1) of weer als ongelezen (aan=0). Met JavaScript zonder herladen."""
+    controleer_herkomst(request)
+    if soort not in nieuws.SOORT_NAMEN:
+        raise HTTPException(404)
+    f = await request.form()
+    aan = str(f.get("aan", "1")) != "0"
+    with db.pool.connection() as c:
+        if aan:
+            c.execute("INSERT INTO vera_gelezen (soort, bericht) VALUES (%s, %s) ON CONFLICT DO NOTHING", (soort, bid))
+        else:
+            c.execute("DELETE FROM vera_gelezen WHERE soort = %s AND bericht = %s", (soort, bid))
+    if request.headers.get("x-vera") == "1":
+        return JSONResponse({"gelezen": aan})
+    terug = str(f.get("terug") or "/vera")
+    return _terug(terug if terug.startswith("/vera") and "//" not in terug else "/vera")
 
 
 @router.post("/vera/verberg/{bid:int}")

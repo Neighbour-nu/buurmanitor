@@ -182,6 +182,23 @@ def test_ophalen_wegen_en_pagina(klant, monkeypatch):
     pagina = klant.get("/vera", headers=KOP).text
     assert "nuitgelicht" not in pagina or "Bijlow redt" not in pagina.split('class="nuitgelicht"')[1].split("</section>")[0]  # gelezen: niet meer uitgelicht
     assert 'class="nitem gelezen"' in pagina
+    # Als gelezen markeren met de knop (met JavaScript: JSON terug; zonder: terug naar de pagina), en weer ongelezen.
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM vera_gelezen")
+    assert klant.post(f"/vera/gelezen/overig/{wid}", headers=KOP, data={"aan": "1"}).status_code == 403
+    assert klant.post(f"/vera/gelezen/onzin/{wid}", headers=FORM, data={"aan": "1"}).status_code == 404
+    r = klant.post(f"/vera/gelezen/overig/{oid}", headers=FORM | {"X-Vera": "1"}, data={"aan": "1"})
+    assert r.json() == {"gelezen": True}
+    pagina = klant.get("/vera?soort=overig", headers=KOP).text
+    blok = pagina.split(f'action="/vera/gelezen/overig/{oid}"')[0].rsplit("<article", 1)[1]
+    assert 'class="nitem gelezen"' in blok
+    knop = pagina.split(f'action="/vera/gelezen/overig/{oid}"')[1].split("</form>")[0]
+    assert 'name="aan" value="0"' in knop and 'aria-pressed="true"' in knop and "Weer als ongelezen" in knop
+    r = klant.post(f"/vera/gelezen/overig/{oid}", headers=FORM, data={"aan": "0", "terug": "/vera?soort=overig"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/vera?soort=overig"
+    with db.pool.connection() as c:
+        assert not c.execute("SELECT 1 FROM vera_gelezen WHERE soort = 'overig' AND bericht = %s", (oid,)).fetchone()
+        c.execute("INSERT INTO vera_gelezen (soort, bericht) VALUES ('keepers', 7) ON CONFLICT DO NOTHING")
     # Wegklikken.
     assert klant.post(f"/vera/verberg/{wid}", headers=KOP).status_code == 403
     klant.post(f"/vera/verberg/{wid}", headers=FORM, data={"terug": "/vera?soort=overig&alles=1"})
