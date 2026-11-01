@@ -337,3 +337,5 @@ details.bulklijst ul { margin: 4px 0 6px; padding-left: 18px; font-size: 13px; m
 .pverplaats .noot { margin-right: 2px; }
 .pmap.sleep-hier { outline: 2px dashed var(--blauw); outline-offset: -2px; background: var(--ijs); }
 .prij[draggable=true] { cursor: grab; }
+.pmapkeuze { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.pmapkeuze select { width: auto; max-width: 260px; font-size: 13px; padding: 2px 6px; }

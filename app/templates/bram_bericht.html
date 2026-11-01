@@ -36,6 +36,13 @@
         {% if b.van_adres %}{% for g, naam, _ in groepen %}<option value="{{ g }}|altijd">Altijd {{ naam }} voor {{ b.van_adres }}</option>{% endfor %}{% endif %}
       </select><noscript><button class="knop klein">Verplaats</button></noscript>
     </form>
+    {% if mappen %}<form method="post" action="/bram/bericht/{{ b.id }}/map" class="verplaats">
+      <span class="noot">Archiveren in {{ 'Gmail' if k.soort == 'google' else 'Outlook' }}:</span>
+      {% for m in recent %}<button class="knop klein" name="map" value="{{ m.map_id }}">📁 {{ m.naam }}</button>{% endfor %}
+      <select name="map_doel" onchange="if (this.value) this.form.submit()" aria-label="Archiveren in map">
+        <option value="">📁 Kies een map…</option>{% for id, naam in mappen %}<option value="{{ id }}">{{ naam }}</option>{% endfor %}
+      </select><noscript><button class="knop klein">Archiveren</button></noscript>
+    </form>{% endif %}
     {% if labels %}<form method="post" action="/bram/bericht/{{ b.id }}/label" class="verplaats"><input type="hidden" name="terug" value="bericht">
       {% for l in b.labels if label_namen.get(l) or k.soort == 'microsoft' %}<span class="label groen">{{ label_namen.get(l) or l }}</span>{% endfor %}
       <select name="label" aria-label="{{ 'Label' if k.soort == 'google' else 'Categorie' }}">{% for w, n in labels %}<option value="{{ w }}">{{ n }}</option>{% endfor %}</select>

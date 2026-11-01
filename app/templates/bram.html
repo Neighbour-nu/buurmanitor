@@ -43,6 +43,16 @@
         <button class="knop klein" name="actie" value="uitschrijven" onclick="return confirm('Uitschrijven bij de afzenders van de geselecteerde berichten?')">Uitschrijven</button>
         <span class="pverplaats" role="group" aria-label="Verplaats naar"><span class="noot">Naar</span>{% for g, naam, _ in groepen if g != map %}<button class="knop klein" name="actie" value="verplaats:{{ g }}" title="Verplaats naar {{ naam }}">{{ naam }}</button>{% endfor %}</span>
         <input type="hidden" name="actie" id="sleep-actie" disabled>
+        {% if mapkeuze %}
+        <span class="pmapkeuze" role="group" aria-label="Archiveren in een map van Gmail of Outlook">
+          {% for m in recent %}<button class="knop klein" name="actie" value="map:{{ m.koppeling_id }}|{{ m.map_id }}" title="Archiveren in {{ m.naam }} ({{ m.koppeling }})">📁 {{ m.naam }}</button>{% endfor %}
+          <select name="map_doel" id="map-doel" aria-label="Archiveren in map">
+            <option value="">📁 Archiveren in map…</option>
+            {% for k, lijst_ in mapkeuze %}<optgroup label="{{ k.naam }}">{% for id, naam in lijst_ %}<option value="{{ k.id }}|{{ id }}">{{ naam }}</option>{% endfor %}</optgroup>{% endfor %}
+          </select>
+          <input type="hidden" name="actie" value="map" id="map-actie" disabled>
+        </span>
+        {% endif %}
         {% if praat %}<button class="knop klein vol" type="button" id="vraag-over-selectie">💬 Vraag Bram hierover</button>{% endif %}
       </span>
     </div>
@@ -139,6 +149,13 @@
   // Bij de knoppen per regel telt alleen dat ene bericht, niet wat er verder is aangevinkt.
   lijst.querySelectorAll(".psnel button").forEach(k => k.addEventListener("click", () => vakjes.forEach(v => { v.checked = false; })));
   bijwerken();
+  // Een map kiezen in de lijst is meteen archiveren (één handeling).
+  const mapDoel = document.getElementById("map-doel");
+  if (mapDoel) mapDoel.addEventListener("change", function () {
+    if (!mapDoel.value || !vakjes.some(v => v.checked)) return;
+    document.getElementById("map-actie").disabled = false;
+    lijst.submit();
+  });
   // Slepen naar een map links (Actie nodig, Lezen, Kan weg): het gesleepte bericht, of alles wat is aangevinkt.
   const sleepActie = document.getElementById("sleep-actie");
   vakjes.forEach(v => v.closest(".prij").addEventListener("dragstart", function (e) {

@@ -47,7 +47,7 @@ def groep(b):
 
 MAPPEN = (("alles", "Alles", ""),) + GROEPEN
 BULK = {"archiveren": "gearchiveerd", "verwijderen": "verwijderd", "gelezen": "als gelezen gemarkeerd",
-        "ongelezen": "als ongelezen gemarkeerd", "uitschrijven": "uitgeschreven", "verplaats": "verplaatst"}
+        "ongelezen": "als ongelezen gemarkeerd", "uitschrijven": "uitgeschreven", "verplaats": "verplaatst", "map": "gearchiveerd in"}
 
 
 def lijst_adres(map_="alles", account=0, praat=False):
@@ -109,6 +109,14 @@ def postkamer(request: Request, map: str = "alles", account: int = 0, praat: int
         berichten = c.execute("""SELECT b.*, k.naam AS koppeling, k.domein, k.soort FROM post_berichten b
                                  JOIN post_koppelingen k ON k.id = b.koppeling_id
                                  WHERE b.status = 'open' AND k.actief ORDER BY b.ontvangen DESC""").fetchall()
+        mapkeuze = []
+        for k in koppelingen:
+            if k["actief"] and not k["fout"] and (not account or k["id"] == account):
+                try:
+                    mapkeuze.append((k, sync.mappen(c, k)))
+                except Exception:  # noqa: BLE001  (zonder mappen werkt de lijst gewoon)
+                    continue
+        recent = sync.recente_mappen(c, account=account)
     per_map = {m[0]: 0 for m in MAPPEN} | {"ongelezen_" + m[0]: 0 for m in MAPPEN}
     per_account = {}
     lijst = []
@@ -127,7 +135,8 @@ def postkamer(request: Request, map: str = "alles", account: int = 0, praat: int
         tz=config.TZ, DAGEN=DAGEN, CATEGORIEEN=sync.CATEGORIEEN, nu=dt.datetime.now(config.TZ), kluis_ok=kluis.actief(),
         domeinnaam=dict(DOMEINEN), groepen=GROEPEN, praat=praat, paneel=paneel, sleutel_ok=bool(config.ANTHROPIC_API_KEY),
         doelen=clara_web._schrijfdoelen(agendas), eigen=clara_web._reisdoelen(agendas),  # pylint: disable=protected-access
-        datum=lambda iso: dt.datetime.fromisoformat(iso).astimezone(config.TZ), lijst_adres=lijst_adres))
+        datum=lambda iso: dt.datetime.fromisoformat(iso).astimezone(config.TZ), lijst_adres=lijst_adres,
+        mapkeuze=[(k, m) for k, m in mapkeuze if m], recent=recent))
 
 
 @router.post("/bram/gesprek/vraag")
@@ -205,9 +214,14 @@ def bericht_scherm(request: Request, bid: int, melding: str = "", fout: str = ""
             labels = sync.labels(c, k)
         except Exception:  # noqa: BLE001  (zonder labels werkt het scherm gewoon)
             labels = []
+        try:
+            mappen_ = sync.mappen(c, k)
+        except Exception:  # noqa: BLE001
+            mappen_ = []
+        recent = sync.recente_mappen(c, account=k["id"])
     return templates.TemplateResponse("bram_bericht.html", ctx(
         request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, groep_nu=groep(b), groepen=GROEPEN, labels=labels,
-        label_namen=dict(labels), lees_fout=lees_fout, berichten=berichten,
+        label_namen=dict(labels), lees_fout=lees_fout, berichten=berichten, mappen=mappen_, recent=recent,
         voorstellen=voorstellen, klaar=klaar, doelen=clara_web._schrijfdoelen(agendas),  # pylint: disable=protected-access
         eigen=clara_web._reisdoelen(agendas), melding=melding, fout=fout, tz=config.TZ,  # pylint: disable=protected-access
         DAGEN=DAGEN, CATEGORIEEN=sync.CATEGORIEEN, sleutel_ok=bool(config.ANTHROPIC_API_KEY),
@@ -351,6 +365,25 @@ async def afzenderregel_weg(request: Request):
     return _terug("/bram/instellingen#regels", melding=f"Regel voor {adres} weggehaald. Nieuwe mail van dit adres sorteert Bram weer zelf.")
 
 
+@router.post("/bram/bericht/{bid:int}/map")
+async def bericht_in_map(request: Request, bid: int):
+    """Eén bericht (met de rest van de conversatie) archiveren in een map van Gmail of Outlook."""
+    controleer_herkomst(request)
+    f = await request.form()
+    map_id = str(f.get("map_doel") or f.get("map") or "").split("|", 1)[-1]
+    terug = _lijst_uit_formulier(f)
+
+    def doe():
+        with db.pool.connection() as c:
+            b = _bericht(c, bid)
+            return b, sync.archiveer_in(c, b, map_id)
+    try:
+        b, tekst = await asyncio.to_thread(doe)
+    except (bronnen.BronFout, kluis.KluisFout) as e:
+        return _terug(f"/bram/bericht/{bid}", fout=str(e)[:300])
+    return _terug(terug, melding=f"'{b['onderwerp'][:60]}': {tekst}.")
+
+
 @router.post("/bram/bericht/{bid:int}/{actie}")
 async def bericht_actie(request: Request, bid: int, actie: str):
     """Archiveren, gelezen markeren of een label zetten, na Martijns klik."""
@@ -385,6 +418,13 @@ async def bulk(request: Request):
     naar = str(f.get("groep", ""))
     if actie.startswith("verplaats:"):  # één knop per map: meteen daarheen
         actie, naar = "verplaats", actie.split(":", 1)[1]
+    doel_map = ""
+    if actie.startswith("map:") or actie == "map":  # archiveren in een map van Gmail of Outlook
+        doel_map, actie = (actie[4:] if actie.startswith("map:") else str(f.get("map_doel", ""))), "map"
+        try:
+            map_koppeling, map_id = int(doel_map.split("|", 1)[0]), doel_map.split("|", 1)[1]
+        except (ValueError, IndexError):
+            return _terug(_lijst_uit_formulier(f), fout="Kies een map.")
     if actie not in BULK:
         raise HTTPException(400)
     if actie == "verplaats" and naar not in GROEP_NAMEN:
@@ -394,6 +434,8 @@ async def bulk(request: Request):
     if not ids:
         return _terug(terug, fout="Niets aangevinkt; er is niets gedaan.")
 
+    overgeslagen = []
+
     def doe():
         gelukt, fouten = 0, []
         with db.pool.connection() as c:
@@ -401,8 +443,14 @@ async def bulk(request: Request):
                 b = c.execute("SELECT * FROM post_berichten WHERE id = %s AND status = 'open'", (bid,)).fetchone()
                 if not b:
                     continue
+                if actie == "map" and b["koppeling_id"] != map_koppeling:
+                    overgeslagen.append(b["id"])  # die map hoort bij een andere mailbox
+                    continue
                 try:
-                    if actie == "verplaats":
+                    if actie == "map":
+                        laatste = sync.archiveer_in(c, b, map_id)
+                        doe.map_naam = laatste.split(" (met ")[0].removeprefix("gearchiveerd in ")
+                    elif actie == "verplaats":
                         c.execute("UPDATE post_berichten SET groep_handmatig = %s WHERE id = %s", (naar, bid))
                     else:
                         sync.uitvoeren(c, b, actie)
@@ -410,8 +458,12 @@ async def bulk(request: Request):
                 except (bronnen.BronFout, kluis.KluisFout) as e:
                     fouten.append(f"{b['onderwerp'][:40]}: {e}")
         return gelukt, fouten
+    doe.map_naam = ""
     gelukt, fouten = await asyncio.to_thread(doe)
-    tekst = f"{gelukt} bericht{'en' if gelukt != 1 else ''} {BULK[actie]}" + (f" naar {GROEP_NAMEN[naar]}" if actie == "verplaats" else "") + "."
+    tekst = (f"{gelukt} bericht{'en' if gelukt != 1 else ''} {BULK[actie]}" + (f" naar {GROEP_NAMEN[naar]}" if actie == "verplaats" else "")
+             + (f" {doe.map_naam}" if actie == "map" and doe.map_naam else "") + ".")
+    if overgeslagen:
+        tekst += f" {len(overgeslagen)} uit een andere mailbox overgeslagen: die map hoort bij één mailbox."
     if fouten:
         return _terug(terug, melding=tekst, fout="Niet gelukt: " + "; ".join(fouten[:3])[:300])
     return _terug(terug, melding=tekst)

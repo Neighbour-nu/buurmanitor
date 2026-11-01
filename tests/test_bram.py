@@ -691,3 +691,81 @@ def test_sparren_over_de_postkamer(klant, monkeypatch):
     # Het gesprek over één bericht blijft daar: het staat niet in de postkamer.
     pagina = klant.get(f"/bram/bericht/{ids['p1']}", headers=KOP).text
     assert "Jan wacht op antwoord." not in pagina
+
+
+# ---------------------------------------------------------------- archiveren in een map van Gmail of Outlook
+
+def test_outlook_mappen_zonder_vaste_mappen(monkeypatch):
+    vast = {"inbox": "INBOX-ID", "drafts": "CONCEPT", "sentitems": "VERZONDEN", "deleteditems": "PRULLEN", "junkemail": "SPAM"}
+
+    def nep(url, **kw):
+        m = re.match(r".*/me/mailFolders/(\w+)\?\$select=id$", url)
+        if m:
+            if m.group(1) not in vast:
+                raise bronnen.BronFout("niet gevonden")
+            return {"id": vast[m.group(1)]}
+        if "/childFolders" in url:
+            ouder = re.search(r"mailFolders/([^/]+)/childFolders", url).group(1)
+            return {"value": {"INBOX-ID": [{"id": "SUB1", "displayName": "Raad", "childFolderCount": 0}],
+                              "KLANT": [{"id": "SUB2", "displayName": "Upper Spire", "childFolderCount": 0}]}.get(ouder, [])}
+        return {"value": [{"id": "INBOX-ID", "displayName": "Postvak IN", "childFolderCount": 1},
+                          {"id": "CONCEPT", "displayName": "Concepten", "childFolderCount": 0},
+                          {"id": "PRULLEN", "displayName": "Verwijderde items", "childFolderCount": 3},
+                          {"id": "ARCHIEF", "displayName": "Archief", "childFolderCount": 0},
+                          {"id": "KLANT", "displayName": "Klanten", "childFolderCount": 1}]}
+    monkeypatch.setattr(bronnen, "_http", nep)
+    assert bronnen.ms_mappen("tok") == [("ARCHIEF", "Archief"), ("KLANT", "Klanten"), ("SUB2", "Klanten / Upper Spire"),
+                                        ("SUB1", "Postvak IN / Raad")]
+
+
+def test_archiveren_in_map(klant, monkeypatch):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    from app.clara import kluis  # pylint: disable=import-outside-toplevel
+    draden, verplaatst = [], []
+    monkeypatch.setattr(sync, "toegang", lambda c, k: "tok")
+    monkeypatch.setattr(bronnen, "gmail_labels", lambda tok: [("Label_7", "Raad/Commissie"), ("Label_8", "ZEROHERO")])
+    monkeypatch.setattr(bronnen, "ms_mappen", lambda tok: [("MAP-US", "Klanten / Upper Spire")])
+    monkeypatch.setattr(bronnen, "gmail_archiveer_in", lambda tok, mid, label, draad="": draden.append((mid, label, draad)))
+    monkeypatch.setattr(bronnen, "ms_verplaats", lambda tok, mid, map_id: verplaatst.append((mid, map_id)) or mid + "-nieuw")
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM post_koppelingen")
+        sync._mappen.clear()  # pylint: disable=protected-access
+        g = c.execute("INSERT INTO post_koppelingen (soort, naam, account, geheim, laatst) VALUES ('google', 'Neighbour', 'm@n.nu', %s, now()) RETURNING id",
+                      (kluis.sluit("r"),)).fetchone()["id"]
+        m = c.execute("INSERT INTO post_koppelingen (soort, naam, account, geheim, laatst) VALUES ('microsoft', 'Upper Spire', 'm@us.nl', %s, now()) RETURNING id",
+                      (kluis.sluit("r"),)).fetchone()["id"]
+
+        def bericht(kid, eid, draad, onderwerp):
+            return c.execute("""INSERT INTO post_berichten (koppeling_id, extern_id, draad, van_naam, van_adres, onderwerp, ontvangen, categorie)
+                                VALUES (%s, %s, %s, 'X', 'x@x.nl', %s, now(), 'antwoord') RETURNING id""", (kid, eid, draad, onderwerp)).fetchone()["id"]
+        g1, g2 = bericht(g, "g1", "draadA", "Agenda commissie"), bericht(g, "g2", "draadA", "Re: Agenda commissie")
+        g3 = bericht(g, "g3", "draadB", "Iets anders")
+        m1, m2 = bericht(m, "m1", "convX", "Release 4.2"), bericht(m, "m2", "convX", "RE: Release 4.2")
+    pagina = klant.get("/bram", headers=KOP).text
+    assert "Archiveren in map" in pagina and f'value="{g}|Label_7"' in pagina and f'value="{m}|MAP-US"' in pagina and 'label="Upper Spire"' in pagina
+    # Gmail: de hele draad in het label en uit de inbox; Upper Spire-bericht overgeslagen (andere mailbox).
+    r = klant.post("/bram/bulk", headers=FORM, follow_redirects=False, data={"bericht": [str(g1), str(m1)], "actie": "map", "map_doel": f"{g}|Label_7"})
+    assert "gearchiveerd+in+Raad%2FCommissie" in r.headers["location"] and "andere+mailbox+overgeslagen" in r.headers["location"], r.headers["location"]
+    assert draden == [("g1", "Label_7", "draadA")]
+    with db.pool.connection() as c:
+        status = {x["id"]: x["status"] for x in c.execute("SELECT id, status FROM post_berichten").fetchall()}
+        assert status[g1] == status[g2] == "weg" and status[g3] == status[m1] == "open"
+    # Snelknop voor de laatst gebruikte map.
+    pagina = klant.get("/bram", headers=KOP).text
+    assert f'value="map:{g}|Label_7"' in pagina and "📁 Raad/Commissie" in pagina
+    klant.post("/bram/bulk", headers=FORM, data={"bericht": str(g3), "actie": f"map:{g}|Label_7"})
+    assert draden[-1] == ("g3", "Label_7", "draadB")
+    # Outlook vanuit het bericht zelf: elk bericht van de conversatie verplaatst, met nieuw id.
+    assert "Archiveren in Outlook" in klant.get(f"/bram/bericht/{m1}", headers=KOP).text
+    r = klant.post(f"/bram/bericht/{m1}/map", headers=FORM, follow_redirects=False, data={"map_doel": "MAP-US"})
+    assert "Upper+Spire" in r.headers["location"] and "1+andere" in r.headers["location"], r.headers["location"]
+    assert sorted(verplaatst) == [("m1", "MAP-US"), ("m2", "MAP-US")]
+    with db.pool.connection() as c:
+        assert {x["extern_id"] for x in c.execute("SELECT extern_id FROM post_berichten WHERE koppeling_id = %s", (m,)).fetchall()} == {"m1-nieuw", "m2-nieuw"}
+        assert c.execute("SELECT aantal FROM post_mapgebruik WHERE map_id = 'Label_7'").fetchone()["aantal"] == 2
+    # Een map die niet (meer) bestaat.
+    with db.pool.connection() as c:
+        g4 = bericht(g, "g4", "", "Nog een")
+    r = klant.post(f"/bram/bericht/{g4}/map", headers=FORM, follow_redirects=False, data={"map_doel": "Label_weg"})
+    assert "fout=" in r.headers["location"]
+    assert klant.post(f"/bram/bericht/{g4}/map", headers=KOP, data={"map_doel": "Label_7"}).status_code == 403

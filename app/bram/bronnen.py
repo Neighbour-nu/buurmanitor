@@ -193,6 +193,15 @@ def gmail_label(toegang, mid, label_id):
     gmail_wijzig(toegang, mid, erbij=[label_id])
 
 
+def gmail_archiveer_in(toegang, mid, label_id, draad=""):
+    """Archiveren in een map (in Gmail: een label): het label erbij en uit de inbox; met de draad de hele conversatie."""
+    wijziging = {"addLabelIds": [label_id], "removeLabelIds": ["INBOX"]}
+    if draad:
+        _gmail(toegang, f"/threads/{draad}/modify", body=wijziging)
+    else:
+        _gmail(toegang, f"/messages/{mid}/modify", body=wijziging)
+
+
 # ---------------------------------------------------------------- Outlook
 
 def _graph(toegang, pad, koppen=None, **kw):
@@ -253,6 +262,44 @@ def ms_categorieen(toegang):
 def ms_archiveer(toegang, mid):
     """Naar de map Archief. Outlook geeft het bericht daarbij een nieuw id."""
     return _graph(toegang, f"/me/messages/{mid}/move", body={"destinationId": "archive"}, methode="POST").get("id", "")
+
+
+# Vaste mappen van Outlook die geen archiefmap zijn. In het Postvak IN zelf kan niet worden 'gearchiveerd', in de
+# submappen ervan wel. Archief telt wel mee.
+MS_GEEN_ARCHIEF = ("inbox", "drafts", "sentitems", "deleteditems", "junkemail", "outbox", "conversationhistory", "scheduled",
+                   "syncissues", "searchfolders", "clutter", "msgfolderroot")
+
+
+def ms_mappen(toegang):
+    """Alle mappen van de mailbox waarin je kunt archiveren, als (id, naam) met het pad ('Klanten / Upper Spire')."""
+    vast = {}
+    for naam in MS_GEEN_ARCHIEF:
+        try:
+            vast[_graph(toegang, f"/me/mailFolders/{naam}?$select=id").get("id")] = naam
+        except BronFout:
+            continue
+    uit = []
+
+    def lees(pad, voor, diepte):
+        url = pad
+        while url:
+            j = _graph(toegang, url)
+            for f in j.get("value", []):
+                naam = f"{voor} / {f.get('displayName', '')}" if voor else f.get("displayName", "")
+                soort = vast.get(f["id"])
+                if soort is None:
+                    uit.append((f["id"], naam))
+                if f.get("childFolderCount") and diepte < 4 and soort in (None, "inbox"):
+                    lees(f"/me/mailFolders/{f['id']}/childFolders?$top=200&$select=id,displayName,childFolderCount", naam, diepte + 1)
+            volgende = j.get("@odata.nextLink") or ""
+            url = volgende.removeprefix(GRAPH) if volgende else None
+    lees("/me/mailFolders?$top=200&$select=id,displayName,childFolderCount", "", 0)
+    return sorted(uit, key=lambda x: x[1].lower())
+
+
+def ms_verplaats(toegang, mid, map_id):
+    """Naar een map. Outlook geeft het bericht daarbij een nieuw id."""
+    return _graph(toegang, f"/me/messages/{mid}/move", body={"destinationId": map_id}, methode="POST").get("id", "")
 
 
 def ms_gelezen(toegang, mid):

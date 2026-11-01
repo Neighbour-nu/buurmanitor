@@ -267,6 +267,14 @@ MIGRATIES = [
     # Zelf verplaatst (actie, lezen of weg) gaat voor het oordeel van Bram. Een afzenderregel doet dat voortaan
     # vanzelf voor elke nieuwe mail van dat adres.
     "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS groep_handmatig text NOT NULL DEFAULT ''",
+    # Mappen in Gmail en Outlook waarin Martijn archiveert: de laatst gebruikte komen als snelknop boven de lijst.
+    """CREATE TABLE IF NOT EXISTS post_mapgebruik (
+        koppeling_id int NOT NULL REFERENCES post_koppelingen(id) ON DELETE CASCADE,
+        map_id text NOT NULL,
+        naam text NOT NULL,
+        aantal int NOT NULL DEFAULT 0,
+        laatst timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (koppeling_id, map_id))""",
     """CREATE TABLE IF NOT EXISTS post_afzenderregels (
         van_adres text PRIMARY KEY,
         groep text NOT NULL CHECK (groep IN ('actie', 'lezen', 'weg')),

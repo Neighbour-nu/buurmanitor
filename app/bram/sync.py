@@ -27,6 +27,7 @@ AUTOMATISCH = re.compile(r"(^|[._+-])(no-?reply|do-?not-?reply|noreply|notificat
                          r"postmaster|bounce|alerts?|system|automated)([._+-]|@)", re.I)
 _toegang = {}
 _labels = {}  # koppeling-id -> (lijst, tot wanneer geldig)
+_mappen = {}  # koppeling-id -> (lijst, tot wanneer geldig)
 _slot = threading.Lock()
 
 
@@ -54,6 +55,7 @@ def vergeet_toegang(kid):
     with _slot:
         _toegang.pop(kid, None)
         _labels.pop(kid, None)
+        _mappen.pop(kid, None)
 
 
 # ---------------------------------------------------------------- ophalen
@@ -272,6 +274,52 @@ def labels(c, k):
     with _slot:
         _labels[k["id"]] = (lijst, time.monotonic() + 600)
     return lijst
+
+
+def mappen(c, k, vers=False):
+    """De mappen om in te archiveren (Gmail: je eigen labels; Outlook: je mappen), tien minuten bewaard."""
+    with _slot:
+        lijst, tot = _mappen.get(k["id"], (None, 0))
+    if lijst is not None and tot > time.monotonic() and not vers:
+        return lijst
+    tok = toegang(c, k)
+    lijst = bronnen.gmail_labels(tok) if k["soort"] == "google" else bronnen.ms_mappen(tok)
+    with _slot:
+        _mappen[k["id"]] = (lijst, time.monotonic() + 600)
+    return lijst
+
+
+def archiveer_in(c, b, map_id):
+    """Een bericht archiveren in een map van Gmail of Outlook, met de rest van de conversatie die nog in de inbox staat.
+    Geeft een korte uitslag terug."""
+    k = c.execute("SELECT * FROM post_koppelingen WHERE id = %s", (b["koppeling_id"],)).fetchone()
+    namen = dict(mappen(c, k))
+    if map_id not in namen:
+        namen = dict(mappen(c, k, vers=True))
+        if map_id not in namen:
+            raise bronnen.BronFout("Die map bestaat niet (meer) in dit account.")
+    tok = toegang(c, k)
+    draad = c.execute("""SELECT * FROM post_berichten WHERE koppeling_id = %s AND status = 'open'
+                         AND (id = %s OR (draad <> '' AND draad = %s)) ORDER BY id""", (k["id"], b["id"], b["draad"] or "")).fetchall()
+    if k["soort"] == "google":
+        bronnen.gmail_archiveer_in(tok, b["extern_id"], map_id, b["draad"] or "")
+        for x in draad:
+            c.execute("UPDATE post_berichten SET status = 'weg', gelezen = true WHERE id = %s", (x["id"],))
+    else:
+        for x in draad:
+            nieuw = bronnen.ms_verplaats(tok, x["extern_id"], map_id)
+            c.execute("UPDATE post_berichten SET status = 'weg', gelezen = true, extern_id = coalesce(nullif(%s, ''), extern_id) WHERE id = %s",
+                      (nieuw or "", x["id"]))
+    c.execute("""INSERT INTO post_mapgebruik (koppeling_id, map_id, naam, aantal) VALUES (%s, %s, %s, 1)
+                 ON CONFLICT (koppeling_id, map_id) DO UPDATE SET naam = EXCLUDED.naam, aantal = post_mapgebruik.aantal + 1, laatst = now()""",
+              (k["id"], map_id, namen[map_id]))
+    return f"gearchiveerd in {namen[map_id]}" + (f" (met {len(draad) - 1} andere uit dezelfde conversatie)" if len(draad) > 1 else "")
+
+
+def recente_mappen(c, aantal=4, account=0):
+    return c.execute("""SELECT g.*, k.naam AS koppeling FROM post_mapgebruik g JOIN post_koppelingen k ON k.id = g.koppeling_id
+                        WHERE k.actief AND (%s = 0 OR g.koppeling_id = %s) ORDER BY g.laatst DESC LIMIT %s""",
+                     (account, account, aantal)).fetchall()
 
 
 def label_namen(kid):
