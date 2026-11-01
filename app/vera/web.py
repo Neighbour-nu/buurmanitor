@@ -7,9 +7,11 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from .. import personas
-from ..kern import config, db
+import json
+
+from ..kern import claude, config, db
 from ..kern.web import controleer_herkomst, ctx, templates
-from . import nieuws
+from . import gesprek, nieuws
 
 router = APIRouter()
 TABS = (("alles", "Alles"), ("keepers", "Keepers"), ("politiek", "Politiek"), ("overig", "Overig"))
@@ -91,13 +93,14 @@ async def vernieuwen(request: Request):
 # ---------------------------------------------------------------- bronnen
 
 @router.get("/vera/bronnen", response_class=HTMLResponse)
-def bronnen_scherm(request: Request, melding: str = "", fout: str = ""):
+def bronnen_scherm(request: Request, melding: str = "", fout: str = "", g: int | None = None):
     with db.pool.connection() as c:
+        paneel = gesprek.gesprek_paneel(c, g)
         lijst = c.execute("""SELECT b.*, (SELECT count(*) FROM vera_berichten m WHERE m.bron_id = b.id AND m.binnen > now() - interval '7 days') AS week
                              FROM vera_bronnen b ORDER BY b.rubriek, b.naam""").fetchall()
         besteed = nieuws.vandaag_besteed(c)
     return templates.TemplateResponse("vera_bronnen.html", ctx(
-        request, "vera", bronnen=lijst, melding=melding, fout=fout, besteed=besteed, plafond=nieuws.DAGPLAFOND_EUR,
+        request, "vera", bronnen=lijst, melding=melding, fout=fout, paneel=paneel, besteed=besteed, plafond=nieuws.DAGPLAFOND_EUR,
         sleutel_ok=bool(config.ANTHROPIC_API_KEY)))
 
 
@@ -128,3 +131,62 @@ async def bron_actie(request: Request, bid: int, actie: str):
         else:
             c.execute("UPDATE vera_bronnen SET actief = %s WHERE id = %s", (actie == "aan", bid))
     return _terug("/vera/bronnen")
+
+
+# ---------------------------------------------------------------- gesprek met Vera over de bronnen
+
+def _gesprek_adres(gid):
+    return "/vera/bronnen" + (f"?g={gid}" if gid else "") + "#vera"
+
+
+@router.post("/vera/gesprek/vraag")
+async def vera_vraag(request: Request):
+    controleer_herkomst(request)
+    f = await request.form()
+    vraag = str(f.get("vraag") or "").strip()
+    gid = int(f.get("gesprek") or 0) or None
+    if not vraag:
+        return _terug(_gesprek_adres(gid))
+    with db.pool.connection() as c:
+        if gid and not c.execute("SELECT 1 FROM gesprekken WHERE id = %s AND persona = 'vera'", (gid,)).fetchone():
+            gid = None
+        if not gid:
+            gid = c.execute("INSERT INTO gesprekken (persona, titel, kader) VALUES ('vera', %s, 'bronnen') RETURNING id",
+                            (" ".join(vraag.split())[:80],)).fetchone()["id"]
+        c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'user', %s)", (gid, vraag))
+        c.execute("UPDATE gesprekken SET gearchiveerd = false WHERE id = %s", (gid,))
+
+    def antwoorden():
+        with db.pool.connection() as c:
+            try:
+                gesprek.antwoord(c, gid)
+            except claude.ClaudeFout as e:
+                c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)",
+                          (gid, f"(Ik kan nu niet antwoorden: {e})"))
+    await asyncio.to_thread(antwoorden)
+    return _terug(_gesprek_adres(gid))
+
+
+@router.post("/vera/gesprek/nieuw")
+async def vera_nieuw(request: Request):
+    controleer_herkomst(request)
+    return _terug("/vera/bronnen?g=0#vera")
+
+
+@router.post("/vera/voorstel/{vid:int}")
+async def vera_voorstel(request: Request, vid: int):
+    controleer_herkomst(request)
+    f = await request.form()
+    with db.pool.connection() as c:
+        v = c.execute("SELECT * FROM vera_voorstellen WHERE id = %s AND status = 'open'", (vid,)).fetchone()
+        if not v:
+            return _terug("/vera/bronnen#vera", fout="Dit voorstel is al afgehandeld.")
+        if f.get("actie") == "weg":
+            c.execute("UPDATE vera_voorstellen SET status = 'afgewezen' WHERE id = %s", (vid,))
+            return _terug(_gesprek_adres(v["gesprek_id"]))
+        bid, uitslag = gesprek.toepassen(c, v)
+        c.execute("UPDATE vera_voorstellen SET status = 'uitgevoerd', uitslag = %s WHERE id = %s", (uitslag[:500], vid))
+        c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)", (v["gesprek_id"], f"(Gedaan: {uitslag})"))
+        c.execute("INSERT INTO logboek (persona, actie, details) VALUES ('vera', 'bron', %s)",
+                  (json.dumps({"soort": v["soort"], "bron": bid, "uitslag": uitslag[:200]}),))
+    return _terug(_gesprek_adres(v["gesprek_id"]), melding=uitslag)

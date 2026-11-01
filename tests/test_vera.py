@@ -162,3 +162,90 @@ def test_bronnen_beheren(klant):
     with db.pool.connection() as c:
         assert not c.execute("SELECT 1 FROM vera_bronnen WHERE id = %s", (b["id"],)).fetchone()
     assert klant.post("/vera/bronnen/1/sloop", headers=FORM).status_code == 404
+
+
+# ---------------------------------------------------------------- gesprek over bronnen
+
+def test_vera_voorstellen_lezen():
+    from app.vera import gesprek  # pylint: disable=import-outside-toplevel
+    tekst = ('Ik stel twee bronnen voor.\n'
+             '<bron>{"naam": "Computable", "soort": "site", "url": "https://www.computable.nl", "rubriek": "FB/IM"}</bron>\n'
+             '<bron>{"naam": "Archiefwet", "soort": "google", "url": "\\"Archiefwet\\" OR Woo"}</bron>\n'
+             '<bron>{"naam": "Kapot", "soort": "feed", "url": "javascript:alert(1)"}</bron>\n'     # geen http: vervalt
+             '<bron>{"naam": "Raar", "soort": "podcast", "url": "https://x.nl"}</bron>\n'         # onbekende soort: vervalt
+             '<bronactie>{"id": 3, "actie": "uit"}</bronactie>\n'
+             '<bronactie>{"id": 99, "actie": "weg"}</bronactie>\n'                                 # onbekende bron: vervalt
+             '<wijzig>{"id": 3, "url": "nieuwe zoekopdracht"}</wijzig>')
+    rest, v = gesprek.voorstellen_uit(tekst, {3})
+    assert rest == "Ik stel twee bronnen voor."
+    assert [(x["soort"], x["bron_id"]) for x in v] == [("nieuw", None), ("nieuw", None), ("uit", 3), ("wijzig", 3)]
+    assert v[1]["gegevens"] == {"naam": "Archiefwet", "soort": "google", "url": '"Archiefwet" OR Woo', "rubriek": "Algemeen"}
+    assert gesprek.beschrijf(v[0]) == "Nieuwe bron: Computable (FB/IM) · https://www.computable.nl"
+    assert gesprek.beschrijf(v[2], {"naam": "Tweakers"}) == "Tweakers uitzetten"
+
+
+def test_feed_zoeken_en_testen():
+    from app.vera import gesprek  # pylint: disable=import-outside-toplevel
+    voer = rss([("Archiefwet aangenomen", "https://computable.nl/a", "", 1)])
+    paginas = {"https://www.computable.nl": b'<html><head><link rel="alternate" type="application/rss+xml" href="/feed/nieuws"></head></html>',
+               "https://www.computable.nl/feed/nieuws": voer,
+               "https://zonderlink.nl": b"<html>geen feed hier</html>", "https://zonderlink.nl/rss": voer}
+
+    def haal(url):
+        if url not in paginas:
+            raise OSError("404")
+        return paginas[url]
+    g = gesprek.test_bron({"naam": "Computable", "soort": "site", "url": "https://www.computable.nl"}, haal)
+    assert g["werkt"] and g["soort"] == "feed" and g["url"] == "https://www.computable.nl/feed/nieuws" and g["site"] == "https://www.computable.nl"
+    assert g["aantal"] == 1 and g["voorbeeld"] == "Archiefwet aangenomen"
+    assert gesprek.test_bron({"soort": "site", "url": "https://zonderlink.nl"}, haal)["url"] == "https://zonderlink.nl/rss"
+    fout = gesprek.test_bron({"soort": "feed", "url": "https://bestaatniet.nl/rss"}, haal)
+    assert not fout["werkt"] and fout["fout"] == "404"
+
+
+def test_gesprek_bronnen_toevoegen(klant, monkeypatch):
+    from app.kern import claude, db  # pylint: disable=import-outside-toplevel
+    from app.vera import gesprek  # pylint: disable=import-outside-toplevel
+    with db.pool.connection() as c:
+        tid = c.execute("SELECT id FROM vera_bronnen WHERE naam = 'Tweakers'").fetchone()["id"]
+    gezien = {}
+
+    def nep(c, persona, systeem, berichten, **kw):
+        gezien.update(persona=persona, systeem=systeem, vraag=berichten[-1]["content"])
+        return ("Computable heeft een feed; voor de Archiefwet werkt een zoekopdracht beter. Tweakers zet ik voor je klaar om uit te zetten.\n"
+                '<bron>{"naam": "Computable", "soort": "site", "url": "https://www.computable.nl", "rubriek": "FB/IM"}</bron>\n'
+                '<bron>{"naam": "Bestaat niet", "soort": "feed", "url": "https://bestaatniet.nl/rss", "rubriek": "FB/IM"}</bron>\n'
+                f'<bronactie>{{"id": {tid}, "actie": "uit"}}</bronactie>')
+    monkeypatch.setattr(claude, "gesprek", nep)
+    voer = rss([("Archiefwet aangenomen", "https://computable.nl/a", "", 1)])
+    paginas = {"https://www.computable.nl": b'<link rel="alternate" type="application/rss+xml" href="https://www.computable.nl/rss">',
+               "https://www.computable.nl/rss": voer}
+    monkeypatch.setattr(gesprek, "_haal_kort", lambda url: paginas[url] if url in paginas else (_ for _ in ()).throw(OSError("niet gevonden")))
+    pagina = klant.get("/vera/bronnen", headers=KOP).text
+    assert 'id="vera"' in pagina and "Vraag het Vera" in pagina
+    r = klant.post("/vera/gesprek/vraag", headers=FORM, follow_redirects=False, data={"vraag": "Voeg Computable toe en zet Tweakers uit"})
+    assert r.status_code == 303 and "#vera" in r.headers["location"]
+    assert gezien["persona"] == "vera" and f"[id {tid}] Tweakers" in gezien["systeem"] and "Voeg Computable toe" in gezien["vraag"]
+    pagina = klant.get(r.headers["location"], headers=KOP).text
+    assert "Computable heeft een feed" in pagina
+    assert "✓ Werkt: 1 bericht nu" in pagina and "Archiefwet aangenomen" in pagina and "feed gevonden op https://www.computable.nl" in pagina
+    assert "⚠ Werkt niet: niet gevonden" in pagina and "Toch toevoegen" in pagina and "Tweakers uitzetten" in pagina
+    with db.pool.connection() as c:
+        vs = c.execute("SELECT * FROM vera_voorstellen ORDER BY id").fetchall()
+        assert [v["soort"] for v in vs] == ["nieuw", "nieuw", "uit"]
+        assert not c.execute("SELECT 1 FROM vera_bronnen WHERE naam = 'Computable'").fetchone()  # nog niets veranderd
+    # Toevoegen (met het gevonden feedadres), niet doen, en uitzetten.
+    r = klant.post(f"/vera/voorstel/{vs[0]['id']}", headers=FORM, data={"actie": "doe"}, follow_redirects=False)
+    assert "toegevoegd" in r.headers["location"]
+    klant.post(f"/vera/voorstel/{vs[1]['id']}", headers=FORM, data={"actie": "weg"})
+    klant.post(f"/vera/voorstel/{vs[2]['id']}", headers=FORM, data={"actie": "doe"})
+    with db.pool.connection() as c:
+        b = c.execute("SELECT * FROM vera_bronnen WHERE naam = 'Computable'").fetchone()
+        assert b["soort"] == "feed" and b["url"] == "https://www.computable.nl/rss" and b["rubriek"] == "FB/IM" and b["actief"]
+        assert not c.execute("SELECT 1 FROM vera_bronnen WHERE naam = 'Bestaat niet'").fetchone()
+        assert not c.execute("SELECT actief FROM vera_bronnen WHERE id = %s", (tid,)).fetchone()["actief"]
+        assert [v["status"] for v in c.execute("SELECT status FROM vera_voorstellen ORDER BY id")] == ["uitgevoerd", "afgewezen", "uitgevoerd"]
+        c.execute("DELETE FROM vera_bronnen WHERE naam = 'Computable'")
+        c.execute("UPDATE vera_bronnen SET actief = true WHERE id = %s", (tid,))
+        c.execute("DELETE FROM gesprekken WHERE persona = 'vera'")
+    assert "al+afgehandeld" in klant.post(f"/vera/voorstel/{vs[0]['id']}", headers=FORM, data={"actie": "doe"}, follow_redirects=False).headers["location"]

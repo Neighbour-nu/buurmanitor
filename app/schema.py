@@ -366,6 +366,16 @@ MIGRATIES = [
         bericht int NOT NULL,
         tijd timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (soort, bericht))""",
+    # Voorstellen uit het gesprek met Vera over haar bronnen (pas na Martijns klik).
+    """CREATE TABLE IF NOT EXISTS vera_voorstellen (
+        id serial PRIMARY KEY,
+        gesprek_id int REFERENCES gesprekken(id) ON DELETE CASCADE,
+        soort text NOT NULL CHECK (soort IN ('nieuw', 'wijzig', 'aan', 'uit', 'weg')),
+        bron_id int REFERENCES vera_bronnen(id) ON DELETE CASCADE,
+        gegevens jsonb NOT NULL DEFAULT '{}',
+        status text NOT NULL DEFAULT 'open',
+        uitslag text NOT NULL DEFAULT '',
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
     # De standaardbronnen één keer klaarzetten (daarna beheer je ze zelf op Nieuws › Bronnen).
     _vera_bronnen(),
 ]

@@ -487,3 +487,7 @@ tr.uit td { opacity: .55; }
 .minikop a:hover { text-decoration: underline; }
 .minikop .bron { font-size: 12px; color: var(--zacht); white-space: nowrap; max-width: 34%; overflow: hidden; text-overflow: ellipsis; }
 .nraster.enkel .nitem { border-bottom: 0; border-top: 1px solid var(--lijn); }
+.voorstel .test { flex: 1 1 100%; overflow-wrap: anywhere; }
+.voorstel.mislukt { border-left-color: var(--oranje); }
+.voorstel.mislukt .test { color: var(--oranje); }
+#vera { scroll-margin-top: 80px; }

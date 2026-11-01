@@ -12,6 +12,48 @@
 {% if melding %}<p class="item">{{ melding }}</p>{% endif %}
 {% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
 
+<section class="kaart noorgesprek veragesprek" id="vera">
+  <div class="noor-praat">
+    <h2><span>Vraag het Vera <span class="noot">· nieuwe bronnen</span></span>
+      <form method="post" action="/vera/gesprek/nieuw" class="inline"><button class="knop klein" type="submit">Nieuw gesprek</button></form></h2>
+    {% if not sleutel_ok %}<p class="item urgent">Er is nog geen Claude-sleutel ingesteld.</p>{% endif %}
+    <div class="berichten" id="berichten">
+    {% for m in paneel.berichten %}
+      <div class="bericht {{ m.rol }}"><span class="noot">{{ 'Jij' if m.rol == 'user' else 'Vera' }} · {{ geleden(m.tijd) }}</span>
+        <div class="tekst">{{ m.tekst }}</div></div>
+    {% else %}
+      <p class="noot">Zeg Vera wat je wilt volgen. Bijvoorbeeld: "Ik wil nieuws over de nieuwe Archiefwet en de Woo",
+        "Voeg Computable en AG Connect toe", "Iets over Nijmegen" of "Zet Tweakers uit, dat is te veel productnieuws".
+        Vera stelt bronnen voor en test meteen of ze werken; jij klikt op Toevoegen.</p>
+    {% endfor %}
+    </div>
+    <form method="post" action="/vera/gesprek/vraag">
+      <input type="hidden" name="gesprek" value="{{ paneel.gesprek.id if paneel.gesprek else '' }}">
+      <textarea name="vraag" required placeholder="Welk nieuws wil je erbij, of wat moet eruit?"></textarea>
+      <p><button class="knop vol" type="submit">Stuur</button> <span class="noot">Vera verandert pas iets als jij op de knop drukt.</span></p>
+    </form>
+  </div>
+  <div class="noor-voorstellen">
+    <h3>Voorstellen</h3>
+    {% for v in paneel.voorstellen %}{% set gg = v.gegevens %}
+      <form method="post" action="/vera/voorstel/{{ v.id }}" class="voorstel {{ 'mislukt' if 'werkt' in gg and not gg.werkt }}">
+        <span class="breekbaar">{{ {'nieuw': '＋', 'wijzig': '✎', 'aan': '▶', 'uit': '⏸', 'weg': '🗑'}[v.soort] }} {{ v.tekst }}</span>
+        {% if 'werkt' in gg %}<span class="noot test">{% if gg.werkt %}✓ Werkt: {{ gg.aantal }} bericht{{ 'en' if gg.aantal != 1 }} nu, bijvoorbeeld "{{ gg.voorbeeld }}"{% if gg.site %} (feed gevonden op {{ gg.site }}){% endif %}
+          {% else %}⚠ Werkt niet: {{ gg.fout }}{% endif %}</span>{% endif %}
+        <span class="knoppenrij"><button class="knop klein vol" type="submit" name="actie" value="doe">{{ {'nieuw': ('Toevoegen' if gg.werkt is not defined or gg.werkt else 'Toch toevoegen'), 'wijzig': 'Aanpassen', 'aan': 'Aanzetten', 'uit': 'Uitzetten', 'weg': 'Verwijderen'}[v.soort] }}</button>
+          <button class="knop klein" type="submit" name="actie" value="weg">Niet doen</button></span>
+      </form>
+    {% else %}<p class="noot">Nog geen open voorstellen. Wat Vera voorstelt, verschijnt hier met de uitslag van de test.</p>{% endfor %}
+    {% for v in paneel.klaar[-5:] %}<p class="noot">✓ {{ v.uitslag }}</p>{% endfor %}
+    {% if paneel.eerdere %}
+    <details class="gesprekken"><summary>Eerdere gesprekken ({{ paneel.eerdere | length }})</summary>
+      {% for e in paneel.eerdere %}<div class="gesprekregel"><a href="/vera/bronnen?g={{ e.id }}#vera">{{ e.titel or 'Gesprek' }}</a> <span class="noot">{{ geleden(e.bijgewerkt) }}</span></div>{% endfor %}
+    </details>
+    {% endif %}
+  </div>
+</section>
+<script>(function () { const l = document.getElementById("berichten"); if (l) l.scrollTop = l.scrollHeight; })();</script>
+
 <section class="kaart">
   <h2>Bronnen</h2>
   <div class="tabel-scroll"><table class="tabel">
