@@ -1517,7 +1517,7 @@ def test_agenda_compact_twee_weken(klant):
                            RETURNING id""", (k, s, s + dt.timedelta(hours=1))).fetchone()["id"]
     pagina = klant.get("/clara", headers=KOP).text
     assert "Afspraak over twaalf dagen" in pagina and pagina.count('class="dagkop"') == 14
-    assert f'id="a{iid}">' in pagina and "<summary>" in pagina and "openen in Google Agenda" in pagina and "alles open" in pagina
+    assert f'id="a{iid}" data-eind="' in pagina and "<summary>" in pagina and "openen in Google Agenda" in pagina and "alles open" in pagina
     assert "Afspraak over twaalf dagen" not in klant.get("/clara?week=1", headers=KOP).text
     with db.pool.connection() as c:
         c.execute("DELETE FROM agenda_items")
@@ -1775,3 +1775,34 @@ def test_raadsagenda_te_kiezen_ook_als_hij_niet_in_de_week_staat(klant, monkeypa
         assert "raad" in gehaald  # ook bijgewerkt als hij niet in de week staat
         c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (r,))
         c.execute("DELETE FROM agenda_items")
+
+
+def test_voorbije_afspraken_grijs():
+    """Afspraken die al voorbij zijn krijgen de klasse 'voorbij' (grijs), op Clara en op Vandaag."""
+    if not os.environ.get("TEST_DATABASE_URL"):
+        pytest.skip("geen TEST_DATABASE_URL")
+    from fastapi.testclient import TestClient  # pylint: disable=import-outside-toplevel
+    from app import main  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    kop = {"Remote-User": "martijn", "X-Proxy-Geheim": "test-geheim"}
+    if not 1 <= dt.datetime.now(config.TZ).hour < 22:
+        pytest.skip("rond middernacht vallen de afspraken op een andere dag")
+    with TestClient(main.app) as k:
+        with db.pool.connection() as c:
+            c.execute("TRUNCATE agenda_koppelingen CASCADE")
+            kid = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, domein, schrijven, agendas, schrijfagenda)
+                               VALUES ('google', 'Privé', 'prive', true, %s, 'primary') RETURNING id""",
+                            (json.dumps([{"id": "primary", "naam": "Martijn", "primair": True, "schrijven": True, "aan": True, "bezet": True}]),)).fetchone()["id"]
+            nu = dt.datetime.now(config.TZ)
+            for eid, titel, s, e in (("x1", "Al geweest", nu - dt.timedelta(minutes=50), nu - dt.timedelta(minutes=5)),
+                                     ("x2", "Nog bezig", nu - dt.timedelta(minutes=5), nu + dt.timedelta(minutes=30)),
+                                     ("x3", "Straks", nu + dt.timedelta(minutes=40), nu + dt.timedelta(minutes=90))):
+                c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind)
+                             VALUES (%s, 'primary', %s, %s, %s, %s)""", (kid, eid, titel, s, e))
+        for pad in ("/clara", "/"):
+            html = k.get(pad, headers=kop).text
+            blokken = {t: html[:html.index(t)].rsplit("<details", 1)[1] for t in ("Al geweest", "Nog bezig", "Straks") if t in html}
+            assert "voorbij" in blokken["Al geweest"], pad
+            assert "voorbij" not in blokken["Nog bezig"].split(">")[0] and "data-eind=" in blokken["Straks"], pad
+        with db.pool.connection() as c:
+            c.execute("TRUNCATE agenda_koppelingen CASCADE")

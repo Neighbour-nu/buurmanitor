@@ -50,7 +50,7 @@
     {% if agenda is none %}<p class="noot">Nog geen agenda's gekoppeld. <a href="/clara/koppelingen">Koppel ze bij Clara</a>.</p>
     {% else %}
       {% for a in agenda.vandaag %}
-        <details class="afspraak klein {{ a.domein }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %}>
+        <details class="afspraak klein {{ a.domein }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }} {{ 'voorbij' if a.eind <= nu }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %} data-eind="{{ a.eind.isoformat() }}">
           <summary><span class="tijd">{% if a.heledag %}hele dag{% else %}{{ a.start.astimezone(agenda.tz).strftime('%H.%M') }}{% endif %}</span>
             <span class="wat"><span class="atitel">{{ a.titel }}</span></span></summary>
           <div class="open"><span class="noot">{% if not a.heledag %}{{ a.start.astimezone(agenda.tz).strftime('%H.%M') }}–{{ a.eind.astimezone(agenda.tz).strftime('%H.%M') }} · {% endif %}{{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}{% if a.link %} · <a href="{{ a.link }}" target="_blank" rel="noopener">openen</a>{% endif %}</span></div>

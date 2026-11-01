@@ -6,7 +6,7 @@
 <title>{% block titel %}Buurmanitor{% endblock %}</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=17">
+<link rel="stylesheet" href="/static/style.css?v=18">
 {% block kop %}{% endblock %}
 </head>
 <body>
@@ -72,6 +72,14 @@ document.addEventListener("keydown", function (e) {
     if (veld.value.trim()) veld.form.requestSubmit ? veld.form.requestSubmit() : veld.form.submit();
   }
 });
+// Afspraken die voorbij zijn grijs maken, ook als de pagina openblijft (elke minuut bijwerken).
+(function () {
+  function bij() {
+    const nu = Date.now();
+    document.querySelectorAll(".afspraak[data-eind]").forEach(a => a.classList.toggle("voorbij", Date.parse(a.dataset.eind) <= nu));
+  }
+  bij(); setInterval(bij, 60000);
+})();
 // Meldingen: elke 30 seconden kijken of er iets nieuws is. Urgent en belangrijk verschijnen als banner en,
 // als je dat toestaat, als systeemmelding op je scherm (ook als dit tabblad op de achtergrond staat).
 (function () {

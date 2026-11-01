@@ -411,3 +411,8 @@ details.afspraak.klein .tijd { flex-basis: 56px; }
 .snelle-taak { display: flex; gap: 6px; margin-top: 8px; }
 .snelle-taak input { flex: 1 1 auto; min-width: 0; }
 #noor, #taken { scroll-margin-top: 80px; }
+
+/* Afspraken die vandaag al voorbij zijn: grijs */
+.afspraak.voorbij { opacity: .5; border-left-color: #B8C0CA !important; }
+.afspraak.voorbij > summary, .afspraak.voorbij .tijd, .afspraak.voorbij .wat a { color: var(--zacht); }
+details.afspraak.voorbij[open] { opacity: .8; }

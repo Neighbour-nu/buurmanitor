@@ -44,7 +44,7 @@
           {% set reizen = per_afspraak.get(sleutel, []) %}
           {% set met_tijd = reizen | selectattr('minuten') | list %}
           {% set nog_open = met_tijd | rejectattr('ingepland') | list %}
-          <details class="afspraak {{ a.domein }} {{ 'reisblok' if is_reisblok(a) }} {{ 'conflict' if sleutel in conflict_ids }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }} {{ 'voorlopig' if a.status == 'voorlopig' or a.antwoord in ('voorlopig', 'geen') }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %} id="a{{ a.id }}">
+          <details class="afspraak {{ a.domein }} {{ 'reisblok' if is_reisblok(a) }} {{ 'conflict' if sleutel in conflict_ids }} {{ 'ander' if a.niet_voor_mij }} {{ 'vrijgehouden' if (a.vrij and not a.niet_voor_mij) or a.antwoord == 'afgewezen' }} {{ 'voorlopig' if a.status == 'voorlopig' or a.antwoord in ('voorlopig', 'geen') }} {{ 'voorbij' if a.eind <= nu }}"{% if a.kleur_toon %} style="border-left-color: {{ a.kleur_toon }}"{% endif %} id="a{{ a.id }}" data-eind="{{ a.eind.isoformat() }}">
             <summary><span class="tijd">{{ tijd(a) }}</span>
               <span class="wat"><span class="atitel">{{ a.titel }}</span>
                 {% if sleutel in conflict_ids %}<span class="label rood">overlap</span>{% endif %}
