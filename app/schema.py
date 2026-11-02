@@ -439,5 +439,26 @@ MIGRATIES = [
         bericht int PRIMARY KEY,
         tijd timestamptz NOT NULL DEFAULT now())""",
     _jesse_bronnen(),
+    # Herhalende taken: een reeks waar losse taken (met elk een afspraak) van gemaakt worden. gemaakt_tot onthoudt tot welke
+    # dag de taken al gemaakt zijn, zodat een taak die Martijn weghaalt niet terugkomt.
+    """CREATE TABLE IF NOT EXISTS takenreeksen (
+        id serial PRIMARY KEY,
+        titel text NOT NULL,
+        beschrijving text NOT NULL DEFAULT '',
+        prio text NOT NULL DEFAULT 'middel',
+        status text NOT NULL DEFAULT 'gepland',
+        soort text NOT NULL DEFAULT 'week' CHECK (soort IN ('week', 'maand')),
+        dagen jsonb NOT NULL DEFAULT '[]',
+        interval int NOT NULL DEFAULT 1,
+        begindatum date NOT NULL,
+        einddatum date,
+        starttijd time,
+        eindtijd time,
+        doel text NOT NULL DEFAULT '',
+        gemaakt_tot date,
+        actief boolean NOT NULL DEFAULT true,
+        klaar boolean NOT NULL DEFAULT false,
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS reeks_id int REFERENCES takenreeksen(id) ON DELETE SET NULL",
 ]
 

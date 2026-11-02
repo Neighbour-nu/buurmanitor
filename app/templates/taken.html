@@ -16,6 +16,7 @@
   </div>
   <div class="knoppen">
     <a class="knop {{ 'vol' if praat }}" href="{{ '/taken' if praat else '/taken?praat=1#noor' }}">💬 {{ 'Gesprek sluiten' if praat else 'Vraag Noor' }}</a>
+    <a class="knop" href="/taken?reeks=nieuw#reeks">🔁 Herhalende taak</a>
     <a class="knop vol" href="/taken?nieuw=1#formulier">＋ Nieuwe taak</a>
   </div>
 </section>
@@ -94,6 +95,39 @@
 </section>
 {% endif %}
 
+{% if reeksform %}
+<section class="kaart taakformulier" id="reeks">
+  <h2>{{ 'Herhalende taak wijzigen' if reeksform.id else 'Herhalende taak' }}</h2>
+  <p class="noot">Buurmanitor maakt hier losse taken van, elk met een eigen afspraak in je agenda, steeds voor de komende {{ 8 }} weken.
+    Zo rond je elke keer apart af, of schuif of verwijder je één keer zonder de rest te raken.{% if reeksform.id %} Wijzig je de reeks,
+    dan worden de nog open taken vanaf vandaag opnieuw gemaakt; wat al afgerond is, blijft.{% endif %}</p>
+  <form method="post" action="/taken/reeks/{{ reeksform.id or 'nieuw' }}" class="velden">
+    <label class="breed">Korte titel <input type="text" name="titel" value="{{ reeksform.titel }}" maxlength="160" required autofocus></label>
+    <label class="breed">Beschrijving <textarea name="beschrijving" rows="3">{{ reeksform.beschrijving }}</textarea></label>
+    <fieldset class="breed reekspatroon">
+      <legend>Hoe vaak</legend>
+      <label class="vink"><input type="radio" name="soort" value="week" {{ 'checked' if reeksform.soort != 'maand' }}> Elke
+        <select name="interval" aria-label="Om de hoeveel weken">{% for n in range(1, 5) %}<option value="{{ n }}" {{ 'selected' if reeksform.interval == n and reeksform.soort != 'maand' }}>{{ 'week' if n == 1 else n ~ ' weken' }}</option>{% endfor %}</select> op</label>
+      <span class="dagkeuze">{% for d in dagcodes %}<label class="dag"><input type="checkbox" name="dagen" value="{{ d }}" {{ 'checked' if d in reeksform.dagen }}><span>{{ d }}</span></label>{% endfor %}</span>
+      <label class="vink"><input type="radio" name="soort" value="maand" {{ 'checked' if reeksform.soort == 'maand' }}> Elke maand op dezelfde dag als de begindatum</label>
+    </fieldset>
+    <label>Begindatum <input type="date" name="begindatum" value="{{ reeksform.begindatum.isoformat() }}" required></label>
+    <label>Einddatum <input type="date" name="einddatum" value="{{ reeksform.einddatum.isoformat() if reeksform.einddatum else '' }}"> <span class="noot">leeg: geen einde</span></label>
+    <label>Begintijd <input type="time" name="starttijd" value="{{ reeksform.starttijd.strftime('%H:%M') if reeksform.starttijd else '' }}"></label>
+    <label>Eindtijd <input type="time" name="eindtijd" value="{{ reeksform.eindtijd.strftime('%H:%M') if reeksform.eindtijd else '' }}"></label>
+    <label>Prioriteit <select name="prio">{% for w, n in prios %}<option value="{{ w }}" {{ 'selected' if reeksform.prio == w }}>{{ n }}</option>{% endfor %}</select></label>
+    <label>Kolom <select name="status">{% for w, n in statussen if w in ('nieuw', 'triage', 'gepland', 'actief') %}<option value="{{ w }}" {{ 'selected' if reeksform.status == w }}>{{ n }}</option>{% endfor %}</select></label>
+    {% if doelen %}<label>Agenda <select name="doel">{% for w, label, d in doelen %}<option value="{{ w }}" {{ 'selected' if reeksform.doel == w }}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+    <p class="noot breed">Zonder tijd komt elke keer als afspraak voor de hele dag in je agenda; met een tijd als gewone afspraak.</p>
+    <div class="knoppenrij breed">
+      <button class="knop vol" type="submit">{{ 'Opslaan' if reeksform.id else 'Maken en inplannen' }}</button>
+      <a class="knop" href="/taken">Annuleren</a>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+{% if later %}<p class="noot reekslater">🔁 {{ later }} {{ 'taken' if later != 1 else 'taak' }} uit herhalende taken {{ 'staan' if later != 1 else 'staat' }} later gepland. Die staan al wel in je agenda en komen een week vooraf op het bord.</p>{% endif %}
 <form method="post" id="verplaats-form" hidden><input type="hidden" name="status" id="verplaats-status"></form>
 <div class="kanban" id="kanban">
   {% for s, naam, lijst in kolommen %}
@@ -102,7 +136,7 @@
     {% for t in lijst %}
     {% set te_laat = t.einddatum and t.einddatum < vandaag and t.status != 'afgerond' %}
     <article class="taak prio-{{ t.prio }} {{ 'te-laat' if te_laat }}" id="taak-{{ t.id }}" draggable="true" data-id="{{ t.id }}">
-      <a class="taaktitel" href="/taken?bewerk={{ t.id }}#formulier">{{ t.titel }}</a>
+      <a class="taaktitel" href="/taken?bewerk={{ t.id }}#formulier">{% if t.reeks_id %}<span title="uit een herhalende taak">🔁 </span>{% endif %}{{ t.titel }}</a>
       <div class="taakregel">
         <span class="label prio {{ t.prio }}">{{ prio_namen[t.prio] }}</span>
         {% if te_laat %}<span class="label rood">te laat</span>{% endif %}
@@ -122,6 +156,22 @@
   </section>
   {% endfor %}
 </div>
+
+<section class="kaart" id="reeksen">
+  <h2>Herhalende taken <a class="klein" href="/taken?reeks=nieuw#reeks">nieuwe</a></h2>
+  {% for r in reeksen %}
+    <div class="reeksregel {{ 'uit' if not r.actief }}">
+      <div class="reekswat"><span><b>{{ r.titel }}</b> <span class="label prio {{ r.prio }}">{{ prio_namen[r.prio] }}</span></span>
+        <span class="noot">{{ r.patroon }}</span>
+        <span class="noot">{% if r.actief %}{% if r.volgende %}volgende keer {{ DAGEN[r.volgende.weekday()][:2] }} {{ r.volgende.strftime('%d-%m') }} · {% endif %}{% else %}{{ 'afgelopen' if r.klaar else 'gestopt' }} · {% endif %}{{ r.open }} open, {{ r.af }} afgerond</span></div>
+      <form method="post" class="knoppenrij">
+        <a class="knop klein" href="/taken?reeks={{ r.id }}#reeks">Wijzigen</a>
+        {% if r.actief %}<button class="knop klein" formaction="/taken/reeks/{{ r.id }}/stop" onclick="return confirm('Deze herhalende taak stoppen? Open taken vanaf vandaag gaan weg, ook uit je agenda.')">Stoppen</button>{% endif %}
+        <button class="knop klein" formaction="/taken/reeks/{{ r.id }}/weg" onclick="return confirm('Deze herhalende taak verwijderen, met alle open taken en hun afspraken?')">Verwijderen</button>
+      </form>
+    </div>
+  {% else %}<p class="noot">Nog geen herhalende taken. Bijvoorbeeld: elke maandag 9.00 tot 10.00 de week voorbereiden, of elke eerste van de maand de facturen.</p>{% endfor %}
+</section>
 
 <script>
 // Slepen tussen de kolommen. Zonder JavaScript werkt de keuzelijst op elke kaart.

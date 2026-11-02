@@ -289,3 +289,105 @@ def test_noor_gesprek_en_vandaag(klant, monkeypatch):
     with db.pool.connection() as c:
         c.execute("DELETE FROM takenbord")
         c.execute("DELETE FROM gesprekken WHERE persona = 'noor'")
+
+
+# ---------------------------------------------------------------- herhalende taken
+
+def test_reeks_datums_en_beschrijving():
+    from app.taken import reeksen  # pylint: disable=import-outside-toplevel
+    r = {"soort": "week", "dagen": ["ma", "do"], "interval": 1, "begindatum": D, "einddatum": D + dt.timedelta(days=20),
+         "starttijd": dt.time(9), "eindtijd": dt.time(10)}
+    lijst = reeksen.datums(r, D, D + dt.timedelta(days=60))
+    assert [d.isoformat() for d in lijst] == ["2026-11-09", "2026-11-12", "2026-11-16", "2026-11-19", "2026-11-23", "2026-11-26"]
+    assert reeksen.beschrijf(r) == "elke maandag en donderdag, 09.00-10.00, vanaf 09-11-2026 tot en met 29-11-2026"
+    om = r | {"interval": 2, "dagen": ["wo"], "einddatum": None}
+    assert [d.isoformat() for d in reeksen.datums(om, D, D + dt.timedelta(days=30))] == ["2026-11-11", "2026-11-25", "2026-12-09"]
+    assert reeksen.beschrijf(om).startswith("om de 2 weken op woensdag, 09.00-10.00, vanaf 09-11-2026")
+    werk = r | {"dagen": ["ma", "di", "wo", "do", "vr"], "starttijd": None, "eindtijd": None, "einddatum": None}
+    assert reeksen.beschrijf(werk) == "elke werkdag, vanaf 09-11-2026"
+    maand = {"soort": "maand", "interval": 1, "begindatum": dt.date(2026, 1, 31), "einddatum": dt.date(2026, 5, 1), "dagen": []}
+    assert [d.isoformat() for d in reeksen.datums(maand, dt.date(2026, 1, 1), dt.date(2026, 12, 31))] == \
+        ["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30"]  # bestaat de dag niet, dan de laatste van de maand
+    assert reeksen.beschrijf(maand) == "elke maand op de 31e, vanaf 31-01-2026 tot en met 01-05-2026"
+
+
+def test_reeks_formulier():
+    from app.taken import reeksen  # pylint: disable=import-outside-toplevel
+
+    class F(dict):
+        def getlist(self, k):
+            v = self.get(k)
+            return v if isinstance(v, list) else ([v] if v else [])
+    v, fout = reeksen.uit_formulier(F(titel="Week voorbereiden", dagen=["ma", "zz"], interval="9", begindatum="2026-11-09", starttijd="09:00",
+                                      eindtijd="10:00", status="afgerond"), D)
+    assert not fout and v["dagen"] == ["ma"] and v["interval"] == 9 and v["status"] == "gepland" and v["starttijd"] == dt.time(9)
+    assert reeksen.uit_formulier(F(titel="x", soort="week"), D)[1] == "Kies op welke dagen de taak terugkomt."
+    assert "einddatum" in reeksen.uit_formulier(F(titel="x", dagen=["ma"], begindatum="2026-11-09", einddatum="2026-11-01"), D)[1]
+    assert reeksen.uit_formulier(F(titel="", dagen=["ma"]), D)[1].startswith("Geef")
+
+
+def test_reeks_maken_wijzigen_stoppen(klant, monkeypatch):
+    from app.clara import bronnen, sync  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    from app.taken import reeksen  # pylint: disable=import-outside-toplevel
+    gemaakt, weg = [], []
+    monkeypatch.setattr(sync, "toegang", lambda c, k: "tok")
+    monkeypatch.setattr(sync, "synchroniseer", lambda c, k, forceer=False, nu=None: None)
+    monkeypatch.setattr(bronnen, "google_maak", lambda tok, a, titel, s, e, o="", kleur=None, heledag=False, **kw:
+                        gemaakt.append((titel, s, e, heledag)) or f"ev{len(gemaakt)}")
+    monkeypatch.setattr(bronnen, "google_verwijder", lambda tok, a, eid, melden=False: weg.append(eid))
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM takenbord")
+        c.execute("DELETE FROM takenreeksen")
+        ag = [{"id": "primary", "naam": "Martijn", "primair": True, "schrijven": True, "aan": True, "bezet": True}]
+        k = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, schrijven, agendas, schrijfagenda) VALUES ('google', 'Privé', true, %s, 'primary')
+                         RETURNING id""", (json.dumps(ag),)).fetchone()["id"]
+    vandaag = dt.datetime.now(TZ).date()
+    assert 'href="/taken?reeks=nieuw#reeks"' in klant.get("/taken", headers=KOP).text
+    assert "Hoe vaak" in klant.get("/taken?reeks=nieuw", headers=KOP).text
+    alle_dagen = ["ma", "di", "wo", "do", "vr", "za", "zo"]
+    assert "fout=" in klant.post("/taken/reeks/nieuw", headers=FORM, follow_redirects=False, data={"titel": "x"}).headers["location"]
+    r = klant.post("/taken/reeks/nieuw", headers=FORM, follow_redirects=False, data={
+        "titel": "Week voorbereiden", "soort": "week", "dagen": alle_dagen, "interval": "1", "begindatum": vandaag.isoformat(),
+        "einddatum": (vandaag + dt.timedelta(days=13)).isoformat(), "starttijd": "09:00", "eindtijd": "09:30", "doel": f"{k}|primary"})
+    assert "14+keer+gepland" in r.headers["location"], r.headers["location"]
+    assert len(gemaakt) == 14 and gemaakt[0][0] == "📋 Week voorbereiden" and gemaakt[0][1].hour == 9 and gemaakt[0][2].minute == 30
+    pagina = klant.get("/taken", headers=KOP).text
+    assert pagina.count("🔁 </span>Week voorbereiden") == 8  # alleen de komende week op het bord
+    assert "6 taken uit herhalende taken staan later gepland" in pagina and "elke dag, 09.00-09.30" in pagina and "14 open, 0 afgerond" in pagina
+    with db.pool.connection() as c:
+        rid = c.execute("SELECT id FROM takenreeksen").fetchone()["id"]
+        morgen = c.execute("SELECT id FROM takenbord WHERE reeks_id = %s AND startdatum = %s", (rid, vandaag + dt.timedelta(days=1))).fetchone()["id"]
+    # Eén keer weghalen: komt niet terug als de planner aanvult.
+    klant.post(f"/taken/{morgen}/weg", headers=FORM)
+    with db.pool.connection() as c:
+        assert reeksen.aanvullen(c, rid) == 0
+        assert c.execute("SELECT count(*) AS n FROM takenbord WHERE reeks_id = %s", (rid,)).fetchone()["n"] == 13
+    # Vandaag afronden, dan wijzigen naar alleen maandag: open taken vanaf vandaag opnieuw, de afgeronde blijft.
+    with db.pool.connection() as c:
+        vid = c.execute("SELECT id FROM takenbord WHERE reeks_id = %s AND startdatum = %s", (rid, vandaag)).fetchone()["id"]
+    klant.post(f"/taken/{vid}/status", headers=FORM, data={"status": "afgerond"})
+    voor = len(weg)
+    r = klant.post(f"/taken/reeks/{rid}", headers=FORM, follow_redirects=False, data={
+        "titel": "Week voorbereiden", "soort": "week", "dagen": ["ma"], "interval": "1", "begindatum": vandaag.isoformat(),
+        "einddatum": (vandaag + dt.timedelta(days=13)).isoformat(), "starttijd": "09:00", "eindtijd": "09:30", "doel": f"{k}|primary"})
+    assert "gewijzigd" in r.headers["location"]
+    with db.pool.connection() as c:
+        rijen = c.execute("SELECT startdatum, status FROM takenbord WHERE reeks_id = %s ORDER BY startdatum", (rid,)).fetchall()
+    maandagen = [d for d in (vandaag + dt.timedelta(days=i) for i in range(14)) if d.weekday() == 0 and d != vandaag]
+    assert [x["startdatum"] for x in rijen if x["status"] != "afgerond"] == maandagen
+    assert [x["startdatum"] for x in rijen if x["status"] == "afgerond"] == [vandaag] and len(weg) - voor >= 11
+    # Stoppen: open taken weg (ook uit de agenda), de reeks blijft zichtbaar als gestopt.
+    r = klant.post(f"/taken/reeks/{rid}/stop", headers=FORM, follow_redirects=False)
+    assert "gestopt" in r.headers["location"]
+    with db.pool.connection() as c:
+        assert c.execute("SELECT count(*) AS n FROM takenbord WHERE reeks_id = %s AND status <> 'afgerond'", (rid,)).fetchone()["n"] == 0
+        assert not c.execute("SELECT actief FROM takenreeksen WHERE id = %s", (rid,)).fetchone()["actief"]
+        assert reeksen.taak_reeksen(c) == "0 taken uit herhalende taken gemaakt"
+    # Verwijderen: de reeks weg; de afgeronde taak blijft op het bord (zonder reeks).
+    klant.post(f"/taken/reeks/{rid}/weg", headers=FORM)
+    with db.pool.connection() as c:
+        assert not c.execute("SELECT 1 FROM takenreeksen WHERE id = %s", (rid,)).fetchone()
+        assert c.execute("SELECT reeks_id FROM takenbord WHERE id = %s", (vid,)).fetchone()["reeks_id"] is None
+        c.execute("DELETE FROM takenbord")
+        c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (k,))

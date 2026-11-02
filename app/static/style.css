@@ -625,3 +625,21 @@ tr.uit td { opacity: .55; }
 .mailbalk.stil { background: var(--ijs); border-color: var(--lijn); }
 .platte { margin-top: 8px; } .platte summary { cursor: pointer; color: var(--zacht); font-size: 14px; }
 .mailtekst a { overflow-wrap: anywhere; }
+
+/* Taken: herhalende taken */
+.reekspatroon { border: 1px solid var(--lijn); border-radius: 6px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+.reekspatroon legend { font-weight: 600; padding: 0 4px; }
+.reekspatroon select { width: auto; display: inline-block; }
+.dagkeuze { display: flex; flex-wrap: wrap; gap: 4px; margin-left: 22px; }
+.dag input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.dag span { display: inline-block; min-width: 38px; text-align: center; padding: 4px 6px; border: 1px solid var(--lijn); border-radius: 4px;
+            font-family: var(--kop); font-weight: 600; text-transform: uppercase; cursor: pointer; background: var(--wit); }
+.dag input:checked + span { background: var(--blauw); border-color: var(--blauw); color: var(--wit); }
+.dag input:focus-visible + span { outline: 3px solid var(--blauw); outline-offset: 2px; }
+.reeksregel { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--lijn); }
+.reeksregel:last-child { border-bottom: 0; }
+.reeksregel.uit { opacity: .6; }
+.reekswat { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 320px; }
+.reekslater { margin: 4px 0 8px; }
+#reeks, #reeksen { scroll-margin-top: 80px; }
+#reeksen { margin-top: 16px; }

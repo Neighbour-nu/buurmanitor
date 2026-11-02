@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 from ..clara import bronnen as agenda_bronnen, kluis, sync as agenda_sync, web as clara_web
 from ..kern import claude, config, db, planner
 from ..kern.web import DAGEN, controleer_herkomst, ctx, templates
-from . import noor
+from . import noor, reeksen
 
 router = APIRouter()
 STATUSSEN = (("nieuw", "Nieuw"), ("triage", "Triage"), ("gepland", "Gepland"), ("actief", "Actief"),
@@ -230,7 +230,7 @@ def _paneel(c, g=None):
 
 @router.get("/taken", response_class=HTMLResponse)
 def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, wacht: int = 0, alles: int = 0,
-         melding: str = "", fout: str = "", praat: int = 0, g: int | None = None):
+         melding: str = "", fout: str = "", praat: int = 0, g: int | None = None, reeks: str = ""):
     nieuw_ = nieuw_ or int(request.query_params.get("nieuw") or 0)
     vandaag = dt.datetime.now(config.TZ).date()
     with db.pool.connection() as c:
@@ -256,11 +256,23 @@ def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, w
         mail = c.execute("SELECT id, onderwerp, van_naam FROM post_berichten WHERE id = %s", (formulier["bericht_id"],)).fetchone() \
             if formulier and formulier.get("bericht_id") else None
         paneel = _paneel(c, g) if praat else None
-    kolommen = [(s, naam, [t for t in taken if t["status"] == s]) for s, naam in STATUSSEN]
+        lijst_reeksen = reeksen.overzicht(c, vandaag)
+        reeksform = None
+        if reeks == "nieuw":
+            reeksform = {"id": 0, "titel": "", "beschrijving": "", "prio": "middel", "status": "gepland", "soort": "week", "dagen": [],
+                         "interval": 1, "begindatum": vandaag, "einddatum": None, "starttijd": None, "eindtijd": None, "doel": ""}
+        elif reeks.isdigit():
+            reeksform = next((r for r in lijst_reeksen if r["id"] == int(reeks)), None)
+    # Taken uit een herhalende reeks: alleen de komende week op het bord (de rest staat al wel in de agenda).
+    horizon = vandaag + dt.timedelta(days=7)
+    later = [t for t in taken if t["reeks_id"] and t["status"] != "afgerond" and (t["startdatum"] or vandaag) > horizon]
+    zichtbaar = [t for t in taken if t not in later]
+    kolommen = [(s, naam, [t for t in zichtbaar if t["status"] == s]) for s, naam in STATUSSEN]
     return templates.TemplateResponse("taken.html", ctx(
         request, "taken", kolommen=kolommen, formulier=formulier, statussen=STATUSSEN, prios=PRIO, prio_namen=PRIO_NAMEN,
         doelen=doelen, vandaag=vandaag, DAGEN=DAGEN, melding=melding, fout=fout, wacht=wacht, mail=mail, alles=alles,
-        afgerond_dagen=AFGEROND_DAGEN, praat=praat, paneel=paneel, sleutel_ok=bool(config.ANTHROPIC_API_KEY)))
+        afgerond_dagen=AFGEROND_DAGEN, praat=praat, paneel=paneel, sleutel_ok=bool(config.ANTHROPIC_API_KEY),
+        reeksen=lijst_reeksen, reeksform=reeksform, later=len(later), dagcodes=reeksen.DAGCODES))
 
 
 @router.post("/taken/nieuw")
@@ -430,3 +442,49 @@ async def noor_voorstel(request: Request, vid: int):
             return uitslag
     uitslag = await asyncio.to_thread(doe)
     return _terug(_gesprek_adres(v["gesprek_id"]), melding=uitslag)
+
+
+# ---------------------------------------------------------------- herhalende taken
+
+@router.post("/taken/reeks/{rid}")
+async def reeks_opslaan(request: Request, rid: str):
+    """Een herhalende taak maken (rid 'nieuw') of wijzigen. De taken en afspraken voor de komende weken komen meteen."""
+    controleer_herkomst(request)
+    if rid != "nieuw" and not rid.isdigit():
+        raise HTTPException(404)
+    f = await request.form()
+    vandaag = dt.datetime.now(config.TZ).date()
+    velden, fout = reeksen.uit_formulier(f, vandaag)
+    if fout:
+        return _terug(f"/taken?reeks={rid}#reeks", fout=fout)
+
+    def doe():
+        with db.pool.connection() as c:
+            if rid.isdigit() and not c.execute("SELECT 1 FROM takenreeksen WHERE id = %s", (int(rid),)).fetchone():
+                raise HTTPException(404)
+            return reeksen.opslaan(c, velden, int(rid) if rid.isdigit() else None, vandaag)
+    nr, aantal = await asyncio.to_thread(doe)
+    return _terug("/taken#reeksen", melding=f"Herhalende taak '{velden['titel']}' {'gewijzigd' if rid.isdigit() else 'gemaakt'}: "
+                  f"{aantal} keer gepland voor de komende {reeksen.HORIZON_DAGEN // 7} weken, met een afspraak in je agenda.")
+
+
+@router.post("/taken/reeks/{rid:int}/{actie}")
+async def reeks_actie(request: Request, rid: int, actie: str):
+    """Stoppen (vanaf vandaag, wat al was blijft) of helemaal verwijderen (ook alle open taken en hun afspraken)."""
+    controleer_herkomst(request)
+    if actie not in ("stop", "weg"):
+        raise HTTPException(404)
+
+    def doe():
+        with db.pool.connection() as c:
+            r = c.execute("SELECT * FROM takenreeksen WHERE id = %s", (rid,)).fetchone()
+            if not r:
+                raise HTTPException(404)
+            if actie == "stop":
+                return r, reeksen.stoppen(c, rid)
+            n = reeksen.toekomst_weg(c, rid, dt.date.min)
+            c.execute("DELETE FROM takenreeksen WHERE id = %s", (rid,))
+            return r, n
+    r, n = await asyncio.to_thread(doe)
+    wat = "gestopt" if actie == "stop" else "verwijderd"
+    return _terug("/taken#reeksen", melding=f"Herhalende taak '{r['titel']}' {wat}; {n} open taken (en hun afspraken) weggehaald.")
