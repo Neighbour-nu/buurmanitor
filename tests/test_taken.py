@@ -239,6 +239,9 @@ def test_noor_wat_vandaag_telt():
     assert [(t["titel"], t["reden"]) for t in lijst] == [("Te laat", "te laat"), ("Rapport", "vandaag 09.00"), ("Bezig", "actief"),
                                                          ("Deze week", "af do 12-11"), ("Belangrijk", "hoog")]
     assert noor.moment(taken[1]) == "ma 09-11 09.00-12.00" and noor.moment(taken[2]) == "deadline zo 08-11"
+    reeks = [taak("Week voorbereiden", status="gepland", startdatum=D, einddatum=D, reeks_id=1),
+             taak("Week voorbereiden", status="gepland", startdatum=D + dt.timedelta(days=7), einddatum=D + dt.timedelta(days=7), reeks_id=1, prio="hoog")]
+    assert [t["reden"] for t in noor.voor_vandaag(reeks, D)] == ["vandaag"]  # volgende week niet, ook niet met hoge prioriteit
 
 
 def test_noor_gesprek_en_vandaag(klant, monkeypatch):

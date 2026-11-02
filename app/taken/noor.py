@@ -241,7 +241,8 @@ def gegevens_terug(g):
 
 def voor_vandaag(taken, vandaag, aantal=8):
     """De taken die vandaag aandacht vragen, met de reden. Pure functie.
-    Eerst te laat, dan vandaag gepland of actief, dan wat deze week af moet, dan de rest met hoge prioriteit."""
+    Eerst te laat, dan vandaag gepland of actief, dan wat deze week af moet, dan de rest met hoge prioriteit.
+    Taken uit een herhalende reeks tellen alleen op hun eigen dag (of als ze te laat zijn)."""
     week = vandaag + dt.timedelta(days=7)
     uit = []
     for t in taken:
@@ -252,6 +253,8 @@ def voor_vandaag(taken, vandaag, aantal=8):
             reden, rang = "te laat", 0
         elif (s and s <= vandaag <= (e or s)) or e == vandaag:
             reden, rang = ("vandaag " + (f"{t['starttijd']:%H.%M}" if t.get("starttijd") and s == vandaag else "")).strip(), 1
+        elif t.get("reeks_id"):
+            continue  # een herhalende taak hoort alleen op zijn eigen dag op Vandaag (of als hij te laat is)
         elif t["status"] == "actief":
             reden, rang = "actief", 2
         elif e and e <= week:
