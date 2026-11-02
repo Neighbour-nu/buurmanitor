@@ -409,7 +409,7 @@ def test_bijlagen_lezen():
     assert "dinsdag 18 november om 15.40 uur" in bronnen.bijlage_tekst("nieuwe afspraak.pdf", "application/pdf",
                                                                       _pdf("Sanne Kerkhof: dinsdag 18 november om 15.40 uur"))
     ics = b"BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Controle\r\nDTSTART;TZID=Europe/Amsterdam:20261118T154000\r\nUID:x\r\nEND:VEVENT\r\nEND:VCALENDAR"
-    assert bronnen.bijlage_tekst("invite.ics", "text/calendar", ics) == "SUMMARY:Controle\nDTSTART;TZID=Europe/Amsterdam:20261118T154000"
+    assert bronnen.bijlage_tekst("invite.ics", "text/calendar", ics) == "SUMMARY:Controle\nDTSTART;TZID=Europe/Amsterdam:20261118T154000\nUID:x"
     assert bronnen.bijlage_tekst("foto.jpg", "image/jpeg", b"\xff\xd8") == ""
     assert bronnen.bijlage_tekst("kapot.pdf", "application/pdf", b"geen pdf") == ""
 

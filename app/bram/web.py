@@ -7,6 +7,7 @@ portal aan het koppelverzoek dat het voor Bram is.
 import asyncio
 import datetime as dt
 import json
+import re
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request
@@ -221,6 +222,35 @@ def mailweergave(volledig, afzender, beelden=False, vertrouwd=()):
     return {"html": "", "tekst": mailhtml.linkify(volledig.get("tekst") or ""), "extern": False, "beelden": False, "vertrouwd": False}
 
 
+VOORVOEGSELS = re.compile(r"^\s*((bijgewerkte\s+)?uitnodiging|updated invitation|invitation|uitnodiging bijgewerkt|meeting request|vergaderverzoek)"
+                          r"\s*(met opmerking)?\s*:\s*", re.I)
+
+
+def vergaderverzoek(c, b, volledig):
+    """Hoort deze mail bij een uitnodiging in je agenda? Eerst op de UID uit de agenda-bijlage (ics), anders op de titel in
+    het onderwerp (alleen bij een uitnodiging waarop je nog niet reageerde). Geeft het agenda-item of None."""
+    uids = []
+    for x in (volledig or {}).get("bijlagen") or []:
+        uids += re.findall(r"(?m)^UID:\s*(\S+)", x.get("tekst") or "")
+    for uid in uids:
+        r = c.execute("SELECT id, titel, start, antwoord FROM agenda_items WHERE lower(ical_uid) = lower(%s) ORDER BY antwoord = 'geen' DESC LIMIT 1",
+                      (uid,)).fetchone()
+        if r:
+            return r
+    origineel = (b["onderwerp"] or "").strip()
+    met_voorvoegsel = bool(VOORVOEGSELS.match(origineel))
+    onderwerp = VOORVOEGSELS.sub("", origineel).strip().lower()
+    if not onderwerp:
+        return None
+    for r in c.execute("""SELECT id, titel, start, antwoord FROM agenda_items WHERE antwoord = 'geen' AND eind > now() AND length(titel) >= 4
+                          ORDER BY start LIMIT 200""").fetchall():
+        titel = r["titel"].strip().lower()
+        # Google zet "Uitnodiging: <titel> @ <tijd>" in het onderwerp; Outlook alleen de titel.
+        if (met_voorvoegsel and titel in onderwerp) or titel == onderwerp:
+            return r
+    return None
+
+
 @router.post("/bram/bericht/{bid:int}/beelden")
 async def beelden_afzender(request: Request, bid: int):
     """Afbeeldingen van buiten altijd (of niet meer) laden voor de afzender van dit bericht."""
@@ -262,8 +292,9 @@ def bericht_scherm(request: Request, bid: int, melding: str = "", fout: str = ""
             mappen_ = []
         recent = sync.recente_mappen(c, account=k["id"])
         weergave = mailweergave(volledig, b["van_adres"], bool(beelden), _vertrouwd(c))
+        verzoek = vergaderverzoek(c, b, volledig)
     return templates.TemplateResponse("bram_bericht.html", ctx(
-        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, weergave=weergave, groep_nu=groep(b), groepen=GROEPEN, labels=labels,
+        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, weergave=weergave, verzoek=verzoek, groep_nu=groep(b), groepen=GROEPEN, labels=labels,
         label_namen=dict(labels), lees_fout=lees_fout, berichten=berichten, mappen=mappen_, recent=recent,
         voorstellen=voorstellen, klaar=klaar, doelen=clara_web._schrijfdoelen(agendas),  # pylint: disable=protected-access
         eigen=clara_web._reisdoelen(agendas), melding=melding, fout=fout, tz=config.TZ,  # pylint: disable=protected-access

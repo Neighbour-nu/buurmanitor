@@ -220,7 +220,8 @@ def melden(c, nu=None):
     if nieuw:
         titel = (f"Uitnodiging: {nieuw[0]['titel']}" if len(nieuw) == 1 else f"{len(nieuw)} nieuwe uitnodigingen")
         tekst = "; ".join(f"{u['titel']} ({u['start'].astimezone(config.TZ):%d-%m %H.%M})" for u in nieuw[:5])
-        meldingen.melden(c, "normaal", "clara", titel, tekst, "/clara#uitnodigingen",
+        link = f"/clara/uitnodiging/{nieuw[0]['id']}" if len(nieuw) == 1 and nieuw[0].get("id") else "/clara#uitnodigingen"
+        meldingen.melden(c, "normaal", "clara", titel, tekst, link,
                          sleutel=f"clara-uitnodigingen-{nu:%Y%m%d%H%M}")
         instellingen_lijst(c, "clara_uitnodigingen", (gemeld + [f"{u['koppeling_id']}:{u['extern_id']}" for u in nieuw])[-500:])
     meldingen_opruimen(c, nu)

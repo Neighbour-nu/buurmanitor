@@ -134,7 +134,7 @@ def vandaag(request: Request):
         request, "vandaag", nu=nu, meldingen=open_, urgent=urgent, werkruimtes=config.werkruimtes(), agenda=agenda,
         lijst_meldingen=lijst_meldingen, meldingmap=meldingmap, meldingmappen=meldingen.MAPPEN, aantallen=aantallen,
         post=post, taken=taken, koppen=koppen, luister=luister, socialstromen=[x for x in jesse_luisteren.STROMEN if x[0] in luister], categorieen=vera_nieuws.CATEGORIEEN, deelnamen=vera_nieuws.DEEL_NAMEN,
-        taakmelding=request.query_params.get("melding", "")[:300]))
+        taakmelding=request.query_params.get("melding", "")[:300], DAGEN=web.DAGEN))
 
 
 VERNIEUW_TAKEN = ("agenda", "post", "nieuws", "socials")  # wat de knop Vernieuwen op Vandaag meteen ophaalt

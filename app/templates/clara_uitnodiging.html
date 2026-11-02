@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block titel %}Uitnodiging: {{ uit.titel }} · Buurmanitor{% endblock %}
+{% macro tijd(a) -%}{% if a.heledag %}hele dag{% else %}{{ a.start.astimezone(tz).strftime('%H.%M') }}-{{ a.eind.astimezone(tz).strftime('%H.%M') }}{% endif %}{%- endmacro %}
+{% block inhoud %}
+{% set d = uit.start.astimezone(tz) %}
+<section class="kopregel">
+  <div>
+    <h1>{{ uit.titel or 'Uitnodiging' }}</h1>
+    <p class="motto">Uitnodiging{% if uit.organisator %} van {{ uit.organisator }}{% endif %} · {{ uit.agenda_naam or i.koppeling }}</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="{{ terug }}">Terug</a>{% if uit.link %} <a class="knop" href="{{ uit.link }}" target="_blank" rel="noopener">Openen in de agenda</a>{% endif %}</div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+
+<div class="ubeoordeel">
+  <section class="kaart uwat">
+    <h2>Wanneer en waar</h2>
+    <p class="uwanneer"><b>{{ DAGEN[d.weekday()] | capitalize }} {{ d.strftime('%d-%m-%Y') }}</b><br>{{ tijd(uit) }}</p>
+    {% if uit.locatie %}<p>📍 {{ uit.locatie }}</p>{% elif uit.online %}<p>💻 Online</p>{% endif %}
+    {% if i.antwoord != 'geen' %}<p class="item">Je hebt deze al beantwoord: <b>{{ {'geaccepteerd': 'geaccepteerd', 'voorlopig': 'voorlopig', 'afgewezen': 'afgewezen', 'organisator': 'je bent de organisator', 'eigen': 'eigen afspraak'}.get(i.antwoord, i.antwoord) }}</b>.</p>{% endif %}
+
+    <h2>Past het?</h2>
+    {% if plan.botsingen %}
+      <p class="item urgent"><b>Botst met {{ plan.botsingen | length }} afspra{{ 'ken' if plan.botsingen | length > 1 else 'ak' }}:</b></p>
+      {% for a in plan.botsingen %}<p class="ubotst">{{ tijd(a) }} · {{ a.titel }} <span class="noot">({{ a.agenda_naam or a.koppeling }})</span></p>{% endfor %}
+    {% else %}<p class="item ugoed">✓ Geen andere afspraak op dat moment.</p>{% endif %}
+    {% for x in plan.krap %}<p class="noot">⚠ Krap: {{ x.minuten }} min tussen {{ x.van.titel }} ({{ x.van.locatie }}) en {{ x.naar.titel }} ({{ x.naar.locatie }}).</p>{% endfor %}
+    {% for a in plan.heledag %}<p class="noot">Die dag ook: {{ a.titel }} (hele dag)</p>{% endfor %}
+
+    {% if kan and i.antwoord in ('geen', 'voorlopig', 'geaccepteerd', 'afgewezen') %}
+    <form method="post" action="/clara/uitnodiging/{{ i.id }}" class="uantwoord">
+      <input type="hidden" name="terug" value="{{ terug }}">
+      <button class="knop vol" name="antwoord" value="geaccepteerd">✓ Accepteren</button>
+      <button class="knop" name="antwoord" value="voorlopig">Voorlopig</button>
+      <button class="knop" name="antwoord" value="afgewezen">✕ Afwijzen</button>
+    </form>
+    <p class="noot">De organisator krijgt je antwoord van {{ 'Google Agenda' if i.soort == 'google' else 'Outlook' }}.</p>
+    {% elif not kan %}<p class="noot">Deze agenda is alleen te lezen; beantwoord de uitnodiging in de agenda zelf.</p>{% endif %}
+    {% if andere %}
+    <h2>Meer uitnodigingen</h2>
+    {% for a in andere %}{% set da = a.start.astimezone(tz) %}<p><a href="/clara/uitnodiging/{{ a.id }}?terug={{ terug | urlencode }}">{{ a.titel }}</a> <span class="noot">{{ DAGEN[da.weekday()][:2] }} {{ da.strftime('%d-%m') }} {{ tijd(a) }}</span></p>{% endfor %}
+    {% endif %}
+  </section>
+
+  <section class="kaart">
+    <h2>{{ DAGEN[d.weekday()] | capitalize }} {{ d.strftime('%d-%m') }}</h2>
+    <div class="udag" style="--uren: {{ plan.eind - plan.begin }}">
+      {% for u in plan.uren %}<div class="uuur" style="top: {{ ((u - plan.begin) / (plan.eind - plan.begin) * 100) | round(2) }}%"><span>{{ '%02d' % u }}.00</span></div>{% endfor %}
+      <div class="ubanen">
+      {% for b in plan.blokken %}
+        <div class="ublok {{ 'uit' if b.uitnodiging }} {{ 'botst' if b.botst }} {{ 'vrijblok' if (b.a.vrij or b.a.niet_voor_mij) and not b.uitnodiging }}"
+             style="top: {{ b.top }}%; height: {{ b.hoogte }}%; left: calc({{ b.baan }} * 100% / {{ b.banen }}); width: calc(100% / {{ b.banen }} - 4px);{% if b.a.kleur_toon and not b.uitnodiging %} border-left-color: {{ b.a.kleur_toon }};{% endif %}"
+             title="{{ tijd(b.a) }} {{ b.a.titel }}">
+          <span class="utijd">{{ tijd(b.a) }}</span> <b>{{ b.a.titel }}</b>{% if b.uitnodiging %} <span class="label">uitnodiging</span>{% endif %}
+          {% if b.a.locatie %}<span class="noot"> · {{ b.a.locatie }}</span>{% endif %}
+        </div>
+      {% endfor %}
+      </div>
+    </div>
+    <p class="noot">De uitnodiging is gestreept; wat ermee botst is rood omrand.</p>
+  </section>
+</div>
+{% endblock %}

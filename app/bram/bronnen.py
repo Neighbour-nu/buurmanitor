@@ -360,7 +360,7 @@ def bijlage_tekst(naam, soort, data):
         elif soort in ("text/calendar", "application/ics") or naam_l.endswith(".ics"):
             tekst = data.decode("utf-8", "replace")
             tekst = "\n".join(r for r in tekst.splitlines() if r.split(":", 1)[0].split(";", 1)[0] in (
-                "SUMMARY", "DTSTART", "DTEND", "LOCATION", "DESCRIPTION", "ORGANIZER", "TZID"))
+                "SUMMARY", "DTSTART", "DTEND", "LOCATION", "DESCRIPTION", "ORGANIZER", "TZID", "UID", "METHOD"))
         elif soort == "text/html" or naam_l.endswith((".html", ".htm")):
             tekst = html_naar_tekst(data.decode("utf-8", "replace"))
         elif soort.startswith("text/") or naam_l.endswith((".txt", ".csv")):

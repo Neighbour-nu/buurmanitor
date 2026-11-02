@@ -48,6 +48,11 @@
       <button class="knop klein" type="submit">{{ 'Label toevoegen' if k.soort == 'google' else 'Categorie toevoegen' }}</button>
     </form>{% endif %}
     {% if b.regel %}<p class="bram-regel"><b>Bram:</b> {{ b.regel }}{% if b.voorstel %} <span class="bram-voorstel">→ {{ b.voorstel }}</span>{% endif %}</p>{% endif %}
+    {% if verzoek %}{% set dv = verzoek.start.astimezone(tz) %}
+      <div class="bverzoek">📅 <b>Vergaderverzoek:</b> {{ verzoek.titel }}, {{ DAGEN[dv.weekday()] }} {{ dv.strftime('%d-%m %H.%M') }}
+        {% if verzoek.antwoord == 'geen' %}<a class="knop klein vol" href="/clara/uitnodiging/{{ verzoek.id }}?terug=/bram/bericht/{{ b.id }}">Beoordelen en beantwoorden</a>
+        {% else %}<span class="noot">(al beantwoord: {{ verzoek.antwoord }})</span> <a class="knop klein" href="/clara/uitnodiging/{{ verzoek.id }}?terug=/bram/bericht/{{ b.id }}">Bekijken</a>{% endif %}</div>
+    {% endif %}
     {% if volledig %}
       <p class="noot">Aan: {{ volledig.aan }}{% if volledig.cc %} · Cc: {{ volledig.cc }}{% endif %}</p>
       <div id="mail">

@@ -1777,6 +1777,68 @@ def test_raadsagenda_te_kiezen_ook_als_hij_niet_in_de_week_staat(klant, monkeypa
         c.execute("DELETE FROM agenda_items")
 
 
+def test_dagplan_van_een_uitnodiging():
+    from app.clara import web  # pylint: disable=import-outside-toplevel
+    d = dt.date(2026, 11, 10)
+
+    def a(i, titel, van, tot, **kw):
+        return {"id": i, "titel": titel, "start": dt.datetime.combine(d, van, tzinfo=TZ), "eind": dt.datetime.combine(d, tot, tzinfo=TZ),
+                "heledag": False, "vrij": False, "antwoord": "geaccepteerd", "status": "bevestigd", "locatie": ""} | kw
+    uit = a(9, "Overleg Upper Spire", dt.time(10), dt.time(11), antwoord="geen", locatie="Utrecht")
+    lijst = [a(1, "Weekstart", dt.time(9), dt.time(10, 30)), a(2, "Lunch", dt.time(12), dt.time(13)), uit,
+             a(3, "Focusblok", dt.time(10), dt.time(12), vrij=True), a(4, "Commissie", dt.time(11, 5), dt.time(12), locatie="Helmond"),
+             a(5, "Verjaardag", dt.time(0), dt.time(0), heledag=True)]
+    p = web.dagplan(lijst, uit, TZ, reistijd=30)
+    assert [b["titel"] for b in p["botsingen"]] == ["Weekstart"]  # het vrije focusblok telt niet mee
+    assert p["begin"] == 8 and p["eind"] == 18 and p["uren"][0] == 8
+    blokken = {b["a"]["titel"]: b for b in p["blokken"]}
+    assert blokken["Overleg Upper Spire"]["uitnodiging"] and blokken["Weekstart"]["botst"] and not blokken["Lunch"]["botst"]
+    assert blokken["Weekstart"]["baan"] != blokken["Overleg Upper Spire"]["baan"] and blokken["Weekstart"]["top"] == 10.0
+    assert [x["naar"]["titel"] for x in p["krap"]] == ["Commissie"]  # 5 minuten van Utrecht naar Helmond
+    assert [x["titel"] for x in p["heledag"]] == ["Verjaardag"]
+
+
+def test_uitnodiging_beoordelen_en_beantwoorden(klant, monkeypatch):
+    from app.bram import web as bram_web  # pylint: disable=import-outside-toplevel
+    from app.clara import sync  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    beantwoord = []
+    monkeypatch.setattr(sync, "toegang", lambda c, k: "tok")
+    monkeypatch.setattr(bronnen, "google_antwoord", lambda tok, ag, eid, antwoord: beantwoord.append((eid, antwoord)))
+    morgen = (dt.datetime.now(TZ) + dt.timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+    with db.pool.connection() as c:
+        c.execute("TRUNCATE agenda_koppelingen CASCADE")
+        kid = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, schrijven, agendas, schrijfagenda) VALUES ('google', 'Privé', true, %s, 'primary')
+                           RETURNING id""", (json.dumps([{"id": "primary", "naam": "Martijn", "primair": True, "schrijven": True, "aan": True, "bezet": True}]),)).fetchone()["id"]
+        uid = c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, ical_uid, titel, locatie, start, eind, antwoord, organisator)
+                           VALUES (%s, 'primary', 'inv1', 'abc123@google.com', 'Overleg Upper Spire', 'Utrecht', %s, %s, 'geen', 'jan@upperspire.com')
+                           RETURNING id""", (kid, morgen, morgen + dt.timedelta(hours=1))).fetchone()["id"]
+        c.execute("""INSERT INTO agenda_items (koppeling_id, agenda_id, extern_id, titel, start, eind) VALUES (%s, 'primary', 'x1', 'Weekstart', %s, %s)""",
+                  (kid, morgen - dt.timedelta(minutes=30), morgen + dt.timedelta(minutes=30)))
+    pagina = klant.get(f"/clara/uitnodiging/{uid}?terug=/", headers=KOP).text
+    assert "Overleg Upper Spire" in pagina and "van jan@upperspire.com" in pagina and "Botst met 1 afspraak" in pagina and "Weekstart" in pagina
+    assert 'class="ublok uit' in pagina and 'class="ublok  botst' in pagina and "✓ Accepteren" in pagina
+    assert klant.get("/clara/uitnodiging/999999", headers=KOP).status_code == 404
+    # Op Vandaag en bij Clara: een link om te beoordelen.
+    assert f'href="/clara/uitnodiging/{uid}?terug=/"' in klant.get("/", headers=KOP).text
+    assert f'href="/clara/uitnodiging/{uid}">Beoordelen</a>' in klant.get("/clara", headers=KOP).text
+    # Afwijzen: terug naar waar je vandaan kwam; de organisator krijgt bericht via Google.
+    r = klant.post(f"/clara/uitnodiging/{uid}", headers=FORM, data={"antwoord": "afgewezen", "terug": "/"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/?melding=") and beantwoord == [("inv1", "afgewezen")]
+    assert klant.post(f"/clara/uitnodiging/{uid}", headers=FORM, data={"antwoord": "geaccepteerd", "terug": "https://kwaad.nl"},
+                      follow_redirects=False).headers["location"].startswith("/clara?")  # alleen terug naar eigen pagina's
+    # Vanuit een mail: het vergaderverzoek gekoppeld op de UID uit de agenda-bijlage, of op het onderwerp.
+    with db.pool.connection() as c:
+        c.execute("UPDATE agenda_items SET antwoord = 'geen' WHERE id = %s", (uid,))
+        b = {"onderwerp": "Iets heel anders"}
+        ics = {"bijlagen": [{"tekst": "SUMMARY:Overleg\nUID:ABC123@google.com\nDTSTART:20261110T100000"}]}
+        assert bram_web.vergaderverzoek(c, b, ics)["id"] == uid
+        assert bram_web.vergaderverzoek(c, {"onderwerp": "Uitnodiging: Overleg Upper Spire @ di 10 nov 2026 10:00"}, {})["id"] == uid
+        assert bram_web.vergaderverzoek(c, {"onderwerp": "Overleg Upper Spire"}, {})["id"] == uid  # Outlook: alleen de titel
+        assert bram_web.vergaderverzoek(c, {"onderwerp": "Stukken voor het Overleg Upper Spire"}, {}) is None  # gewone mail
+        c.execute("TRUNCATE agenda_koppelingen CASCADE")
+
+
 def test_voorbije_afspraken_grijs():
     """Afspraken die al voorbij zijn krijgen de klasse 'voorbij' (grijs), op Clara en op Vandaag."""
     if not os.environ.get("TEST_DATABASE_URL"):

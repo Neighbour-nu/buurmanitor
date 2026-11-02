@@ -30,7 +30,13 @@
         </details>
       {% else %}<p class="noot">Geen afspraken vandaag.</p>{% endfor %}
       {% if agenda.conflicten %}<p class="item belangrijk"><a href="/clara#overlap">{{ agenda.conflicten | length }} keer potentiële overlap</a> in de komende week.</p>{% endif %}
-      {% if agenda.uitnodigingen %}<p class="noot"><a href="/clara#uitnodigingen">{{ agenda.uitnodigingen | length }} uitnodiging{{ 'en' if agenda.uitnodigingen | length > 1 }}</a> nog te beantwoorden.</p>{% endif %}
+      {% if agenda.uitnodigingen %}
+        <p class="noot uitkop"><a href="/clara#uitnodigingen">{{ agenda.uitnodigingen | length }} uitnodiging{{ 'en' if agenda.uitnodigingen | length > 1 }}</a> nog te beantwoorden:</p>
+        {% for u in agenda.uitnodigingen[:4] %}{% set du = u.start.astimezone(agenda.tz) %}
+          <a class="miniuitnodiging" href="/clara/uitnodiging/{{ u.id }}?terug=/"><span>{{ u.titel }}</span>
+            <span class="noot">{{ DAGEN[du.weekday()][:2] }} {{ du.strftime('%d-%m') }}{% if not u.heledag %} {{ du.strftime('%H.%M') }}{% endif %} · beoordelen</span></a>
+        {% endfor %}
+      {% endif %}
     {% endif %}
   </section>
   </div>

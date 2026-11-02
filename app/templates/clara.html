@@ -227,7 +227,8 @@
       <h2>Uitnodigingen</h2>
       {% for a in uitnodigingen %}
         <div class="item">
-          <b>{{ a.titel }}</b><br><span class="noot">{{ DAGEN[a.start.astimezone(tz).weekday()] }} {{ a.start.astimezone(tz).strftime('%d-%m') }} {{ tijd(a) }} · {{ a.koppeling }}{% if a.organisator %} · van {{ a.organisator }}{% endif %}</span>
+          <b><a href="/clara/uitnodiging/{{ a.id }}">{{ a.titel }}</a></b><br><span class="noot">{{ DAGEN[a.start.astimezone(tz).weekday()] }} {{ a.start.astimezone(tz).strftime('%d-%m') }} {{ tijd(a) }} · {{ a.koppeling }}{% if a.organisator %} · van {{ a.organisator }}{% endif %}</span>
+          <br><a class="knop klein" href="/clara/uitnodiging/{{ a.id }}">Beoordelen</a>
           {% if a.schrijven and a.soort in ('google', 'microsoft') %}
           <form method="post" action="/clara/uitnodiging/{{ a.id }}" class="knoppenrij">
             <button class="knop klein" name="antwoord" value="geaccepteerd">Accepteren</button>

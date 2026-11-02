@@ -335,10 +335,76 @@ async def reeks(request: Request, rid: int):
     return _terug("/clara/koppelingen#reeksen", melding=tekst)
 
 
+def dagplan(lijst, uitnodiging, tz=config.TZ, reistijd=15):
+    """De dag van een uitnodiging als tijdlijn: de afspraken met hun plek (boven en hoogte in procenten, en een baan
+    naast elkaar als ze overlappen), wat botst met de uitnodiging en wat er krap op aansluit. Pure functie."""
+    dag = uitnodiging["start"].astimezone(tz).date()
+    getimed = [a for a in lijst if not a.get("heledag") and a.get("status") != "geannuleerd"]
+    if not any(a.get("id") == uitnodiging.get("id") for a in getimed):
+        getimed.append(uitnodiging)
+    uren = [a["start"].astimezone(tz) for a in getimed] + [a["eind"].astimezone(tz) for a in getimed]
+    begin = min([8] + [u.hour for u in uren if u.date() == dag])
+    eind = max([18] + [(u.hour + (1 if u.minute else 0)) for u in uren if u.date() == dag] + [24 if any(u.date() > dag for u in uren) else 0])
+    eind = min(max(eind, begin + 4), 24)
+    van = dt.datetime.combine(dag, dt.time(begin), tzinfo=tz)
+    tot = van + dt.timedelta(hours=eind - begin)
+    span = (tot - van).total_seconds()
+    banen, blokken = [], []
+    for a in sorted(getimed, key=lambda x: (x["start"], x["eind"])):
+        s, e = max(a["start"], van), min(a["eind"], tot)
+        if e <= s:
+            continue
+        baan = next((i for i, eindtijd in enumerate(banen) if eindtijd <= s), len(banen))
+        if baan == len(banen):
+            banen.append(e)
+        else:
+            banen[baan] = e
+        is_uit = a.get("id") == uitnodiging.get("id")
+        botst = (not is_uit and analyse.bezet(a) and a["start"] < uitnodiging["eind"] and a["eind"] > uitnodiging["start"])
+        blokken.append({"a": a, "top": round((s - van).total_seconds() / span * 100, 2), "hoogte": round((e - s).total_seconds() / span * 100, 2),
+                        "baan": baan, "uitnodiging": is_uit, "botst": botst})
+    for b in blokken:
+        b["banen"] = len(banen)
+    botsingen = [b["a"] for b in blokken if b["botst"]]
+    krap = [x for x in analyse.overgangen(getimed, reistijd)
+            if (x["van"].get("id") == uitnodiging.get("id")) != (x["naar"].get("id") == uitnodiging.get("id"))]
+    return {"dag": dag, "begin": begin, "eind": eind, "uren": list(range(begin, eind + 1)), "blokken": blokken, "botsingen": botsingen,
+            "krap": krap, "heledag": [a for a in lijst if a.get("heledag") and a.get("id") != uitnodiging.get("id")]}
+
+
+def _veilig_terug(pad, standaard="/clara#uitnodigingen"):
+    pad = str(pad or "")
+    return pad if pad.startswith("/") and not pad.startswith("//") else standaard
+
+
+@router.get("/clara/uitnodiging/{item_id:int}", response_class=HTMLResponse)
+def uitnodiging_beoordelen(request: Request, item_id: int, terug: str = ""):
+    """Een uitnodiging beoordelen: wanneer en waar, de dag eromheen met wat er al staat, wat botst. Dan beantwoorden."""
+    tz = config.TZ
+    with db.pool.connection() as c:
+        i = c.execute("""SELECT i.*, k.soort, k.schrijven, k.naam AS koppeling FROM agenda_items i
+                         JOIN agenda_koppelingen k ON k.id = i.koppeling_id WHERE i.id = %s""", (item_id,)).fetchone()
+        if not i:
+            raise HTTPException(404, "Deze uitnodiging staat niet (meer) in je agenda.")
+        dag = i["start"].astimezone(tz).date()
+        dagbegin = dt.datetime.combine(dag, dt.time(0), tzinfo=tz)
+        lijst = sync.afspraken(c, dagbegin, dagbegin + dt.timedelta(days=1))
+        uit = next((a for a in lijst if a.get("id") == item_id), None) \
+            or next((a for a in lijst if i["ical_uid"] and (a.get("ical_uid") or "").lower() == i["ical_uid"].lower()), None) or dict(i)
+        uit = dict(uit, id=uit.get("id") or item_id)
+        inst = sync.instellingen(c)
+        plan = dagplan(lijst, uit, tz, inst.get("reistijd") or 15)
+        open_ = analyse.uitnodigingen(sync.afspraken(c, dt.datetime.now(tz), dt.datetime.now(tz) + dt.timedelta(days=60)), dt.datetime.now(tz))
+    return templates.TemplateResponse("clara_uitnodiging.html", ctx(
+        request, "clara", i=i, uit=uit, plan=plan, tz=tz, DAGEN=DAGEN, terug=_veilig_terug(terug),
+        kan=bool(i["schrijven"] and i["soort"] in ("google", "microsoft")), andere=[a for a in open_ if a.get("id") != item_id][:6]))
+
+
 @router.post("/clara/uitnodiging/{item_id}")
 async def uitnodiging(request: Request, item_id: int):
     controleer_herkomst(request)
     f = await request.form()
+    terug = _veilig_terug(f.get("terug"), "/clara")
     antwoord = str(f.get("antwoord", ""))
     if antwoord not in ("geaccepteerd", "voorlopig", "afgewezen"):
         raise HTTPException(400)
@@ -359,9 +425,9 @@ async def uitnodiging(request: Request, item_id: int):
     try:
         titel = await asyncio.to_thread(doe)
     except (bronnen.BronFout, kluis.KluisFout) as e:
-        return _terug("/clara", fout=str(e))
+        return _terug(terug, fout=str(e))
     woord = {"geaccepteerd": "geaccepteerd", "voorlopig": "voorlopig geaccepteerd", "afgewezen": "afgewezen"}[antwoord]
-    return _terug("/clara", melding=f"'{titel}' {woord}; de organisator krijgt bericht.")
+    return _terug(terug, melding=f"'{titel}' {woord}; de organisator krijgt bericht.")
 
 
 # ---------------------------------------------------------------- gesprek met Clara
