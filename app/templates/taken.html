@@ -82,7 +82,8 @@
     {% if doelen %}<label>Agenda <select name="doel">{% for w, label, d in doelen %}<option value="{{ w }}" {{ 'selected' if formulier.doel == w }}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
     <p class="noot breed">Datums zijn niet verplicht. Zonder tijd komt de taak als afspraak voor de hele dag in je agenda (of voor alle
       dagen van start tot en met einde); met een tijd als gewone afspraak, bijvoorbeeld van 9.00 tot 12.00 aan het rapport werken.
-      Alleen een einddatum wordt een deadline op die dag.</p>
+      Alleen een einddatum wordt een deadline op die dag. Rond je een taak af, dan gaat wat nog moest komen uit je agenda;
+      wat al gebeurd is, blijft staan met een vinkje.</p>
     <div class="knoppenrij breed">
       <button class="knop vol" type="submit">Opslaan</button>
       <a class="knop" href="/taken">Annuleren</a>

@@ -43,7 +43,20 @@ def test_afspraak_bij_een_taak():
     assert a["eind"] - a["start"] == dt.timedelta(hours=1)
     a = web.afspraak(t(einddatum=D, eindtijd=dt.time(17)))
     assert a["start"].hour == 16 and a["eind"].hour == 17
-    assert web.afspraak(t(startdatum=D, einddatum=D, status="afgerond"))["titel"] == "✓ Rapport"
+    # Afgerond: wat nog moest komen gaat uit de agenda, wat liep stopt, wat voorbij was blijft staan met een vinkje.
+    af = lambda tijd, **kw: web.afspraak(t(status="afgerond", afgerond=tijd, **kw))  # noqa: E731
+    week = dict(startdatum=D, einddatum=D + dt.timedelta(days=4))  # ma 9 t/m vr 13 november
+    assert af(dt.datetime(2026, 11, 6, 15, tzinfo=TZ), **week) is None  # eerder af dan begonnen: weg
+    a = af(dt.datetime(2026, 11, 10, 15, tzinfo=TZ), **week)  # dinsdag af: stopt na dinsdag
+    assert a["titel"] == "✓ Rapport" and a["start"].date() == D and a["eind"] == dt.datetime(2026, 11, 11, tzinfo=TZ) and a["heledag"]
+    a = af(dt.datetime(2026, 11, 20, 9, tzinfo=TZ), **week)  # pas later afgevinkt: blijft heel staan, met vinkje
+    assert a["titel"] == "✓ Rapport" and a["eind"] == dt.datetime(2026, 11, 14, tzinfo=TZ)
+    blok = dict(startdatum=D, starttijd=dt.time(9), eindtijd=dt.time(12))
+    a = af(dt.datetime(2026, 11, 9, 10, 37, tzinfo=TZ), **blok)  # om 10.37 klaar: blok tot 10.40
+    assert a["eind"] == dt.datetime(2026, 11, 9, 10, 40, tzinfo=TZ)
+    assert af(dt.datetime(2026, 11, 9, 8, 0, tzinfo=TZ), **blok) is None
+    assert af(dt.datetime(2026, 11, 3, 8, 0, tzinfo=TZ), einddatum=D) is None  # deadline nog niet bereikt: weg
+    assert af(dt.datetime(2026, 11, 9, 16, 0, tzinfo=TZ), einddatum=D)["titel"] == "✓ Rapport"  # op de dag zelf af: blijft
     a = web.afspraak(t(startdatum=D + dt.timedelta(days=2), einddatum=D))  # omgedraaid: toch de goede volgorde
     assert a["start"].date() == D
 
@@ -127,9 +140,22 @@ def test_bord_agenda_en_kolommen(klant, monkeypatch):
     klant.post(f"/taken/{tid}", headers=FORM, data={"titel": "Presentatie congres", "prio": "hoog", "status": "wachtend", "wacht_op": "de organisatie",
                                                     "startdatum": s.isoformat(), "starttijd": "09:00", "eindtijd": "12:00", "doel": f"{k}|primary"})
     assert "Wacht op: <b>de organisatie</b>" in klant.get("/taken", headers=KOP).text
-    # Afgerond: de afspraak krijgt een vinkje.
+    # Afgerond voordat het blok begint (over drie dagen): de afspraak gaat uit de agenda.
+    voor = (len(gemaakt), len(weg))
     r = klant.post(f"/taken/{tid}/status", headers=FORM, data={"status": "afgerond"}, follow_redirects=False)
-    assert "Afgerond" in r.headers["location"] and gemaakt[-1][1] == "✓ Presentatie congres"
+    assert "Afgerond" in r.headers["location"] and len(gemaakt) == voor[0] and len(weg) == voor[1] + 1 and weg[-1] == f"ev{len(gemaakt)}"
+    with db.pool.connection() as c:
+        assert c.execute("SELECT agenda_extern FROM takenbord WHERE id = %s", (tid,)).fetchone()["agenda_extern"] == ""
+    # Een taak die al afgerond was voordat dit zo werkte (afspraak met vinkje in de toekomst): de planner zet het recht.
+    with db.pool.connection() as c:
+        oud = web.nieuw(c, {"titel": "Oude taak", "beschrijving": "", "prio": "laag", "status": "afgerond", "startdatum": s, "doel": f"{k}|primary"})
+        c.execute("UPDATE takenbord SET agenda_koppeling = %s, agenda_id = 'primary', agenda_extern = 'oud-ev', agenda_spec = 'oud' WHERE id = %s", (k, oud))
+        assert web.taak_takenagenda(c) == "1 afgeronde taken nagekeken, 1 afspraken aangepast of weggehaald" and weg[-1] == "oud-ev"
+        assert web.taak_takenagenda(c) == "0 afgeronde taken nagekeken, 0 afspraken aangepast of weggehaald"
+        c.execute("DELETE FROM takenbord WHERE id = %s", (oud,))
+    # Toch niet af: terug naar Actief, en de afspraak komt terug.
+    klant.post(f"/taken/{tid}/status", headers=FORM, data={"status": "actief"})
+    assert len(gemaakt) == voor[0] + 1 and gemaakt[-1][1] == "📋 Presentatie congres"
     assert klant.post(f"/taken/{tid}/status", headers=FORM, data={"status": "kwijt"}).status_code == 400
     # Verwijderen: ook uit de agenda.
     laatste = gemaakt and f"ev{len(gemaakt)}"

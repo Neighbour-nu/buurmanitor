@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from urllib.parse import urlencode
 
 from ..clara import bronnen as agenda_bronnen, kluis, sync as agenda_sync, web as clara_web
-from ..kern import claude, config, db
+from ..kern import claude, config, db, planner
 from ..kern.web import DAGEN, controleer_herkomst, ctx, templates
 from . import noor
 
@@ -48,15 +48,9 @@ def _tijd(tekst):
         return None
 
 
-def afspraak(t, tz=config.TZ):
-    """De afspraak die bij een taak hoort, of None als er geen datum is. Pure functie.
-    Met een tijd: een gewone afspraak (bijvoorbeeld 9.00-12.00 aan het rapport werken). Zonder tijd: een afspraak voor
-    de hele dag, of voor alle dagen van start tot en met einde. Alleen een einddatum: een deadline op die dag."""
+def _afspraak_gepland(t, tz):
+    """De afspraak zoals hij gepland is (zonder te kijken of de taak af is)."""
     s, e = t.get("startdatum"), t.get("einddatum")
-    if not s and not e:
-        return None
-    klaar = t.get("status") == "afgerond"
-    teken = "✓ " if klaar else "📋 "
     if t.get("starttijd") or t.get("eindtijd"):
         dag = s or e
         begin_tijd = t.get("starttijd") or ((dt.datetime.combine(dag, t["eindtijd"]) - dt.timedelta(hours=1)).time()
@@ -65,16 +59,44 @@ def afspraak(t, tz=config.TZ):
         eind = dt.datetime.combine(e or dag, t["eindtijd"], tzinfo=tz) if t.get("eindtijd") else start + dt.timedelta(hours=1)
         if eind <= start:
             eind = start + dt.timedelta(hours=1)
-        return {"titel": teken + t["titel"], "start": start, "eind": eind, "heledag": False}
+        return {"titel": "📋 " + t["titel"], "start": start, "eind": eind, "heledag": False}
     if s and e:
         s, e = min(s, e), max(s, e)
-        return {"titel": teken + t["titel"], "start": dt.datetime.combine(s, dt.time(0), tzinfo=tz),
+        return {"titel": "📋 " + t["titel"], "start": dt.datetime.combine(s, dt.time(0), tzinfo=tz),
                 "eind": dt.datetime.combine(e + dt.timedelta(days=1), dt.time(0), tzinfo=tz), "heledag": True}
     if s:
-        return {"titel": teken + t["titel"], "start": dt.datetime.combine(s, dt.time(0), tzinfo=tz),
+        return {"titel": "📋 " + t["titel"], "start": dt.datetime.combine(s, dt.time(0), tzinfo=tz),
                 "eind": dt.datetime.combine(s + dt.timedelta(days=1), dt.time(0), tzinfo=tz), "heledag": True}
-    return {"titel": ("✓ " if klaar else "⏰ Deadline: ") + t["titel"], "start": dt.datetime.combine(e, dt.time(0), tzinfo=tz),
+    return {"titel": "⏰ Deadline: " + t["titel"], "start": dt.datetime.combine(e, dt.time(0), tzinfo=tz),
             "eind": dt.datetime.combine(e + dt.timedelta(days=1), dt.time(0), tzinfo=tz), "heledag": True}
+
+
+def afspraak(t, tz=config.TZ, nu=None):
+    """De afspraak die bij een taak hoort, of None als er geen (meer) is. Pure functie.
+    Met een tijd: een gewone afspraak (bijvoorbeeld 9.00-12.00 aan het rapport werken). Zonder tijd: een afspraak voor
+    de hele dag, of voor alle dagen van start tot en met einde. Alleen een einddatum: een deadline op die dag.
+
+    Is de taak afgerond, dan telt het moment van afronden (t['afgerond'], anders nu):
+    - de afspraak was nog niet begonnen: hij gaat uit de agenda (de tijd komt vrij);
+    - de afspraak liep nog: hij stopt op het moment van afronden (of aan het eind van die dag, bij een hele dag);
+    - de afspraak was al voorbij: hij blijft staan als geschiedenis, met een vinkje."""
+    if not t.get("startdatum") and not t.get("einddatum"):
+        return None
+    a = _afspraak_gepland(t, tz)
+    if t.get("status") != "afgerond":
+        return a
+    klaar = t.get("afgerond") or nu or dt.datetime.now(tz)
+    klaar = klaar.astimezone(tz)
+    if klaar <= a["start"]:
+        return None
+    a = dict(a, titel="✓ " + t["titel"])
+    if klaar < a["eind"]:
+        if a["heledag"]:
+            a["eind"] = dt.datetime.combine(klaar.date() + dt.timedelta(days=1), dt.time(0), tzinfo=tz)
+        else:
+            minuut = klaar.replace(second=0, microsecond=0)
+            a["eind"] = max(a["start"] + dt.timedelta(minutes=15), minuut + dt.timedelta(minutes=(5 - minuut.minute % 5) % 5))
+    return a
 
 
 def _spec(a, doel):
@@ -126,6 +148,20 @@ def agenda_bijwerken(c, tid):
     except (agenda_bronnen.BronFout, kluis.KluisFout) as e:
         c.execute("UPDATE takenbord SET agenda_fout = %s WHERE id = %s", (str(e)[:300], tid))
         return f"maar de agenda lukte niet: {e}"
+
+
+@planner.taak("takenagenda", elke=dt.timedelta(hours=6))
+def taak_takenagenda(c):
+    """Afgeronde taken met een afspraak die nog in de toekomst staat: de agenda gelijktrekken (ook voor taken die
+    afgerond werden voordat dit zo werkte)."""
+    rijen = c.execute("""SELECT id, agenda_spec FROM takenbord WHERE status = 'afgerond' AND agenda_extern <> ''
+                         AND coalesce(einddatum, startdatum) >= (afgerond AT TIME ZONE 'Europe/Amsterdam')::date""").fetchall()
+    gedaan = 0
+    for r in rijen:
+        agenda_bijwerken(c, r["id"])
+        na = c.execute("SELECT agenda_spec FROM takenbord WHERE id = %s", (r["id"],)).fetchone()
+        gedaan += bool(na and na["agenda_spec"] != r["agenda_spec"])
+    return f"{len(rijen)} afgeronde taken nagekeken, {gedaan} afspraken aangepast of weggehaald"
 
 
 def uit_formulier(f):
