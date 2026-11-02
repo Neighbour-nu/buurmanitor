@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block titel %}Aankondigingen · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Aankondigingen</h1>
+    <p class="motto">Een melding kort voordat een vergadering, afspraak of taak begint, en 's ochtends voor deadlines van vandaag.
+      Ze verschijnen bij Meldingen op Vandaag en, als je dat toestaat, als melding op je bureaublad. Na een paar uur ruimt Buurmanitor ze zelf op.</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="/#meldingen">Terug naar Vandaag</a></div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+<section class="kaart">
+  <form method="post" action="/meldingen/aankondigingen" class="velden aankondigvorm">
+    <label class="vink breed"><input type="checkbox" name="vergaderingen" value="1" {{ 'checked' if inst.vergaderingen }}>
+      Vergaderingen en afspraken uit je agenda's <span class="noot">(ook reistijd van Clara als "tijd om te vertrekken"; niet wat je afwees, wat vrij staat of de agenda's van anderen)</span></label>
+    <label class="vink breed"><input type="checkbox" name="taken" value="1" {{ 'checked' if inst.taken }}> Taken met een begintijd</label>
+    <label class="vink breed"><input type="checkbox" name="deadlines" value="1" {{ 'checked' if inst.deadlines }}> Taken waarvan de deadline vandaag is</label>
+    <label>Hoe ver van tevoren <select name="minuten">{% for m in keuzes %}<option value="{{ m }}" {{ 'selected' if inst.minuten == m }}>{{ m }} minuten</option>{% endfor %}</select></label>
+    <label>Deadlines melden vanaf <input type="time" name="ochtend" value="{{ inst.ochtend }}"></label>
+    <div class="knoppenrij breed"><button class="knop vol" type="submit">Opslaan</button></div>
+  </form>
+  <p class="noot">Op je bureaublad komen ze alleen als je bureaubladmeldingen hebt aangezet (onder Meldingen op Vandaag) en er een Buurmanitor-tabblad open is.</p>
+</section>
+{% if recent %}
+<section class="kaart">
+  <h2>Laatste aankondigingen</h2>
+  {% for r in recent %}<p class="noot">{{ r.titel }} · {{ geleden(r.tijd) }}</p>{% endfor %}
+</section>
+{% endif %}
+{% endblock %}

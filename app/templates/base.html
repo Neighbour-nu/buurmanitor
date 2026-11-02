@@ -89,11 +89,11 @@ document.addEventListener("keydown", function (e) {
   function toon(m) {
     const b = document.getElementById("banner");
     b.className = "banner " + m.niveau; b.hidden = false;
-    b.innerHTML = "<b></b> <span></span> <a href='/#meldingen'>bekijk</a>";
-    b.querySelector("b").textContent = m.niveau === "urgent" ? "Urgent:" : "Belangrijk:";
+    b.innerHTML = "<b></b> <span></span> <a href='" + (m.link && m.link.startsWith('/') ? m.link : '/#meldingen') + "'>bekijk</a>";
+    b.querySelector("b").textContent = m.niveau === "urgent" ? "Urgent:" : (m.bron === "aankondiging" ? "Straks:" : "Belangrijk:");
     b.querySelector("span").textContent = m.titel;
     if ("Notification" in window && Notification.permission === "granted") {
-      new Notification("Buurmanitor: " + m.titel, { body: m.tekst || "", silent: m.niveau !== "urgent", tag: "bm-" + m.id });
+      new Notification("Buurmanitor: " + m.titel, { body: m.tekst || "", silent: m.niveau !== "urgent" && m.bron !== "aankondiging", tag: "bm-" + m.id });
     }
   }
   async function kijk() {

@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import iris, personas
+from . import aankondigen, iris, personas  # noqa: F401  (aankondigen registreert de planner-taak)
 from .bram import sync as bram_sync, web as bram_web  # noqa: F401  (sync registreert de planner-taak 'post')
 from .clara import sync as clara_sync, web as clara_web  # noqa: F401  (sync registreert de planner-taak)
 from .taken import noor, web as taken_web
@@ -286,6 +286,35 @@ def meldingen_alles_gelezen(request: Request):
     controleer_herkomst(request)
     uitvoeren("UPDATE meldingen SET gelezen = true WHERE NOT gelezen")
     return RedirectResponse("/#meldingen", status_code=303)
+
+
+@app.get("/meldingen/aankondigingen", response_class=HTMLResponse)
+def aankondigingen_scherm(request: Request, melding: str = ""):
+    with db.pool.connection() as c:
+        inst = aankondigen.instellingen(c)
+        recent = c.execute("""SELECT titel, tijd FROM meldingen WHERE bron = 'aankondiging' ORDER BY id DESC LIMIT 8""").fetchall()
+    return templates.TemplateResponse("aankondigingen.html", ctx(
+        request, "vandaag", inst=inst, keuzes=aankondigen.KEUZE_MINUTEN, recent=recent, melding=melding))
+
+
+@app.post("/meldingen/aankondigingen")
+async def aankondigingen_opslaan(request: Request):
+    controleer_herkomst(request)
+    f = await request.form()
+    try:
+        minuten = int(f.get("minuten") or 15)
+    except ValueError:
+        minuten = 15
+    ochtend = str(f.get("ochtend") or "08:00")[:5]
+    try:
+        dt.time.fromisoformat(ochtend)
+    except ValueError:
+        ochtend = "08:00"
+    waarden = {"vergaderingen": f.get("vergaderingen") == "1", "taken": f.get("taken") == "1", "deadlines": f.get("deadlines") == "1",
+               "minuten": minuten if minuten in aankondigen.KEUZE_MINUTEN else 15, "ochtend": ochtend}
+    with db.pool.connection() as c:
+        aankondigen.opslaan(c, waarden)
+    return RedirectResponse("/meldingen/aankondigingen?melding=Opgeslagen.", status_code=303)
 
 
 @app.get("/api/meldingen")
