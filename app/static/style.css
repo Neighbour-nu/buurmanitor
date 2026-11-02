@@ -616,3 +616,12 @@ tr.uit td { opacity: .55; }
 .nieuwsblok.jesse-reacties h3 { color: var(--instagram); border-left-color: var(--instagram); }
 .nieuwsblok.jesse-keepers h3 { color: var(--keepers); border-left-color: var(--keepers); }
 .nieuwsblok.jesse-politiek h3 { color: var(--politiek); border-left-color: var(--politiek); }
+
+/* Post: de mail in HTML, in een afgeschermd kader */
+.mailkader { width: 100%; min-height: 240px; height: 520px; border: 1px solid var(--lijn); border-radius: 6px; background: #fff; display: block; }
+.mailbalk { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #FFF8E1; border: 1px solid #F3E2A9; border-radius: 6px;
+            padding: 6px 10px; margin: 6px 0 8px; font-size: 14px; }
+.mailbalk > span { flex: 1 1 260px; }
+.mailbalk.stil { background: var(--ijs); border-color: var(--lijn); }
+.platte { margin-top: 8px; } .platte summary { cursor: pointer; color: var(--zacht); font-size: 14px; }
+.mailtekst a { overflow-wrap: anywhere; }

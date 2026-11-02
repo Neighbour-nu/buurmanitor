@@ -1,7 +1,5 @@
 {% extends "base.html" %}
-{% block titel %}{{ b.onderwerp }} · Bram · Buurmanitor<script>
-(function () { const g = document.getElementById("berichten"); if (g) g.scrollTop = g.scrollHeight; })();
-</script>{% endblock %}
+{% block titel %}{{ b.onderwerp }} · Bram · Buurmanitor{% endblock %}
 {% from "_bram_voorstel.html" import voorstel with context %}
 {% block inhoud %}
 <section class="kopregel">
@@ -52,7 +50,27 @@
     {% if b.regel %}<p class="bram-regel"><b>Bram:</b> {{ b.regel }}{% if b.voorstel %} <span class="bram-voorstel">→ {{ b.voorstel }}</span>{% endif %}</p>{% endif %}
     {% if volledig %}
       <p class="noot">Aan: {{ volledig.aan }}{% if volledig.cc %} · Cc: {{ volledig.cc }}{% endif %}</p>
-      <div class="mailtekst">{{ volledig.tekst or b.fragment }}</div>
+      <div id="mail">
+      {% if weergave.html %}
+        {% if weergave.extern and not weergave.beelden %}
+        <div class="mailbalk">
+          <span>Afbeeldingen van buiten zijn tegengehouden (afzenders zien daaraan dat je de mail opende).</span>
+          <a class="knop klein" href="/bram/bericht/{{ b.id }}?beelden=1#mail">Afbeeldingen tonen</a>
+          {% if b.van_adres %}<form method="post" action="/bram/bericht/{{ b.id }}/beelden" class="inline"><input type="hidden" name="aan" value="1">
+            <button class="knop klein" type="submit">Altijd tonen van {{ b.van_adres }}</button></form>{% endif %}
+        </div>
+        {% elif weergave.vertrouwd %}
+        <div class="mailbalk stil"><span>Afbeeldingen van {{ b.van_adres }} worden altijd getoond.</span>
+          <form method="post" action="/bram/bericht/{{ b.id }}/beelden" class="inline"><input type="hidden" name="aan" value="0">
+            <button class="knop klein" type="submit">Niet meer automatisch</button></form></div>
+        {% endif %}
+        <iframe class="mailkader" title="De mail" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                referrerpolicy="no-referrer" srcdoc="{{ weergave.html }}"></iframe>
+        <details class="platte"><summary>Platte tekst</summary><div class="mailtekst">{{ weergave.tekst | safe }}</div></details>
+      {% else %}
+        <div class="mailtekst">{% if weergave.tekst %}{{ weergave.tekst | safe }}{% else %}{{ b.fragment }}{% endif %}</div>
+      {% endif %}
+      </div>
       {% if volledig.bijlagen %}
       <h2>Bijlagen</h2>
       {% for x in volledig.bijlagen %}
@@ -92,4 +110,20 @@
     </section>
   </aside>
 </div>
+<script>
+(function () { const g = document.getElementById("berichten"); if (g) g.scrollTop = g.scrollHeight; })();
+</script><script>
+// De mail in het afgeschermde kader: even hoog als de mail zelf (er draait in het kader geen script).
+(function () {
+  const kader = document.querySelector(".mailkader"); if (!kader) return;
+  function pas() {
+    try { const d = kader.contentDocument; if (d && d.body) kader.style.height = (Math.ceil(d.body.getBoundingClientRect().height) + 16) + "px"; } catch (e) { /* laat de vaste hoogte staan */ }
+  }
+  kader.addEventListener("load", () => { pas(); setTimeout(pas, 300); setTimeout(pas, 1500);
+    try { kader.contentDocument.querySelectorAll("img").forEach(i => i.addEventListener("load", pas)); } catch (e) {} });
+  window.addEventListener("resize", pas);
+  // Het kader kan al geladen zijn voordat dit script draait.
+  try { if (kader.contentDocument && kader.contentDocument.readyState === "complete") { pas(); setTimeout(pas, 300); } } catch (e) {}
+})();
+</script>
 {% endblock %}

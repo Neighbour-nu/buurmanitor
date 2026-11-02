@@ -17,7 +17,7 @@ from ..clara import kluis, web as clara_web
 from ..clara.web import _nieuwe_staat  # koppelverzoeken delen de tabel oauth_staat met Clara
 from ..kern import claude, config, db, planner
 from ..kern.web import DAGEN, controleer_herkomst, ctx, templates
-from . import bronnen, gesprek, sync
+from . import bronnen, gesprek, mailhtml, sync
 
 router = APIRouter()
 DOMEINEN = config.DOMEINEN
@@ -197,8 +197,49 @@ def _bericht(c, bid):
 
 # ---------------------------------------------------------------- één bericht: lezen en Bram vragen
 
+BEELDEN_SLEUTEL = "bram_beelden_afzenders"  # afzenders van wie afbeeldingen van buiten altijd mogen laden
+
+
+def _vertrouwd(c):
+    r = c.execute("SELECT waarde FROM instellingen WHERE sleutel = %s", (BEELDEN_SLEUTEL,)).fetchone()
+    try:
+        return set(json.loads(r["waarde"])) if r and r["waarde"] else set()
+    except ValueError:
+        return set()
+
+
+def mailweergave(volledig, afzender, beelden=False, vertrouwd=()):
+    """Wat het scherm van de mail laat zien: een veilig HTML-document voor het kader, of platte tekst met links. Pure functie."""
+    if not volledig:
+        return None
+    if volledig.get("html"):
+        aan = beelden or (afzender or "").lower() in vertrouwd
+        opgeschoond, tegengehouden = mailhtml.schoon_met_telling(volledig["html"], volledig.get("cid"), beelden=aan)
+        extern = bool(tegengehouden) or (aan and mailhtml.heeft_externe_beelden(opgeschoond))
+        return {"html": mailhtml.document(opgeschoond, beelden=aan), "extern": extern, "beelden": aan,
+                "vertrouwd": (afzender or "").lower() in vertrouwd, "tekst": mailhtml.linkify(volledig.get("tekst") or "")}
+    return {"html": "", "tekst": mailhtml.linkify(volledig.get("tekst") or ""), "extern": False, "beelden": False, "vertrouwd": False}
+
+
+@router.post("/bram/bericht/{bid:int}/beelden")
+async def beelden_afzender(request: Request, bid: int):
+    """Afbeeldingen van buiten altijd (of niet meer) laden voor de afzender van dit bericht."""
+    controleer_herkomst(request)
+    f = await request.form()
+    with db.pool.connection() as c:
+        b = _bericht(c, bid)
+        lijst = _vertrouwd(c)
+        adres = (b["van_adres"] or "").lower()
+        if adres:
+            (lijst.add if f.get("aan", "1") != "0" else lijst.discard)(adres)
+            c.execute("""INSERT INTO instellingen (sleutel, waarde) VALUES (%s, %s)
+                         ON CONFLICT (sleutel) DO UPDATE SET waarde = EXCLUDED.waarde, bijgewerkt = now()""",
+                      (BEELDEN_SLEUTEL, json.dumps(sorted(lijst))))
+    return RedirectResponse(f"/bram/bericht/{bid}#mail", status_code=303)
+
+
 @router.get("/bram/bericht/{bid:int}", response_class=HTMLResponse)
-def bericht_scherm(request: Request, bid: int, melding: str = "", fout: str = ""):
+def bericht_scherm(request: Request, bid: int, melding: str = "", fout: str = "", beelden: int = 0):
     with db.pool.connection() as c:
         b = _bericht(c, bid)
         k = c.execute("SELECT * FROM post_koppelingen WHERE id = %s", (b["koppeling_id"],)).fetchone()
@@ -220,8 +261,9 @@ def bericht_scherm(request: Request, bid: int, melding: str = "", fout: str = ""
         except Exception:  # noqa: BLE001
             mappen_ = []
         recent = sync.recente_mappen(c, account=k["id"])
+        weergave = mailweergave(volledig, b["van_adres"], bool(beelden), _vertrouwd(c))
     return templates.TemplateResponse("bram_bericht.html", ctx(
-        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, groep_nu=groep(b), groepen=GROEPEN, labels=labels,
+        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, weergave=weergave, groep_nu=groep(b), groepen=GROEPEN, labels=labels,
         label_namen=dict(labels), lees_fout=lees_fout, berichten=berichten, mappen=mappen_, recent=recent,
         voorstellen=voorstellen, klaar=klaar, doelen=clara_web._schrijfdoelen(agendas),  # pylint: disable=protected-access
         eigen=clara_web._reisdoelen(agendas), melding=melding, fout=fout, tz=config.TZ,  # pylint: disable=protected-access

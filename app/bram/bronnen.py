@@ -144,6 +144,34 @@ def _gmail_tekst(deel):
     return "\n".join(platte) if platte else "\n".join(opgemaakt)
 
 
+INLINE_MAX = 600 * 1024        # per ingesloten afbeelding
+INLINE_TOTAAL = 3 * 1024 * 1024
+
+
+def _gmail_html(deel):
+    """De HTML van een Gmail-bericht en de ingesloten afbeeldingen (content-id, bijlage-id of data, soort, grootte)."""
+    stukken, ingesloten = [], []
+
+    def loop(d):
+        soort = (d.get("mimeType") or "").lower()
+        body = d.get("body") or {}
+        if soort == "text/html" and body.get("data") and not d.get("filename"):
+            stukken.append(_b64(body["data"]))
+        koppen = {h["name"].lower(): h["value"] for h in d.get("headers") or []}
+        cid = (koppen.get("content-id") or "").strip().strip("<>")
+        if cid and soort.startswith("image/"):
+            ingesloten.append({"cid": cid, "id": body.get("attachmentId", ""), "data": body.get("data", ""), "soort": soort,
+                               "grootte": int(body.get("size") or 0)})
+        for p in d.get("parts") or []:
+            loop(p)
+    loop(deel or {})
+    return "\n".join(stukken), ingesloten
+
+
+def _data_url(soort, ruw):
+    return f"data:{soort};base64," + base64.b64encode(ruw).decode()
+
+
 def gmail_bericht(toegang, mid, account, met_tekst=False):
     if met_tekst:
         m = _gmail(toegang, f"/messages/{mid}?format=full")
@@ -368,7 +396,16 @@ def gmail_volledig(toegang, mid, met_bijlagen=True):
         if met_bijlagen and b["grootte"] <= BIJLAGE_MAX:
             j = _gmail(toegang, f"/messages/{mid}/attachments/{b['id']}")
             b["tekst"] = bijlage_tekst(b["naam"], b["soort"], base64.urlsafe_b64decode((j.get("data") or "") + "=" * (-len(j.get("data") or "") % 4)))
-    return {"tekst": _gmail_tekst(m.get("payload"))[:12000], "bijlagen": bijlagen, "draad": m.get("threadId", ""),
+    opmaak, ingesloten = _gmail_html(m.get("payload"))
+    cid, totaal = {}, 0
+    for x in ingesloten if opmaak else []:
+        if not x["grootte"] or x["grootte"] > INLINE_MAX or totaal + x["grootte"] > INLINE_TOTAAL or f"cid:{x['cid']}" not in opmaak:
+            continue
+        data = x["data"] or (_gmail(toegang, f"/messages/{mid}/attachments/{x['id']}").get("data") if x["id"] else "")
+        if data:
+            cid[x["cid"]] = _data_url(x["soort"], base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)))
+            totaal += x["grootte"]
+    return {"tekst": _gmail_tekst(m.get("payload"))[:12000], "html": opmaak, "cid": cid, "bijlagen": bijlagen, "draad": m.get("threadId", ""),
             "van": koppen.get("from", ""), "antwoord_aan": koppen.get("reply-to") or koppen.get("from", ""),
             "aan": koppen.get("to", ""), "cc": koppen.get("cc", ""), "onderwerp": koppen.get("subject", ""),
             "message_id": koppen.get("message-id", ""), "references": koppen.get("references", "")}
@@ -392,20 +429,30 @@ def gmail_antwoord(toegang, account, origineel, tekst):
 
 def ms_volledig(toegang, mid, met_bijlagen=True):
     q = urllib.parse.quote(mid)
-    m = _graph(toegang, f"/me/messages/{q}?$select=subject,from,replyTo,toRecipients,ccRecipients,body,hasAttachments,conversationId",
-               {"Prefer": 'outlook.body-content-type="text"'})
+    m = _graph(toegang, f"/me/messages/{q}?$select=subject,from,replyTo,toRecipients,ccRecipients,body,hasAttachments,conversationId")
     adres = lambda x: f"{(x.get('emailAddress') or {}).get('name', '')} <{(x.get('emailAddress') or {}).get('address', '')}>"  # noqa: E731
-    bijlagen = []
-    if m.get("hasAttachments"):
-        for a in _graph(toegang, f"/me/messages/{q}/attachments?$select=id,name,contentType,size").get("value", []):
+    body = m.get("body") or {}
+    opmaak = (body.get("content") or "") if (body.get("contentType") or "").lower() == "html" else ""
+    tekst = html_naar_tekst(opmaak) if opmaak else (body.get("content") or "")
+    bijlagen, cid, totaal = [], {}, 0
+    if m.get("hasAttachments") or "cid:" in opmaak:
+        for a in _graph(toegang, f"/me/messages/{q}/attachments?$select=id,name,contentType,size,isInline").get("value", []):
             b = {"naam": a.get("name", ""), "soort": a.get("contentType", ""), "id": a.get("id", ""), "grootte": int(a.get("size") or 0), "tekst": ""}
-            if met_bijlagen and b["grootte"] <= BIJLAGE_MAX and "fileAttachment" in a.get("@odata.type", "fileAttachment"):
+            bestand = "fileAttachment" in a.get("@odata.type", "fileAttachment")
+            if a.get("isInline") and bestand and (b["soort"] or "").startswith("image/") and "cid:" in opmaak:
+                if b["grootte"] <= INLINE_MAX and totaal + b["grootte"] <= INLINE_TOTAAL:
+                    j = _graph(toegang, f"/me/messages/{q}/attachments/{urllib.parse.quote(b['id'])}")
+                    if j.get("contentBytes") and j.get("contentId"):
+                        cid[j["contentId"].strip("<>")] = f"data:{b['soort']};base64,{j['contentBytes']}"
+                        totaal += b["grootte"]
+                continue  # een ingesloten afbeelding is geen bijlage om te lezen
+            if met_bijlagen and b["grootte"] <= BIJLAGE_MAX and bestand:
                 j = _graph(toegang, f"/me/messages/{q}/attachments/{urllib.parse.quote(b['id'])}")
                 if j.get("contentBytes"):
                     b["tekst"] = bijlage_tekst(b["naam"], b["soort"], base64.b64decode(j["contentBytes"]))
             bijlagen.append(b)
     van = adres(m.get("from") or {})
-    return {"tekst": ((m.get("body") or {}).get("content") or "")[:12000], "bijlagen": bijlagen, "draad": m.get("conversationId", ""),
+    return {"tekst": tekst[:12000], "html": opmaak, "cid": cid, "bijlagen": bijlagen, "draad": m.get("conversationId", ""),
             "van": van, "antwoord_aan": ", ".join(adres(x) for x in m.get("replyTo") or []) or van,
             "aan": ", ".join(adres(x) for x in m.get("toRecipients") or []), "cc": ", ".join(adres(x) for x in m.get("ccRecipients") or []),
             "onderwerp": m.get("subject", "")}

@@ -1,9 +1,5 @@
 {% extends "base.html" %}
-{% block titel %}Clara · Buurmanitor<script>
-// Het gesprek staat in een vak met een schuifbalk: altijd het laatste bericht in beeld.
-(function () { const b = document.getElementById("berichten"); if (b) b.scrollTop = b.scrollHeight; })();
-</script>
-{% endblock %}
+{% block titel %}Clara · Buurmanitor{% endblock %}
 {% macro tijd(a) -%}
   {%- if a.heledag %}hele dag{% else %}{{ a.start.astimezone(tz).strftime('%H.%M') }}–{{ a.eind.astimezone(tz).strftime('%H.%M') }}{% if a.geschat %}*{% endif %}{% endif -%}
 {%- endmacro %}
@@ -273,4 +269,8 @@
     </section>
   </aside>
 </div>
+<script>
+// Het gesprek staat in een vak met een schuifbalk: altijd het laatste bericht in beeld.
+(function () { const b = document.getElementById("berichten"); if (b) b.scrollTop = b.scrollHeight; })();
+</script>
 {% endblock %}

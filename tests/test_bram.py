@@ -65,6 +65,51 @@ def test_html_naar_tekst():
     assert bronnen.html_naar_tekst("<style>p{}</style><p>Hoi&nbsp;Martijn</p><p>Groet</p>") == "Hoi\xa0Martijn\n Groet"
 
 
+def test_mail_html_veilig():
+    from app.bram import mailhtml  # pylint: disable=import-outside-toplevel
+    vies = ('<html><head><title>Nieuwsbrief</title><meta http-equiv="refresh" content="0;url=https://kwaad.nl"><base href="https://kwaad.nl/">'
+            '<style>p{color:red}</style><link rel="stylesheet" href="https://x.nl/s.css"></head><body onload="steel()">'
+            '<p onclick="steel()">Hallo <b>Martijn</b> &amp; co</p><script>steel()</script><iframe src="https://kwaad.nl"></iframe>'
+            '<a href="javascript:steel()">klik</a> <a href="https://zerohero.one/boek" target="_self">Naar de shop</a>'
+            '<img src="cid:logo123"><img src="https://tracker.nl/pixel.gif" width="1"><form action="https://x.nl"><input name="w"></form>'
+            '<div style="background:url(javascript:steel())">x</div><!--[if mso]><p>outlook</p><![endif]--></body></html>')
+    uit = mailhtml.schoon(vies, {"logo123": "data:image/png;base64,AAAA"})
+    for slecht in ("<script", "steel()", "<iframe", "javascript:", "onload", "onclick", "<meta", "<base", "<link", "<form", "<input", "<title", "outlook"):
+        assert slecht not in uit, slecht
+    assert "<p>Hallo <b>Martijn</b> &amp; co</p>" in uit and "<style>p{color:red}</style>" in uit
+    assert '<a href="https://zerohero.one/boek" target="_blank" rel="noopener noreferrer">Naar de shop</a>' in uit
+    assert '<img src="data:image/png;base64,AAAA">' in uit and mailhtml.heeft_externe_beelden(uit)
+    assert not mailhtml.heeft_externe_beelden('<img src="data:image/png;base64,AA">')
+    geblokt, aantal = mailhtml.schoon_met_telling(vies + '<td style="background-image:url(https://x.nl/a.png)">t</td><style>.a{background:url("https://x.nl/b.png")}</style>',
+                                                  beelden=False)
+    assert "tracker.nl" not in geblokt and "x.nl/a.png" not in geblokt and "x.nl/b.png" not in geblokt and aantal == 3
+    assert 'width="1"' in geblokt  # de rest van de afbeelding blijft, alleen de bron gaat eruit
+    zonder, met = mailhtml.document(uit), mailhtml.document(uit, beelden=True)
+    assert "img-src data:;" in zonder and "img-src data: https: http:;" in met and "default-src 'none'" in zonder and '<base target="_blank">' in zonder
+    assert mailhtml.linkify('Zie https://pro-helmond.nl/agenda. En <b>dit</b> "x"') == \
+        'Zie <a href="https://pro-helmond.nl/agenda" target="_blank" rel="noopener noreferrer">https://pro-helmond.nl/agenda</a>. En &lt;b&gt;dit&lt;/b&gt; &quot;x&quot;'
+
+
+def test_gmail_html_met_ingesloten_afbeelding(monkeypatch):
+    import base64  # pylint: disable=import-outside-toplevel
+    b64 = lambda t: base64.urlsafe_b64encode(t.encode()).decode().rstrip("=")  # noqa: E731
+    bericht = {"threadId": "t1", "payload": {"mimeType": "multipart/related", "headers": [{"name": "From", "value": "Club <a@b.nl>"}, {"name": "Subject", "value": "Hoi"}],
+               "parts": [{"mimeType": "multipart/alternative", "parts": [
+                   {"mimeType": "text/plain", "body": {"data": b64("Hoi, zie de site")}},
+                   {"mimeType": "text/html", "body": {"data": b64('<p>Hoi, zie <a href="https://club.nl">de site</a></p><img src="cid:logo@club">')}}]},
+                   {"mimeType": "image/png", "filename": "logo.png", "headers": [{"name": "Content-ID", "value": "<logo@club>"}],
+                    "body": {"attachmentId": "att1", "size": 10}}]}}
+    gevraagd = []
+
+    def nep(toegang, pad, **kw):
+        gevraagd.append(pad)
+        return bericht if "format=full" in pad else {"data": base64.urlsafe_b64encode(b"PNGDATA").decode()}
+    monkeypatch.setattr(bronnen, "_gmail", nep)
+    v = bronnen.gmail_volledig("tok", "m1", met_bijlagen=False)
+    assert v["tekst"] == "Hoi, zie de site" and '<a href="https://club.nl">de site</a>' in v["html"]
+    assert v["cid"] == {"logo@club": "data:image/png;base64," + base64.b64encode(b"PNGDATA").decode()} and "/messages/m1/attachments/att1" in gevraagd
+
+
 def test_ms_bericht_lezen():
     b = bronnen.ms_bericht({"id": "AAA=", "conversationId": "c1", "subject": "Factuur oktober", "isRead": True,
                             "from": {"emailAddress": {"name": "Boekhouding", "address": "Facturen@Upperspire.com"}},
@@ -428,7 +473,28 @@ def test_bram_vragen_en_voorstellen_uitvoeren(klant, monkeypatch):
 
     pagina = klant.get(f"/bram/bericht/{bid}", headers=KOP).text
     assert "Bijgaand de correspondentie" in pagina and "nieuwe afspraak.pdf" in pagina and "18 november 2026 om 15.40" in pagina
-    assert "Deze mail mag Claude lezen" in pagina
+    assert "Deze mail mag Claude lezen" in pagina and "<title>Sanne Kerkhof · Bram · Buurmanitor</title>" in pagina
+    # Een HTML-mail: in een afgeschermd kader, links klikbaar, afbeeldingen van buiten pas na een klik (of altijd voor deze afzender).
+    volledig["html"] = ('<p>Zie <a href="https://orthohelmond.nl/afspraak">uw afspraak</a></p><img src="https://orthohelmond.nl/pixel.gif">'
+                        '<script>alert(1)</script>')
+    pagina = klant.get(f"/bram/bericht/{bid}", headers=KOP).text
+    kader = pagina.split('<iframe class="mailkader"')[1].split("</iframe>")[0]
+    assert 'sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"' in kader and "allow-scripts" not in kader
+    assert "orthohelmond.nl/afspraak" in kader
+    assert "target=&#34;_blank&#34;" in kader or "target=&quot;_blank&quot;" in kader
+    assert "alert(1)" not in kader and "img-src data:;" in kader and "Afbeeldingen tonen" in pagina and "pixel.gif" not in kader
+    assert "img-src data: https: http:;" in klant.get(f"/bram/bericht/{bid}?beelden=1", headers=KOP).text
+    assert klant.post(f"/bram/bericht/{bid}/beelden", headers=KOP, data={"aan": "1"}).status_code == 403
+    klant.post(f"/bram/bericht/{bid}/beelden", headers=FORM, data={"aan": "1"})
+    pagina = klant.get(f"/bram/bericht/{bid}", headers=KOP).text
+    assert "img-src data: https: http:;" in pagina and "worden altijd getoond" in pagina
+    klant.post(f"/bram/bericht/{bid}/beelden", headers=FORM, data={"aan": "0"})
+    assert "img-src data:;" in klant.get(f"/bram/bericht/{bid}", headers=KOP).text
+    del volledig["html"]
+    # Platte tekst: links klikbaar.
+    volledig["tekst"] = "Bijgaand de correspondentie, zie https://orthohelmond.nl/info"
+    assert '<a href="https://orthohelmond.nl/info" target="_blank" rel="noopener noreferrer">' in klant.get(f"/bram/bericht/{bid}", headers=KOP).text
+    volledig["tekst"] = "Bijgaand de correspondentie betreffende patient: Sanne Kerkhof"
     # Claude mag dit account niet lezen: zonder vinkje geweigerd, met vinkje 'deze keer' wel.
     r = klant.post(f"/bram/bericht/{bid}/vraag", headers=FORM, data={"vraag": "Plan de afspraak voor Sanne"}, follow_redirects=False)
     assert "fout=" in r.headers["location"] and not gezien
