@@ -89,7 +89,8 @@ document.addEventListener("keydown", function (e) {
   function toon(m) {
     const b = document.getElementById("banner");
     b.className = "banner " + m.niveau; b.hidden = false;
-    b.innerHTML = "<b></b> <span></span> <a href='" + (m.link && m.link.startsWith('/') ? m.link : '/#meldingen') + "'>bekijk</a>";
+    b.innerHTML = "<b></b> <span></span> <a>bekijk</a>";
+    b.querySelector("a").setAttribute("href", m.link && m.link.startsWith("/") && !m.link.startsWith("//") ? m.link : "/#meldingen");
     b.querySelector("b").textContent = m.niveau === "urgent" ? "Urgent:" : (m.bron === "aankondiging" ? "Straks:" : "Belangrijk:");
     b.querySelector("span").textContent = m.titel;
     if ("Notification" in window && Notification.permission === "granted") {
