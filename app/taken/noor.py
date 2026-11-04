@@ -185,7 +185,7 @@ def _taakregel(t, vandaag):
 def open_taken(c):
     return c.execute("""SELECT t.*, b.onderwerp AS mail_onderwerp, b.van_naam AS mail_van FROM takenbord t
                         LEFT JOIN post_berichten b ON b.id = t.bericht_id
-                        WHERE t.status <> 'afgerond' OR t.afgerond > now() - interval '14 days'
+                        WHERE t.status <> 'afgerond' OR (t.gearchiveerd IS NULL AND t.afgerond > now() - interval '14 days')
                         ORDER BY CASE t.prio WHEN 'hoog' THEN 0 WHEN 'middel' THEN 1 ELSE 2 END,
                                  coalesce(t.einddatum, t.startdatum, '9999-12-31'::date), t.aangemaakt LIMIT 200""").fetchall()
 

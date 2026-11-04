@@ -97,7 +97,7 @@ h2, .sub { font-family: var(--kop); font-weight: 600; text-transform: uppercase;
 .label.rood { background: var(--rozig); color: var(--rooddonker); }
 
 /* formulieren en knoppen */
-textarea, input[type=text], select { width: 100%; padding: 8px 10px; border: 1px solid #BCD0EA; border-radius: 4px; font: inherit; background: var(--wit); }
+textarea, input[type=text], input[type=search], select { width: 100%; padding: 8px 10px; border: 1px solid #BCD0EA; border-radius: 4px; font: inherit; background: var(--wit); }
 textarea { min-height: 110px; margin-top: 10px; }
 .knop { display: inline-block; font-family: var(--kop); font-weight: 600; font-size: 15px; text-transform: uppercase; letter-spacing: .03em;
         border: 1px solid var(--blauw); color: var(--blauwdonker); background: var(--wit); padding: 6px 12px; border-radius: 4px;
@@ -666,3 +666,19 @@ tr.uit td { opacity: .55; }
 .miniuitnodiging:hover span:first-child { text-decoration: underline; }
 .uitkop { margin-bottom: 2px; }
 .bverzoek { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #FFFBEF; border: 1px dashed #E0A100; border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+
+/* Taken: de kolom Afgerond compact (alleen de titel), en het takenarchief */
+.taak.klaar { display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 8px; margin-bottom: 4px; border-left-color: #9AA5B1; background: transparent; }
+.taak.klaar .taaktitel { flex: 1; min-width: 0; font-size: 13.5px; color: var(--zacht); text-decoration: line-through; text-decoration-color: rgba(0,0,0,.25);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.taak.klaar:hover .taaktitel { color: var(--inkt); }
+.archiefknop { border: 0; background: none; cursor: pointer; padding: 2px 4px; font-size: 14px; opacity: .45; line-height: 1; }
+.taak.klaar:hover .archiefknop, .archiefknop:focus-visible { opacity: 1; }
+.archiefalles { margin: -2px 2px 8px; }
+.archieflink { margin: 14px 2px; }
+.archiefzoek { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.archiefzoek input[type=search] { flex: 1 1 260px; width: auto; }
+.archiefmaand { display: flex; gap: 8px; align-items: baseline; margin: 18px 0 4px; font-size: 16px; }
+.archiefregel { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--lijn); }
+.archiefwat { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 320px; }
+.archiefbeschrijving { overflow-wrap: anywhere; }

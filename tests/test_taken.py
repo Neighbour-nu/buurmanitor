@@ -194,6 +194,47 @@ def test_taak_uit_een_mail(klant):
         c.execute("DELETE FROM post_koppelingen")
 
 
+def test_afgerond_compact_en_archief(klant):
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM takenbord")
+        ids = {}
+        for titel, status, dagen in (("Open klus", "actief", None), ("Rapport ingeleverd", "afgerond", 2), ("Oud werk", "afgerond", 45),
+                                     ("Factuur betaald", "afgerond", 1)):
+            ids[titel] = c.execute("""INSERT INTO takenbord (titel, beschrijving, status, afgerond) VALUES (%s, 'details hier', %s,
+                                      CASE WHEN %s::int IS NOT NULL THEN now() - make_interval(days => %s::int) END) RETURNING id""",
+                                   (titel, status, dagen, dagen)).fetchone()["id"]
+        assert web.taak_takenarchief(c) == "1 afgeronde taak gearchiveerd"  # ouder dan 30 dagen
+    pagina = klant.get("/taken", headers=KOP).text
+    kolom = pagina.split('id="kolom-afgerond"')[1].split("</section>")[0]
+    assert 'class="taak klaar"' in kolom and "Rapport ingeleverd" in kolom and "Oud werk" not in pagina
+    assert kolom.index("Factuur betaald") < kolom.index("Rapport ingeleverd")  # laatst afgerond bovenaan
+    assert "label prio" not in kolom and "taakverplaats" not in kolom  # alleen de titel
+    assert 'href="/taken/archief">📦 Takenarchief</a> <span class="noot">1 taak</span>' in pagina
+    # Eén taak archiveren; een open taak kan niet.
+    r = klant.post(f"/taken/{ids['Rapport ingeleverd']}/archief", headers=FORM, data={"actie": "in"}, follow_redirects=False)
+    assert "archief" in r.headers["location"]
+    assert "fout=" in klant.post(f"/taken/{ids['Open klus']}/archief", headers=FORM, data={"actie": "in"}, follow_redirects=False).headers["location"]
+    archief = klant.get("/taken/archief", headers=KOP).text
+    assert "Rapport ingeleverd" in archief and "Oud werk" in archief and "Open klus" not in archief and "2 afgeronde taken" in archief
+    assert archief.index("Rapport ingeleverd") < archief.index("Oud werk")
+    zoek = klant.get("/taken/archief?q=rapport", headers=KOP).text
+    assert "Rapport ingeleverd" in zoek and "Oud werk" not in zoek
+    # Alles archiveren, en terug op het bord.
+    klant.post("/taken/archiveren", headers=FORM)
+    assert "Factuur betaald" not in klant.get("/taken", headers=KOP).text.split('id="kolom-afgerond"')[1].split("</section>")[0]
+    klant.post(f"/taken/{ids['Oud werk']}/archief", headers=FORM, data={"actie": "uit"})
+    assert "Oud werk" in klant.get("/taken", headers=KOP).text
+    # Een gearchiveerde taak heropenen haalt hem ook uit het archief; verwijderen vanuit het archief gaat terug naar het archief.
+    klant.post(f"/taken/{ids['Factuur betaald']}/status", headers=FORM, data={"status": "actief"})
+    r = klant.post(f"/taken/{ids['Rapport ingeleverd']}/weg", headers=FORM, data={"terug": "/taken/archief"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/taken/archief?")
+    with db.pool.connection() as c:
+        rijen = {x["titel"]: x["gearchiveerd"] is not None for x in c.execute("SELECT titel, gearchiveerd FROM takenbord").fetchall()}
+        assert rijen == {"Open klus": False, "Oud werk": False, "Factuur betaald": False}
+        c.execute("DELETE FROM takenbord")
+
+
 # ---------------------------------------------------------------- Noor
 
 def test_noor_voorstellen_lezen():

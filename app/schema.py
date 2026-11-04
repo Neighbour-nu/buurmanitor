@@ -460,5 +460,8 @@ MIGRATIES = [
         klaar boolean NOT NULL DEFAULT false,
         aangemaakt timestamptz NOT NULL DEFAULT now())""",
     "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS reeks_id int REFERENCES takenreeksen(id) ON DELETE SET NULL",
+    # Takenarchief: afgeronde taken die van het bord af zijn (zelf gearchiveerd, of automatisch na een maand).
+    "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS gearchiveerd timestamptz",
+    "CREATE INDEX IF NOT EXISTS takenbord_archief ON takenbord (gearchiveerd DESC) WHERE gearchiveerd IS NOT NULL",
 ]
 

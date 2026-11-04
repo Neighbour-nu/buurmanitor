@@ -24,7 +24,8 @@ STATUS_NAMEN = dict(STATUSSEN)
 PRIO = (("hoog", "Hoog"), ("middel", "Middel"), ("laag", "Laag"))
 PRIO_NAMEN = dict(PRIO)
 MARKER = "[taak:"
-AFGEROND_DAGEN = 30  # zo lang blijven afgeronde taken op het bord
+AFGEROND_DAGEN = 30  # zo lang blijven afgeronde taken op het bord; daarna gaan ze vanzelf naar het archief
+ARCHIEF_PER_PAGINA = 100
 
 
 def _terug(pad, **melding):
@@ -229,17 +230,17 @@ def _paneel(c, g=None):
 
 
 @router.get("/taken", response_class=HTMLResponse)
-def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, wacht: int = 0, alles: int = 0,
+def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, wacht: int = 0,
          melding: str = "", fout: str = "", praat: int = 0, g: int | None = None, reeks: str = ""):
     nieuw_ = nieuw_ or int(request.query_params.get("nieuw") or 0)
     vandaag = dt.datetime.now(config.TZ).date()
     with db.pool.connection() as c:
         taken = c.execute("""SELECT t.*, b.onderwerp AS mail_onderwerp, b.van_naam AS mail_van FROM takenbord t
                              LEFT JOIN post_berichten b ON b.id = t.bericht_id
-                             WHERE t.status <> 'afgerond' OR %s OR t.afgerond > now() - make_interval(days => %s)
+                             WHERE t.gearchiveerd IS NULL
                              ORDER BY CASE t.prio WHEN 'hoog' THEN 0 WHEN 'middel' THEN 1 ELSE 2 END,
-                                      coalesce(t.einddatum, t.startdatum, '9999-12-31'::date), t.aangemaakt""",
-                          (bool(alles), AFGEROND_DAGEN)).fetchall()
+                                      coalesce(t.einddatum, t.startdatum, '9999-12-31'::date), t.aangemaakt""").fetchall()
+        in_archief = c.execute("SELECT count(*) AS n FROM takenbord WHERE gearchiveerd IS NOT NULL").fetchone()["n"]
         doelen = clara_web._reisdoelen(agenda_sync.koppelingen(c, alleen_actief=True))  # pylint: disable=protected-access
         formulier = None
         if bewerk:
@@ -268,9 +269,11 @@ def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, w
     later = [t for t in taken if t["reeks_id"] and t["status"] != "afgerond" and (t["startdatum"] or vandaag) > horizon]
     zichtbaar = [t for t in taken if t not in later]
     kolommen = [(s, naam, [t for t in zichtbaar if t["status"] == s]) for s, naam in STATUSSEN]
+    # Afgerond: het laatst afgeronde bovenaan.
+    kolommen[-1][2].sort(key=lambda t: t["afgerond"] or t["bijgewerkt"], reverse=True)
     return templates.TemplateResponse("taken.html", ctx(
         request, "taken", kolommen=kolommen, formulier=formulier, statussen=STATUSSEN, prios=PRIO, prio_namen=PRIO_NAMEN,
-        doelen=doelen, vandaag=vandaag, DAGEN=DAGEN, melding=melding, fout=fout, wacht=wacht, mail=mail, alles=alles,
+        doelen=doelen, vandaag=vandaag, DAGEN=DAGEN, melding=melding, fout=fout, wacht=wacht, mail=mail, in_archief=in_archief, tz=config.TZ,
         afgerond_dagen=AFGEROND_DAGEN, praat=praat, paneel=paneel, sleutel_ok=bool(config.ANTHROPIC_API_KEY),
         reeksen=lijst_reeksen, reeksform=reeksform, later=len(later), dagcodes=reeksen.DAGCODES))
 
@@ -307,6 +310,7 @@ async def taak_opslaan(request: Request, tid: int):
             c.execute("""UPDATE takenbord SET titel = %(titel)s, beschrijving = %(beschrijving)s, prio = %(prio)s, wacht_op = %(wacht_op)s,
                          startdatum = %(startdatum)s, starttijd = %(starttijd)s, einddatum = %(einddatum)s, eindtijd = %(eindtijd)s,
                          doel = %(doel)s, afgerond = CASE WHEN %(status)s = 'afgerond' THEN coalesce(afgerond, now()) END,
+                         gearchiveerd = CASE WHEN %(status)s = 'afgerond' THEN gearchiveerd END,
                          status = %(status)s, bijgewerkt = now() WHERE id = %(id)s""", velden | {"id": tid})
             return agenda_bijwerken(c, tid)
     agenda = await asyncio.to_thread(doe)
@@ -325,8 +329,9 @@ async def taak_status(request: Request, tid: int):
     def doe():
         with db.pool.connection() as c:
             t = c.execute("""UPDATE takenbord SET status = %s, bijgewerkt = now(),
-                             afgerond = CASE WHEN %s = 'afgerond' THEN coalesce(afgerond, now()) END
-                             WHERE id = %s RETURNING *""", (status, status, tid)).fetchone()
+                             afgerond = CASE WHEN %s = 'afgerond' THEN coalesce(afgerond, now()) END,
+                             gearchiveerd = CASE WHEN %s = 'afgerond' THEN gearchiveerd END
+                             WHERE id = %s RETURNING *""", (status, status, status, tid)).fetchone()
             if not t:
                 raise HTTPException(404)
             agenda_bijwerken(c, tid)
@@ -340,6 +345,8 @@ async def taak_status(request: Request, tid: int):
 @router.post("/taken/{tid:int}/weg")
 async def taak_weg(request: Request, tid: int):
     controleer_herkomst(request)
+    f = await request.form()
+    terug = "/taken/archief" if str(f.get("terug") or "").startswith("/taken/archief") else "/taken"
 
     def doe():
         with db.pool.connection() as c:
@@ -353,7 +360,90 @@ async def taak_weg(request: Request, tid: int):
             c.execute("DELETE FROM takenbord WHERE id = %s", (tid,))
             return t
     t = await asyncio.to_thread(doe)
-    return _terug("/taken", melding=f"Taak '{t['titel']}' verwijderd" + (" (ook uit de agenda)" if t["agenda_extern"] else "") + ".")
+    return _terug(terug, melding=f"Taak '{t['titel']}' verwijderd" + (" (ook uit de agenda)" if t["agenda_extern"] else "") + ".")
+
+
+# ---------------------------------------------------------------- archief
+
+def archiveren(c, ids=None):
+    """Afgeronde taken naar het archief: deze ids, of (zonder ids) alle afgeronde taken op het bord. Geeft het aantal."""
+    if ids is None:
+        return c.execute("UPDATE takenbord SET gearchiveerd = now() WHERE status = 'afgerond' AND gearchiveerd IS NULL").rowcount
+    return c.execute("UPDATE takenbord SET gearchiveerd = now() WHERE status = 'afgerond' AND gearchiveerd IS NULL AND id = ANY(%s)",
+                     (list(ids),)).rowcount
+
+
+@planner.taak("takenarchief", elke=dt.timedelta(hours=6))
+def taak_takenarchief(c):
+    """Wat al een maand afgerond is, gaat vanzelf van het bord naar het archief."""
+    n = c.execute("""UPDATE takenbord SET gearchiveerd = now() WHERE status = 'afgerond' AND gearchiveerd IS NULL
+                     AND coalesce(afgerond, bijgewerkt) < now() - make_interval(days => %s)""", (AFGEROND_DAGEN,)).rowcount
+    return f"{n} afgeronde ta{'ken' if n != 1 else 'ak'} gearchiveerd" if n else "niets te archiveren"
+
+
+@router.post("/taken/archiveren")
+async def taken_archiveren(request: Request):
+    """De hele kolom Afgerond naar het archief."""
+    controleer_herkomst(request)
+
+    def doe():
+        with db.pool.connection() as c:
+            return archiveren(c)
+    n = await asyncio.to_thread(doe)
+    return _terug("/taken", melding=f"{n} afgeronde ta{'ken' if n != 1 else 'ak'} naar het archief." if n else "Er was niets te archiveren.")
+
+
+@router.post("/taken/{tid:int}/archief")
+async def taak_archief(request: Request, tid: int):
+    """Eén taak naar het archief (actie=in, alleen als hij afgerond is) of terug op het bord (actie=uit)."""
+    controleer_herkomst(request)
+    f = await request.form()
+    terug = str(f.get("actie")) == "uit"
+
+    def doe():
+        with db.pool.connection() as c:
+            t = c.execute("SELECT * FROM takenbord WHERE id = %s", (tid,)).fetchone()
+            if not t:
+                raise HTTPException(404)
+            if terug:
+                c.execute("UPDATE takenbord SET gearchiveerd = NULL WHERE id = %s", (tid,))
+            else:
+                archiveren(c, [tid])
+            return t
+    t = await asyncio.to_thread(doe)
+    if terug:
+        return _terug(f"/taken#taak-{tid}", melding=f"'{t['titel']}' staat weer op het bord, bij {STATUS_NAMEN[t['status']]}.")
+    if t["status"] != "afgerond":
+        return _terug("/taken", fout="Alleen afgeronde taken kunnen naar het archief.")
+    return _terug("/taken#kolom-afgerond", melding=f"'{t['titel']}' staat in het archief.")
+
+
+@router.get("/taken/archief", response_class=HTMLResponse)
+def archief(request: Request, q: str = "", pagina: int = 1, melding: str = "", fout: str = ""):
+    q = q.strip()[:100]
+    pagina = max(1, pagina)
+    zoek = f"%{q}%"
+    with db.pool.connection() as c:
+        rijen = c.execute("""SELECT t.*, b.onderwerp AS mail_onderwerp FROM takenbord t LEFT JOIN post_berichten b ON b.id = t.bericht_id
+                             WHERE t.gearchiveerd IS NOT NULL AND (%s = '' OR t.titel ILIKE %s OR t.beschrijving ILIKE %s OR t.wacht_op ILIKE %s)
+                             ORDER BY coalesce(t.afgerond, t.gearchiveerd) DESC, t.id DESC LIMIT %s OFFSET %s""",
+                          (q, zoek, zoek, zoek, ARCHIEF_PER_PAGINA + 1, (pagina - 1) * ARCHIEF_PER_PAGINA)).fetchall()
+        totaal = c.execute("SELECT count(*) AS n FROM takenbord WHERE gearchiveerd IS NOT NULL").fetchone()["n"]
+    meer = len(rijen) > ARCHIEF_PER_PAGINA
+    rijen = rijen[:ARCHIEF_PER_PAGINA]
+    maanden = []
+    for t in rijen:
+        d = (t["afgerond"] or t["gearchiveerd"]).astimezone(config.TZ)
+        sleutel = (d.year, d.month)
+        if not maanden or maanden[-1][0] != sleutel:
+            maanden.append((sleutel, []))
+        maanden[-1][1].append(t)
+    return templates.TemplateResponse("taken_archief.html", ctx(
+        request, "taken", maanden=maanden, q=q, pagina=pagina, meer=meer, totaal=totaal, melding=melding, fout=fout,
+        prio_namen=PRIO_NAMEN, afgerond_dagen=AFGEROND_DAGEN, MAANDEN=MAANDEN, tz=config.TZ))
+
+
+MAANDEN = ("januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december")
 
 
 # ---------------------------------------------------------------- Noor

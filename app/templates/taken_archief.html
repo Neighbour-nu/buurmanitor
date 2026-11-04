@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block titel %}Takenarchief · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Takenarchief</h1>
+    <p class="motto">{{ totaal }} afgeronde {{ 'taak' if totaal == 1 else 'taken' }}. Je archiveert zelf vanaf het bord; na {{ afgerond_dagen }} dagen gaat een afgeronde taak er vanzelf heen.</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="/taken">Terug naar het bord</a></div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+
+<section class="kaart">
+  <form method="get" action="/taken/archief" class="archiefzoek">
+    <input type="search" name="q" value="{{ q }}" placeholder="Zoek in titel, beschrijving of op wie je wachtte" aria-label="Zoek in het archief">
+    <button class="knop" type="submit">Zoeken</button>{% if q %} <a class="klein" href="/taken/archief">alles tonen</a>{% endif %}
+  </form>
+  {% for (jaar, maand), lijst in maanden %}
+    <h2 class="archiefmaand">{{ MAANDEN[maand - 1] | capitalize }} {{ jaar }} <span class="noot">{{ lijst | length }}</span></h2>
+    {% for t in lijst %}
+    <div class="archiefregel" id="taak-{{ t.id }}">
+      <div class="archiefwat">
+        <a href="/taken?bewerk={{ t.id }}#formulier">{% if t.reeks_id %}🔁 {% endif %}{{ t.titel }}</a>
+        <span class="noot">{% if t.afgerond %}afgerond {{ t.afgerond.astimezone(tz).strftime('%d-%m-%Y') }}{% endif %}
+          · <span class="label prio {{ t.prio }}">{{ prio_namen[t.prio] }}</span>
+          {% if t.bericht_id %} · ✉ <a href="/bram/bericht/{{ t.bericht_id }}">{{ t.mail_onderwerp or 'mail' }}</a>{% endif %}</span>
+        {% if t.beschrijving %}<span class="noot archiefbeschrijving">{{ t.beschrijving | truncate(160) }}</span>{% endif %}
+      </div>
+      <form method="post" class="knoppenrij">
+        <input type="hidden" name="terug" value="/taken/archief">
+        <button class="knop klein" formaction="/taken/{{ t.id }}/archief" name="actie" value="uit">Terug op het bord</button>
+        <button class="knop klein" formaction="/taken/{{ t.id }}/weg" onclick="return confirm('Deze taak definitief verwijderen?')">Verwijderen</button>
+      </form>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="noot">{% if q %}Niets gevonden voor "{{ q }}".{% else %}Het archief is nog leeg. Zet een afgeronde taak hier met 📦 op het bord.{% endif %}</p>
+  {% endfor %}
+  {% if pagina > 1 or meer %}
+  <p class="knoppenrij">
+    {% if pagina > 1 %}<a class="knop klein" href="/taken/archief?pagina={{ pagina - 1 }}{{ '&q=' ~ q | urlencode if q }}">← Nieuwer</a>{% endif %}
+    {% if meer %}<a class="knop klein" href="/taken/archief?pagina={{ pagina + 1 }}{{ '&q=' ~ q | urlencode if q }}">Ouder →</a>{% endif %}
+  </p>
+  {% endif %}
+</section>
+{% endblock %}

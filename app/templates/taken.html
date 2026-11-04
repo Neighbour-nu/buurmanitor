@@ -131,8 +131,20 @@
 <form method="post" id="verplaats-form" hidden><input type="hidden" name="status" id="verplaats-status"></form>
 <div class="kanban" id="kanban">
   {% for s, naam, lijst in kolommen %}
-  <section class="kolom {{ s }}" data-status="{{ s }}" aria-label="{{ naam }}">
+  <section class="kolom {{ s }}" data-status="{{ s }}" aria-label="{{ naam }}" id="kolom-{{ s }}">
     <h2><span>{{ naam }}</span> <span class="aantal">{{ lijst | length }}</span></h2>
+    {% if s == 'afgerond' %}
+    {% if lijst %}<form method="post" action="/taken/archiveren" class="archiefalles">
+      <button class="knop klein" type="submit" onclick="return confirm('Alle {{ lijst | length }} afgeronde taken naar het archief?')">📦 Alles archiveren</button></form>{% endif %}
+    {% for t in lijst %}
+    <article class="taak klaar" id="taak-{{ t.id }}" draggable="true" data-id="{{ t.id }}" title="{{ 'Afgerond ' ~ t.afgerond.astimezone(tz).strftime('%d-%m') if t.afgerond }}">
+      <a class="taaktitel" href="/taken?bewerk={{ t.id }}#formulier">{{ t.titel }}</a>
+      <form method="post" action="/taken/{{ t.id }}/archief" class="inline"><input type="hidden" name="actie" value="in">
+        <button class="archiefknop" type="submit" title="Naar het archief" aria-label="{{ t.titel }} naar het archief">📦</button></form>
+    </article>
+    {% else %}<p class="noot leeg">Leeg</p>{% endfor %}
+    <p class="noot">Na {{ afgerond_dagen }} dagen gaan afgeronde taken vanzelf naar het <a href="/taken/archief">archief</a>.</p>
+    {% else %}
     {% for t in lijst %}
     {% set te_laat = t.einddatum and t.einddatum < vandaag and t.status != 'afgerond' %}
     <article class="taak prio-{{ t.prio }} {{ 'te-laat' if te_laat }}" id="taak-{{ t.id }}" draggable="true" data-id="{{ t.id }}">
@@ -152,7 +164,7 @@
       </form>
     </article>
     {% else %}<p class="noot leeg">Leeg</p>{% endfor %}
-    {% if s == 'afgerond' %}<p class="noot">{% if alles %}<a href="/taken">Alleen de laatste {{ afgerond_dagen }} dagen</a>{% else %}Laatste {{ afgerond_dagen }} dagen · <a href="/taken?alles=1">alles</a>{% endif %}</p>{% endif %}
+    {% endif %}
   </section>
   {% endfor %}
 </div>
@@ -172,6 +184,8 @@
     </div>
   {% else %}<p class="noot">Nog geen herhalende taken. Bijvoorbeeld: elke maandag 9.00 tot 10.00 de week voorbereiden, of elke eerste van de maand de facturen.</p>{% endfor %}
 </section>
+
+<p class="archieflink"><a href="/taken/archief">📦 Takenarchief</a> <span class="noot">{{ in_archief }} {{ 'taak' if in_archief == 1 else 'taken' }}</span></p>
 
 <script>
 // Slepen tussen de kolommen. Zonder JavaScript werkt de keuzelijst op elke kaart.
