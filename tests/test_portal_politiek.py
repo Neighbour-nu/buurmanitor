@@ -102,3 +102,56 @@ def test_vera_leest_politiek_nieuws(klant):
         assert not c.execute("SELECT gezien FROM stukken WHERE id = %s", (sid,)).fetchone()["gezien"]  # Promonitor blijft ongemoeid
         c.execute("DELETE FROM stukken WHERE extern_id LIKE 'nieuws-vera-%'")
 
+
+
+def test_whaller_indeling_uit_pdf(klant, monkeypatch):
+    """De PDF met woordvoerders inlezen bij de commissieavond: voorstel, bevestigen, daarna vast."""
+    import datetime as dt  # pylint: disable=import-outside-toplevel
+    from app.politiek import main as pol, notubiz  # pylint: disable=import-outside-toplevel
+    start = dt.datetime(2026, 11, 10, 19, 0)
+
+    def punt(o, sectie="Adviserend", tijd=""):
+        return {"onderwerp": o, "standaard": False, "sectie": sectie, "diepte": 0, "tijd": tijd, "portefeuillehouder": ""}
+    avond = {"id": 1, "naam": "Commissieavond", "start": start, "url": "https://helmond.notubiz.nl/x", "commissies": [
+        {"naam": "Commissie A", "plek": "Raadzaal", "agenda": [
+            {**punt("Opening en mededelingen", ""), "standaard": True},
+            punt("Afsluiten grondexploitatie Cacaofabriek e.o.", tijd="19.05-19.50"),
+            punt("Aanpak evenementen locatieprofielen Helmond Centrum", "Opinierend", "20.00-21.15"),
+            punt("GREX Nieuw Brandevoort", "Technische informatiebijeenkomst", "21.25-22.25")]},
+        {"naam": "Commissie B", "plek": "Commissiekamer", "agenda": [
+            punt("Bestedingsplan Wonen", tijd="19.05-19.50"),
+            punt("Aanvraag krediet tbv aankoop voormalige politiekantoor", tijd="20.00-20.45"),
+            punt("Vaststelling Omgevingsplanwijziging Burgemeester Krollaan 101", tijd="20.45-21.15")]}]}
+    monkeypatch.setattr(notubiz, "evenementen", lambda van, tot: [
+        {"id": 1, "soort": "commissie", "type": "assembly", "naam": "Commissieavond", "start": start, "plek": "", "url": ""}])
+    monkeypatch.setattr(notubiz, "commissieavond", lambda nummer: avond)
+    pol.uitvoeren("DELETE FROM whaller_invoer WHERE sleutel = 'commissie:2026-11-10'")
+    pol.uitvoeren("DELETE FROM toewijzingen WHERE datum = '2026-11-10'")
+    week = "/politiek/whaller?week=2026-11-09"
+    assert 'action="/politiek/whaller/indeling"' in klant.get(week, headers=KOP).text
+
+    with open(os.path.join(os.path.dirname(__file__), "politiek", "fixtures", "indeling_commissie_10-11-2026.pdf"), "rb") as f:
+        r = klant.post("/politiek/whaller/indeling", headers=FORMULIER, data={"datum": "2026-11-10", "week": "2026-11-09"},
+                       files={"bestand": ("Commissieavond_10-11-2026_indeling.pdf", f, "application/pdf")}, follow_redirects=False)
+    assert r.status_code == 303 and "6+agendapunten+met+woordvoerders" in r.headers["location"], r.headers["location"]
+    pagina = klant.get(week, headers=KOP).text
+    assert pagina.count("uit de PDF:") == 6 and "uit de PDF: Niek en Petra" in pagina and "Bevestigen en opslaan" in pagina
+    assert "Ook in de PDF: Sanae Voorzitter; Deliana met vakantie" in pagina
+    assert "Afsluiten grondexploitatie Cacaofabriek e.o. - (19.05-19.50 uur) | @n.engbers &amp; @PetraVerdonk" in pagina
+    assert "Bestedingsplan Wonen - (19.05-19.50 uur) | @martijn_buurman &amp; @StijnvanHoek" in pagina
+    # Bevestigen = het formulier met de (ingevulde) keuzes opslaan.
+    velden = {"soort": "commissie", "datum": "2026-11-10", "week": "2026-11-09"}
+    for i, (o, wv, erbij) in enumerate((("Afsluiten grondexploitatie Cacaofabriek e.o.", "n.engbers", "PetraVerdonk"),
+                                       ("Bestedingsplan Wonen", "martijn_buurman", "StijnvanHoek")), 1):
+        velden |= {f"onderwerp_{i}": o, f"wv_{i}": wv, f"erbij_{i}": erbij}
+    klant.post("/politiek/whaller/toewijzingen", headers=FORMULIER, data=velden)
+    pagina = klant.get(week, headers=KOP).text
+    assert "Bevestigen en opslaan" not in pagina and pagina.count("✓ zoals in de PDF") == 2 and "zijn bevestigd" in pagina
+    # Na bevestigen stuurt de PDF niet meer bij (hier zijn er bewust maar twee opgeslagen).
+    assert pagina.count("uit de PDF:") == 0
+    # Een PDF zonder namen of geen PDF: nette melding.
+    r = klant.post("/politiek/whaller/indeling", headers=FORMULIER, data={"datum": "2026-11-10", "week": "2026-11-09"},
+                   files={"bestand": ("x.pdf", b"geen pdf", "application/pdf")}, follow_redirects=False)
+    assert "fout=Dat+is+geen+PDF" in r.headers["location"]
+    klant.post("/politiek/whaller/indeling/weg", headers=FORMULIER, data={"sleutel": "commissie:2026-11-10", "week": "2026-11-09"})
+    assert "📄" not in klant.get(week, headers=KOP).text

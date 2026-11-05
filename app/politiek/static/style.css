@@ -71,6 +71,8 @@ a:hover { color: var(--rooddonker); }
          padding: 1px 7px; border-radius: 3px; background: var(--mint); color: var(--groendonker); }
 .label.rood { background: var(--rozig); color: var(--rooddonker); }
 .label.grijs { background: #EEE; color: var(--zacht); }
+.label.blauw { background: #DCE8F8; color: #14427E; }
+.label.groen { background: #E3F4E5; color: #1E6B2A; }
 
 /* lijsten en tabellen */
 .lijst { list-style: none; padding: 0; margin: 0; }
@@ -201,3 +203,7 @@ button.chip { font: inherit; font-size: 14px; cursor: pointer; background: var(-
 .staaf:hover span, .staaf:focus span { background: var(--groendonker); }
 .staaf small { position: absolute; bottom: -17px; left: 0; font-size: 11px; color: var(--zacht); }
 .whaller-voorbeeld a, .kaart a { overflow-wrap: anywhere; }
+
+/* Whaller: de indeling van de fractie (PDF) */
+.indeling { margin: 8px 0 14px; }
+.melding.wacht { border-left-color: #E0A100; background: #FFF8E1; }

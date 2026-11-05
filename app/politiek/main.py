@@ -23,7 +23,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from . import adviseur, agenda, begroting, dashboard, stemadvies, dossiers as dossierkaarten, fractie, kennisbank, notubiz, raadsinfo, schermen, schrijven, sjablonen, taken, whaller
+from . import adviseur, agenda, begroting, dashboard, stemadvies, dossiers as dossierkaarten, fractie, indeling, kennisbank, notubiz, raadsinfo, schermen, schrijven, sjablonen, taken, whaller
 from .schema import EENMALIG, MIGRATIES, STANDAARD_INSTELLINGEN, STANDAARD_PERSONEN, WHALLER_NODIG
 
 DATABASE_URL = os.environ["POLITIEK_DATABASE_URL"]
@@ -1543,9 +1543,10 @@ def whaller_scherm(request: Request, week: str = ""):
                 sl = f"commissie:{datum.isoformat()}"
                 inv = _invoer(sl)
                 punten = whaller.commissie_punten(avond, toew)
+                pdf = _pdf_toepassen(punten, inv.get("pdf"), personen)
                 berichten.append({"soort": "commissie", "sleutel": sl, "datum": datum,
                                   "titel": f"Commissievergadering {whaller.d(datum)}", "url": avond["url"],
-                                  "punten": punten, "invoer": inv,
+                                  "punten": punten, "invoer": inv, "pdf": pdf,
                                   "html": whaller.commissie_bericht(avond, punten, inst, inv.get("map_url", "")),
                                   "checklist": whaller.checklist("commissie", datum, inst)})
             elif ev["soort"] == "raad" and ev["type"] == "meeting":
@@ -1573,9 +1574,30 @@ def whaller_scherm(request: Request, week: str = ""):
                "checklist": whaller.checklist("fractie", fdatum, inst, finv)}
     return templates.TemplateResponse("whaller.html", ctx(
         request, "whaller", maandag=maandag, zondag=zondag, berichten=[fractie] + berichten, overig=markeer_besloten(overig),
-        fout=fout, personen=personen, raadsleden=raadsleden, inst=inst, lang=whaller.lang,
+        fout=fout or request.query_params.get("fout", ""), personen=personen, raadsleden=raadsleden, inst=inst, lang=whaller.lang,
         vorige=(maandag - dt.timedelta(days=7)).isoformat(), volgende=(maandag + dt.timedelta(days=7)).isoformat(),
         melding=request.query_params.get("melding", "")))
+
+
+def _pdf_toepassen(punten, pdf, personen):
+    """De namen uit de PDF van de fractie bij de agendapunten zetten, zolang ze nog niet zijn bevestigd.
+    Geeft wat het scherm erover moet laten zien, of None als er geen PDF is."""
+    if not pdf:
+        return None
+    over = indeling.koppel(punten, pdf, personen, agenda.persoon_bij_naam)
+    wacht = not pdf.get("bevestigd")
+    open_ = 0
+    for p in punten:
+        v = p.get("pdf")
+        if not v:
+            continue
+        nieuw = (v["woordvoerder"] or p["woordvoerder"], v["zit_erbij"] or (p["zit_erbij"] if len(v["namen"]) < 2 else ""))
+        p["zoals_pdf"] = nieuw == (p["woordvoerder"], p["zit_erbij"]) and p["bron"] == "vastgelegd"
+        if wacht and not p["zoals_pdf"]:
+            p["woordvoerder"], p["zit_erbij"], p["bron"] = nieuw[0], nieuw[1], "pdf"
+            open_ += 1
+    return {**pdf, "over": over, "wacht": wacht and open_ > 0, "open": open_,
+            "gekoppeld": sum(1 for p in punten if p.get("pdf"))}
 
 
 def _bewaar_toewijzingen(form):
@@ -1622,8 +1644,79 @@ async def whaller_toewijzingen(request: Request):
     controleer_herkomst(request)
     form = await request.form()
     soort, datum, _ = _bewaar_toewijzingen(form)
+    sl = f"{soort}:{datum.isoformat()}"
+    inv = _invoer(sl)
+    if inv.get("pdf") and not inv["pdf"].get("bevestigd"):  # opslaan is bevestigen: de PDF stuurt niet meer bij
+        inv["pdf"]["bevestigd"] = dt.datetime.now().strftime("%d-%m %H.%M")
+        _invoer_opslaan(sl, inv)
     terug = f"/whaller?week={form.get('week', '')}&melding=Woordvoerders+opgeslagen.#{soort}-{datum.isoformat()}"
     return RedirectResponse(terug, status_code=303)
+
+
+def _invoer_opslaan(sl, gegevens):
+    uitvoeren("""INSERT INTO whaller_invoer (sleutel, gegevens) VALUES (%s, %s)
+                 ON CONFLICT (sleutel) DO UPDATE SET gegevens = EXCLUDED.gegevens, bijgewerkt = now()""",
+              (sl, Jsonb(gegevens)))
+
+
+INDELING_MAX = 15 * 1024 * 1024
+
+
+@app.post("/whaller/indeling")
+async def whaller_indeling(request: Request, bestand: UploadFile = File(None)):
+    """De PDF met de woordvoerders per agendapunt (van de fractie) inlezen. De namen komen als voorstel bij de
+    agendapunten van de commissieavond; pas met 'Bevestigen en opslaan' worden ze vastgelegd."""
+    controleer_herkomst(request)
+    form = await request.form()
+    week = str(form.get("week", ""))
+    try:
+        datum = dt.date.fromisoformat(str(form.get("datum")))
+    except ValueError:
+        raise HTTPException(400) from None
+
+    def terug(melding, d=datum, fout=False):
+        maandag = d - dt.timedelta(days=d.weekday())
+        return RedirectResponse("/whaller?" + urlencode({"week": maandag.isoformat() if d != datum else week,
+                                                          "fout" if fout else "melding": melding}) + f"#commissie-{d.isoformat()}",
+                                status_code=303)
+    if bestand is None or not bestand.filename:
+        return terug("Kies eerst de PDF met de indeling.", fout=True)
+    inhoud = await bestand.read(INDELING_MAX + 1)
+    if len(inhoud) > INDELING_MAX or not inhoud.startswith(b"%PDF"):
+        return terug("Dat is geen PDF (of hij is groter dan 15 MB).", fout=True)
+    personen = q("SELECT naam, whaller, rol FROM personen WHERE actief")
+    voornamen = [p["naam"].split()[0] for p in personen if p["naam"]]
+    try:
+        gelezen = await asyncio.to_thread(indeling.lees_pdf, inhoud, voornamen)
+    except Exception as e:  # noqa: BLE001 - kapotte of versleutelde PDF
+        return terug(f"De PDF kon niet worden gelezen ({e}).", fout=True)
+    if not gelezen["punten"]:
+        return terug("In deze PDF staan geen namen naast de agendapunten. Staat de indeling er al in?", fout=True)
+    d = gelezen["datum"] or datum
+    sl = f"commissie:{d.isoformat()}"
+    inv = _invoer(sl)
+    inv["pdf"] = {"bestand": bestand.filename[:120], "gelezen": dt.datetime.now().strftime("%d-%m %H.%M"),
+                  "punten": gelezen["punten"], "opmerkingen": gelezen["opmerkingen"][:12]}
+    _invoer_opslaan(sl, inv)
+    n = len(gelezen["punten"])
+    melding = (f"Uit {bestand.filename} {n} agendapunt{'en' if n != 1 else ''} met woordvoerders gelezen. "
+               "Controleer ze en klik op Bevestigen en opslaan.")
+    if d != datum:
+        melding += f" Let op: de PDF is van {whaller.lang(d)}."
+    return terug(melding, d)
+
+
+@app.post("/whaller/indeling/weg")
+async def whaller_indeling_weg(request: Request):
+    controleer_herkomst(request)
+    form = await request.form()
+    sl = str(form.get("sleutel", ""))
+    if not re.match(r"^commissie:\d{4}-\d{2}-\d{2}$", sl):
+        raise HTTPException(400)
+    inv = _invoer(sl)
+    inv.pop("pdf", None)
+    _invoer_opslaan(sl, inv)
+    return RedirectResponse(f"/whaller?week={form.get('week', '')}&melding=PDF+weggehaald.#{sl.replace(':', '-')}", status_code=303)
 
 
 @app.post("/whaller/invoer")

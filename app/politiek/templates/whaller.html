@@ -32,6 +32,27 @@
   </div>{% endif %}
 
   {% if b.soort == 'commissie' %}
+  <div class="indeling">
+    {% if b.pdf %}
+    <div class="melding {{ 'wacht' if b.pdf.wacht }}">
+      <b>📄 {{ b.pdf.bestand }}</b> <span class="noot">gelezen {{ b.pdf.gelezen }}{% if b.pdf.bevestigd %}, bevestigd {{ b.pdf.bevestigd }}{% endif %}</span><br>
+      {% if b.pdf.wacht %}Bij {{ b.pdf.open }} agendapunt{{ 'en' if b.pdf.open != 1 }} staan de namen uit de PDF klaar (blauw gemarkeerd). Controleer ze en klik op <b>Bevestigen en opslaan</b>.
+      {% elif b.pdf.bevestigd %}De woordvoerders uit de PDF zijn bevestigd. Wijzig je ze hieronder, dan geldt jouw keuze.
+      {% else %}De woordvoerders uit de PDF staan er al zo in.{% endif %}
+      {% if b.pdf.opmerkingen %}<br><span class="noot">Ook in de PDF: {{ b.pdf.opmerkingen|join('; ') }}</span>{% endif %}
+      {% if b.pdf.over %}<br><span class="noot" style="color:var(--rood)">Niet gevonden op de agenda in Notubiz:
+        {% for o in b.pdf.over %}{{ o.onderwerp }} ({{ o.namen|join(' en ') }}){{ '; ' if not loop.last }}{% endfor %}</span>{% endif %}
+      <form method="post" action="/whaller/indeling/weg" style="display:inline"><input type="hidden" name="sleutel" value="{{ b.sleutel }}">
+        <input type="hidden" name="week" value="{{ maandag }}"><button class="knop klein" type="submit" style="margin-top:6px">PDF weghalen</button></form>
+    </div>
+    {% endif %}
+    <form method="post" action="/whaller/indeling" enctype="multipart/form-data" class="rij" style="flex-wrap:wrap;gap:8px;align-items:center">
+      <input type="hidden" name="datum" value="{{ b.datum }}"><input type="hidden" name="week" value="{{ maandag }}">
+      <label style="margin:0;flex:0 0 auto">{{ 'Nieuwe versie van de indeling' if b.pdf else 'Indeling van de fractie (PDF)' }}</label>
+      <input type="file" name="bestand" accept="application/pdf,.pdf" required style="flex:1 1 220px">
+      <button class="knop" type="submit" style="flex:0 0 auto">Inlezen</button>
+    </form>
+  </div>
   <form method="post" action="/whaller/toewijzingen">
     <input type="hidden" name="soort" value="commissie"><input type="hidden" name="datum" value="{{ b.datum }}"><input type="hidden" name="week" value="{{ maandag }}">
     <div class="tabelvak"><table class="tabel">
@@ -41,14 +62,17 @@
       <tr>
         <td><input type="hidden" name="onderwerp_{{ loop.index }}" value="{{ p.onderwerp }}">
           <b>{{ p.onderwerp }}</b><br><span class="noot">{{ p.commissie }}{% if p.zaal %} ({{ p.zaal }}){% endif %}, {{ p.sectie|lower }}{% if p.tijd %}, {{ p.tijd }} uur{% endif %}{% if p.portefeuillehouder %}, {{ p.portefeuillehouder }}{% endif %}</span>
-          {% if p.bron == 'eerder' %}<br><span class="label grijs">voorstel uit een eerdere vergadering</span>{% elif not p.bron %}<br><span class="label rood">nog niemand</span>{% endif %}</td>
+          {% if p.bron == 'pdf' %}<br><span class="label blauw">uit de PDF: {{ p.pdf.namen|join(' en ') }}</span>
+          {% elif p.zoals_pdf %}<br><span class="label groen">✓ zoals in de PDF</span>
+          {% elif p.bron == 'eerder' %}<br><span class="label grijs">voorstel uit een eerdere vergadering</span>{% elif not p.bron %}<br><span class="label rood">nog niemand</span>{% endif %}
+          {% if p.pdf and p.pdf.onbekend %}<br><span class="label rood">{{ p.pdf.onbekend|join(' en ') }} niet gevonden bij de fractieleden</span>{% endif %}</td>
         <td>{{ keuze('wv_' ~ loop.index, p.woordvoerder, personen) }}</td>
         <td>{{ keuze('erbij_' ~ loop.index, p.zit_erbij, personen) }}</td>
       </tr>
       {% endfor %}
       </tbody>
     </table></div>
-    <p><button class="knop vol" type="submit">Woordvoerders opslaan</button></p>
+    <p><button class="knop vol" type="submit">{{ 'Bevestigen en opslaan' if b.pdf and b.pdf.wacht else 'Woordvoerders opslaan' }}</button></p>
   </form>
   {% elif b.soort == 'raad' %}
   {% if b.indeling.bespreek %}
