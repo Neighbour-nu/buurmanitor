@@ -221,6 +221,9 @@ MIGRATIES = [
         UNIQUE (bron_koppeling, bron_extern, doel_koppeling))""",
     # Beschikbaarheid delen: mag Clara in dit account blokken 'Bezet' zetten, en welke blokken staan er al.
     "ALTER TABLE agenda_koppelingen ADD COLUMN IF NOT EXISTS spiegel boolean NOT NULL DEFAULT true",
+    # Wat er in de blokken in dit account komt: '' (de algemene keuze), 'bezet', 'titel' (privé) of 'details' (titel en plek,
+    # zichtbaar voor wie de agenda met details mag zien, zoals een partner in de privé-agenda).
+    "ALTER TABLE agenda_koppelingen ADD COLUMN IF NOT EXISTS spiegel_detail text NOT NULL DEFAULT ''",
     """CREATE TABLE IF NOT EXISTS agenda_spiegel (
         doel_koppeling int NOT NULL REFERENCES agenda_koppelingen(id) ON DELETE CASCADE,
         bron text NOT NULL,
@@ -232,6 +235,8 @@ MIGRATIES = [
         voorlopig boolean NOT NULL DEFAULT false,
         bijgewerkt timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (doel_koppeling, bron))""",
+    "ALTER TABLE agenda_spiegel ADD COLUMN IF NOT EXISTS locatie text NOT NULL DEFAULT ''",
+    "ALTER TABLE agenda_spiegel ADD COLUMN IF NOT EXISTS zichtbaar boolean NOT NULL DEFAULT false",
     # Bram (postkamer): eigen koppelingen met toestemming voor mail, los van die van Clara.
     # claude: mag Bram de tekst van mails uit dit account naar Claude sturen om ze te sorteren.
     """CREATE TABLE IF NOT EXISTS post_koppelingen (

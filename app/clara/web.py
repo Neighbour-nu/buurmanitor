@@ -485,6 +485,7 @@ def koppelingen_scherm(request: Request, melding: str = "", fout: str = ""):
         request, "clara", koppelingen=lijst, aantallen=aantallen, inst=inst, melding=melding, fout=fout, regels=regels,
         reis_actief=reis.actief(), vertrekpunt_label=vertrekpunt_label, reis_dienst=reis.dienst_naam(),
         kleuren=bronnen.GOOGLE_KLEUREN, reisblokken=reisblokken, spiegelplan=spiegelplan, spiegelstatus=spiegelstatus,
+        spiegeldetails=spiegel.DETAILS, spiegeldetail=spiegel.detail,
         kluis_ok=kluis.actief(), google_ok=bool(config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET),
         ms_ok=bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET), politiek_ok=config.POLITIEK_ACTIEF,
         beheerder_url=bronnen.ms_beheerder_url() if config.MS_CLIENT_ID else "", DAGEN=DAGEN,
@@ -1280,6 +1281,8 @@ async def spiegel_instellingen(request: Request):
         for k in sync.koppelingen(c):
             if spiegel.rol(k)[0] or f.get(f"toon_{k['id']}"):
                 c.execute("UPDATE agenda_koppelingen SET spiegel = %s WHERE id = %s", (f.get(f"doel_{k['id']}") == "1", k["id"]))
+            if str(f.get(f"detail_{k['id']}", "")) in dict(spiegel.DETAILS):
+                c.execute("UPDATE agenda_koppelingen SET spiegel_detail = %s WHERE id = %s", (f.get(f"detail_{k['id']}"), k["id"]))
     return _terug("/clara/koppelingen#beschikbaarheid", melding=(
         "Opgeslagen. Clara zet je beschikbaarheid binnen vijf minuten door (de eerste keer in een paar rondes)." if aan
         else "Opgeslagen. Doorzetten staat uit; blokken die Clara al zette haalt ze binnen vijf minuten weg."))

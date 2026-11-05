@@ -882,6 +882,14 @@ def test_blok_bezet_verzoeken(monkeypatch):
     assert m["showAs"] == "busy" and m["start"]["dateTime"] == "2026-11-03T09:00:00" and m["body"]["content"].startswith("[clara-spiegel]")
     assert verzoeken[1][0].endswith("/me/events/e%2F1") and verzoeken[1][1]["body"]["showAs"] == "tentative"
     assert verzoeken[2][1]["methode"] == "DELETE"
+    # Alle details: niet privé, met de plek en waar de afspraak vandaan komt (bijvoorbeeld voor Brigit in de privé-agenda).
+    verzoeken.clear()
+    bronnen.google_blok("tok", "primary", "Klantoverleg", t(3, 9), t(3, 10), locatie="Utrecht", zichtbaar=True, herkomst="Upper Spire")
+    bronnen.ms_blok("tok", "cal", "Klantoverleg", t(3, 9), t(3, 10), locatie="Utrecht", zichtbaar=True, herkomst="Upper Spire")
+    g, m = verzoeken[0][1]["body"], verzoeken[1][1]["body"]
+    assert g["visibility"] == "default" and g["location"] == "Utrecht" and g["summary"] == "Klantoverleg"
+    assert g["description"] == "[clara-spiegel] Doorgezet door Buurmanitor uit de agenda Upper Spire."
+    assert m["sensitivity"] == "normal" and m["location"] == {"displayName": "Utrecht"}
 
 
 def test_niet_gevonden_is_eigen_fout(monkeypatch):
@@ -899,8 +907,8 @@ def test_beschikbaarheid_doorzetten(klant, monkeypatch):
     teller = iter(range(1000))
 
     def maak(soort):
-        def f(tok, agenda_id, titel, start, eind, voorlopig=False, extern_id=None):
-            log.append((soort, "wijzig" if extern_id else "nieuw", agenda_id, titel, start, voorlopig))
+        def f(tok, agenda_id, titel, start, eind, voorlopig=False, extern_id=None, **kw):
+            log.append((soort, "wijzig" if extern_id else "nieuw", agenda_id, titel, start, voorlopig, kw))
             return extern_id or f"{soort}{next(teller)}"
         return f
 
@@ -999,6 +1007,27 @@ def test_beschikbaarheid_doorzetten(klant, monkeypatch):
         sync.instellingen_opslaan(c, {**inst, "spiegel_titel": "titel"})
         spiegel.bijwerken(c)
         assert sorted(x[3] for x in log) == ["Klantoverleg", "Tandarts"]
+        assert all(not x[6]["zichtbaar"] and not x[6]["locatie"] for x in log)  # titel, maar nog privé
+        log.clear()
+        c.execute("UPDATE agenda_items SET locatie = 'Utrecht, Upper Spire' WHERE extern_id = 'm1'")
+        c.execute("UPDATE agenda_items SET online = true WHERE extern_id = 'p1'")
+    # Alle details naar de privé-agenda (voor Brigit): de bestaande blokken worden aangepast, met titel en plek.
+    r = klant.post("/clara/spiegel", headers=FORM, follow_redirects=False,
+                   data={"spiegel_aan": "1", "spiegel_titel": "titel", f"doel_{gid}": "1", f"doel_{ms}": "1", f"detail_{gid}": "details"})
+    assert r.status_code == 303
+    with db.pool.connection() as c:
+        spiegel.bijwerken(c)
+        naar_g = [(x[1], x[3], x[6]["locatie"], x[6]["zichtbaar"], x[6]["herkomst"]) for x in log if x[0] == "g"]
+        assert naar_g == [("wijzig", "Klantoverleg", "Utrecht, Upper Spire", True, "IV-professional")], naar_g
+        # naar IV-professional blijft het privé (daar geen details gekozen); de online tandarts heeft daar dus geen plek
+        assert [(x[3], x[6]["zichtbaar"]) for x in log if x[0] == "m"] == [], log
+        log.clear()
+        assert spiegel.bijwerken(c) is None and not log
+    pagina = klant.get("/clara/koppelingen", headers=KOP).text
+    assert f'name="detail_{gid}"' in pagina and '<option value="details" selected>' in pagina
+    with db.pool.connection() as c:
+        c.execute("UPDATE agenda_koppelingen SET spiegel_detail = '' WHERE id = %s", (gid,))
+        spiegel.bijwerken(c)
         log.clear()
     pagina = klant.get("/clara/koppelingen", headers=KOP).text
     assert "1 blok van Clara" in pagina and "Laatste ronde" in pagina

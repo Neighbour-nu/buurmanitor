@@ -12,6 +12,9 @@ Spelregels:
   agenda_spiegel. Een blok van Clara wordt zelf nooit doorgezet (geen kringloop).
 - Staat de afspraak al in het doel (uitgenodigd op beide adressen), dan komt er geen extra blok.
 - Uit is uit: zet Martijn het doorzetten (of één doel) uit, dan haalt Clara haar blokken daar weer weg.
+- Per doel kiest Martijn wat erin staat: 'Bezet', de titel (privé: alleen hij ziet hem) of alle details (titel en plek,
+  niet privé). Dat laatste is voor de privé-agenda die Brigit met details mag zien: zij ziet dan ook waar hij is als
+  hij voor Upper Spire of IV-professional weg is. Verandert de keuze, dan past Clara de bestaande blokken aan.
 """
 import datetime as dt
 import json
@@ -22,7 +25,14 @@ from . import analyse, bronnen, kluis
 MARKER = "[clara-spiegel]"
 OMSCHRIJVING = MARKER + " Doorgezet door Buurmanitor: op dit moment ben ik bezet."
 STANDAARD = {"spiegel_aan": False, "spiegel_titel": "bezet", "spiegel_raad": False}
+DETAILS = (("bezet", '"Bezet"'), ("titel", "Titel, privé (alleen jij ziet hem)"), ("details", "Alle details: titel en plek"))
 MAX_PER_RONDE = 150  # wijzigingen per ronde (elke vijf minuten); de eerste keer gaat het dus in een paar rondes
+
+
+def omschrijving(zichtbaar=False, herkomst=""):
+    if zichtbaar and herkomst:
+        return f"{MARKER} Doorgezet door Buurmanitor uit de agenda {herkomst}."
+    return OMSCHRIJVING
 
 
 def is_spiegel(a):
@@ -65,7 +75,7 @@ def _sleutel(a):
 def _bronnen(c, van, tot):
     """Alle afspraken in het venster die Martijns tijd bezet houden, één keer per afspraak."""
     from . import sync  # pylint: disable=import-outside-toplevel  (sync gebruikt deze module ook)
-    rijen = c.execute("""SELECT i.*, k.soort, k.agendas AS k_agendas FROM agenda_items i
+    rijen = c.execute("""SELECT i.*, k.soort, k.naam AS k_naam, k.agendas AS k_agendas FROM agenda_items i
                          JOIN agenda_koppelingen k ON k.id = i.koppeling_id
                          WHERE k.actief AND i.start < %s AND i.eind > %s ORDER BY i.start, k.id, i.id""", (tot, van)).fetchall()
     from . import reis  # pylint: disable=import-outside-toplevel
@@ -104,6 +114,22 @@ def _bronnen(c, van, tot):
     return sorted(uit, key=lambda x: x["start"])
 
 
+def detail(k, inst):
+    """Wat er in de blokken in dit account staat: 'bezet', 'titel' of 'details'."""
+    d = k.get("spiegel_detail") or ""
+    return d if d in dict(DETAILS) else ("titel" if inst.get("spiegel_titel") == "titel" else "bezet")
+
+
+def blok(a, soort):
+    """Het blok voor een afspraak. Pure functie."""
+    zichtbaar = soort == "details"
+    plek = ((a.get("locatie") or "").strip() or ("Online" if a.get("online") else "")) if zichtbaar else ""
+    titel = ((a.get("titel") or "").strip() or "Bezet") if soort in ("titel", "details") else "Bezet"
+    return {"titel": titel,
+            "start": a["start"], "eind": a["eind"], "voorlopig": a.get("status") == "voorlopig" or a.get("antwoord") == "voorlopig",
+            "locatie": plek[:250], "zichtbaar": zichtbaar, "herkomst": a.get("k_naam") or ""}
+
+
 def plan(c, nu=None):
     """Wat er in elk doel hoort te staan en wat er nu staat. Leest alleen de database (geen verzoeken naar buiten).
     Geeft een lijst met per account: k, kan, uitleg, agenda, wens {sleutel: blok}, staan {sleutel: rij}."""
@@ -132,15 +158,14 @@ def plan(c, nu=None):
                     continue
                 if ((a.get("ical_uid") or "").lower(), a["start"]) in uids or (a["titel"], a["start"], a["eind"]) in zelfde:
                     continue
-                wens[_sleutel(a)] = {"titel": a["titel"] if inst.get("spiegel_titel") == "titel" else "Bezet",
-                                     "start": a["start"], "eind": a["eind"],
-                                     "voorlopig": a.get("status") == "voorlopig" or a.get("antwoord") == "voorlopig"}
+                wens[_sleutel(a)] = blok(a, detail(k, inst))
         uit.append({"k": k, "kan": kan, "uitleg": uitleg, "agenda": _agendanaam(k) if kan else "", "wens": wens, "staan": staan})
     return uit
 
 
-def _anders(rij, blok):
-    return (rij["titel"], rij["start"], rij["eind"], rij["voorlopig"]) != (blok["titel"], blok["start"], blok["eind"], blok["voorlopig"])
+def _anders(rij, b):
+    return ((rij["titel"], rij["start"], rij["eind"], rij["voorlopig"], rij.get("locatie") or "", bool(rij.get("zichtbaar")))
+            != (b["titel"], b["start"], b["eind"], b["voorlopig"], b["locatie"], b["zichtbaar"]))
 
 
 def bijwerken(c, nu=None):
@@ -183,16 +208,20 @@ def bijwerken(c, nu=None):
                     break
                 b = wens[s]
                 extern = staan[s]["extern_id"] if s in wijzig else None
+                extra = {"locatie": b["locatie"], "zichtbaar": b["zichtbaar"], "herkomst": b["herkomst"]}
                 try:
-                    extern = blok_maak(tok, k["schrijfagenda"], b["titel"], b["start"], b["eind"], b["voorlopig"], extern_id=extern)
+                    extern = blok_maak(tok, k["schrijfagenda"], b["titel"], b["start"], b["eind"], b["voorlopig"], extern_id=extern, **extra)
                 except bronnen.NietGevonden:  # met de hand verwijderd: opnieuw zetten
-                    extern = blok_maak(tok, k["schrijfagenda"], b["titel"], b["start"], b["eind"], b["voorlopig"])
-                c.execute("""INSERT INTO agenda_spiegel (doel_koppeling, bron, doel_agenda, extern_id, titel, start, eind, voorlopig)
-                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    extern = blok_maak(tok, k["schrijfagenda"], b["titel"], b["start"], b["eind"], b["voorlopig"], **extra)
+                c.execute("""INSERT INTO agenda_spiegel (doel_koppeling, bron, doel_agenda, extern_id, titel, start, eind, voorlopig,
+                                                         locatie, zichtbaar)
+                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                              ON CONFLICT (doel_koppeling, bron) DO UPDATE SET doel_agenda = EXCLUDED.doel_agenda,
                                extern_id = EXCLUDED.extern_id, titel = EXCLUDED.titel, start = EXCLUDED.start,
-                               eind = EXCLUDED.eind, voorlopig = EXCLUDED.voorlopig, bijgewerkt = now()""",
-                          (k["id"], s, k["schrijfagenda"], extern, b["titel"], b["start"], b["eind"], b["voorlopig"]))
+                               eind = EXCLUDED.eind, voorlopig = EXCLUDED.voorlopig, locatie = EXCLUDED.locatie,
+                               zichtbaar = EXCLUDED.zichtbaar, bijgewerkt = now()""",
+                          (k["id"], s, k["schrijfagenda"], extern, b["titel"], b["start"], b["eind"], b["voorlopig"],
+                           b["locatie"], b["zichtbaar"]))
                 gedaan["gewijzigd" if s in wijzig else "nieuw"] += 1
                 budget -= 1
         except (bronnen.BronFout, kluis.KluisFout) as e:  # één doel mag de andere niet ophouden

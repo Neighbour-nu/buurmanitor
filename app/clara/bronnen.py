@@ -404,10 +404,12 @@ def google_wijzig(toegang, agenda_id, extern_id, titel=None, kleur=None):
               headers={"Authorization": f"Bearer {toegang}"}, methode="PATCH", body=body, soort="Google Agenda")
 
 
-def google_blok(toegang, agenda_id, titel, start, eind, voorlopig=False, extern_id=None):
-    """Een blok 'Bezet' van Clara maken of bijwerken (beschikbaarheid delen): privé, bezet, zonder herinnering."""
-    from .spiegel import OMSCHRIJVING  # pylint: disable=import-outside-toplevel
-    body = {"summary": titel, "description": OMSCHRIJVING, "visibility": "private", "transparency": "opaque",
+def google_blok(toegang, agenda_id, titel, start, eind, voorlopig=False, extern_id=None, locatie="", zichtbaar=False, herkomst=""):
+    """Een blok 'Bezet' van Clara maken of bijwerken (beschikbaarheid delen): bezet, zonder herinnering. Privé, behalve
+    met zichtbaar=True: dan zien mensen die de agenda met details mogen zien (zoals Brigit) ook de titel en de plek."""
+    from .spiegel import omschrijving  # pylint: disable=import-outside-toplevel
+    body = {"summary": titel, "description": omschrijving(zichtbaar, herkomst), "visibility": "default" if zichtbaar else "private",
+            "location": locatie if zichtbaar else "", "transparency": "opaque",
             "reminders": {"useDefault": False, "overrides": []}, "colorId": "8",
             "start": {"dateTime": start.isoformat(), "timeZone": "Europe/Amsterdam"},
             "end": {"dateTime": eind.isoformat(), "timeZone": "Europe/Amsterdam"}}
@@ -555,11 +557,12 @@ def ms_reeks(toegang, agenda_id, extern_id, herhaal, eerste=None):  # noqa: ARG0
           methode="PATCH", body={"recurrence": _ms_herhaling(herhaal, eerste)}, soort="Outlook")
 
 
-def ms_blok(toegang, agenda_id, titel, start, eind, voorlopig=False, extern_id=None):
-    """Een blok 'Bezet' van Clara maken of bijwerken (beschikbaarheid delen): privé, zonder herinnering."""
-    from .spiegel import OMSCHRIJVING  # pylint: disable=import-outside-toplevel
-    body = {"subject": titel, "body": {"contentType": "text", "content": OMSCHRIJVING},
-            "showAs": "tentative" if voorlopig else "busy", "sensitivity": "private", "isReminderOn": False,
+def ms_blok(toegang, agenda_id, titel, start, eind, voorlopig=False, extern_id=None, locatie="", zichtbaar=False, herkomst=""):
+    """Een blok 'Bezet' van Clara maken of bijwerken (beschikbaarheid delen): zonder herinnering; privé, behalve met zichtbaar."""
+    from .spiegel import omschrijving  # pylint: disable=import-outside-toplevel
+    body = {"subject": titel, "body": {"contentType": "text", "content": omschrijving(zichtbaar, herkomst)},
+            "showAs": "tentative" if voorlopig else "busy", "sensitivity": "normal" if zichtbaar else "private", "isReminderOn": False,
+            "location": {"displayName": locatie if zichtbaar else ""},
             "start": {"dateTime": start.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"},
             "end": {"dateTime": eind.astimezone(config.TZ).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Amsterdam"}}
     if extern_id:
