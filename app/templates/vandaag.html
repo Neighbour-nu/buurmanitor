@@ -61,7 +61,8 @@
   <section class="kaart" id="meldingen">
     {% set mapnaam = (meldingmappen | selectattr(0, 'equalto', meldingmap) | first)[1] %}
     <h2><span>Meldingen{% if meldingmap != 'open' %} <span class="noot">· {{ mapnaam }}</span>{% endif %}</span>
-      {% if meldingmap == 'open' and aantallen.ongelezen %}<form method="post" action="/meldingen/alles-gelezen" class="inline"><button class="knop klein" type="submit">Alles gelezen</button></form>{% endif %}</h2>
+      <span class="knoppenrij kopknoppen">{% if meldingmap == 'open' and aantallen.ongelezen %}<form method="post" action="/meldingen/alles-gelezen" class="inline"><button class="knop klein" type="submit">Alles gelezen</button></form>{% endif %}
+      <a class="knop klein" href="/meldingen{{ '?map=' ~ meldingmap if meldingmap != 'open' }}" title="Alle meldingen beheren: zoeken, filteren, meerdere tegelijk">⚙ Beheren</a></span></h2>
     <div class="meldinglijst">
     {% for m in lijst_meldingen %}
       <div class="item {{ m.niveau }} {{ 'gelezen' if m.gelezen and meldingmap == 'open' }}" id="m{{ m.id }}"><b>{{ m.titel }}</b>{% if meldingmap == 'open' and not m.gelezen %} <span class="label groen">nieuw</span>{% endif %}<br>

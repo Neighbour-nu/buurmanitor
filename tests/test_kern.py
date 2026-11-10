@@ -195,9 +195,7 @@ def _meldingen_afvinken_archiveren_verwijderen(k):
         assert f"<span>{m}</span>" in pagina
     assert 'href="/?meldingen=opgelost#meldingen"' in pagina and "<b>4</b>/4" in pagina
     assert ">Meldingen<" not in pagina.split('class="menu"')[1].split("</nav>")[0]  # geen eigen tabblad meer
-    r = k.get("/meldingen?map=archief", headers=KOP, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/?meldingen=archief#meldingen"
-    assert k.get("/meldingen", headers=KOP, follow_redirects=False).headers["location"] == "/#meldingen"
+    assert 'href="/meldingen" title="Alle meldingen beheren' in pagina
     # Afvinken, archiveren en verwijderen: weg uit Open, uit de banner, en terug op Vandaag.
     for mid, actie in zip(ids, ("opgelost", "archief", "verwijder")):
         r = k.post(f"/meldingen/{mid}/{actie}", headers=form, follow_redirects=False)
@@ -226,6 +224,41 @@ def _meldingen_afvinken_archiveren_verwijderen(k):
     assert k.post("/meldingen/999999/opgelost", headers=form).status_code == 404
     assert k.post(f"/meldingen/{ids[3]}/opgelost", headers=KOP | {"Origin": "https://kwaadwillend.nl"}).status_code == 403
     assert k.get("/?meldingen=onzin", headers=KOP).status_code == 200
+
+    # Het beheerscherm: filteren, meerdere tegelijk, prullenbak legen, bronnen stil.
+    with _db() as c:
+        c.execute("DELETE FROM meldingen")
+        ids = [meldingen.melden(c, niveau, bron, titel, tekst, sleutel=sl) for niveau, bron, titel, tekst, sl in (
+            ("belangrijk", "clara", "Nieuwe uitnodiging", "Overleg Upper Spire", "u1"), ("normaal", "bram", "Mail van Jan", "", None),
+            ("urgent", "gezondheid", "Schijf bijna vol", "nog 3 GB", "g1"), ("belangrijk", "clara", "Botsing morgen", "", "b1"))]
+    beheer = k.get("/meldingen", headers=KOP).text
+    assert all(t in beheer for t in ("Nieuwe uitnodiging", "Mail van Jan", "Schijf bijna vol", "Clara (agenda) (2)", "Server"))
+    gefilterd = k.get("/meldingen?bron=clara&q=upper", headers=KOP).text
+    assert "Nieuwe uitnodiging" in gefilterd and "Botsing morgen" not in gefilterd and "Mail van Jan" not in gefilterd
+    assert "Schijf bijna vol" in k.get("/meldingen?niveau=urgent", headers=KOP).text
+    assert "Schijf bijna vol" not in k.get("/meldingen?niveau=urgent&map=archief", headers=KOP).text
+    r = k.post("/meldingen/bulk", headers=form, data={"actie": "archief", "id": [str(ids[0]), str(ids[1])]}, follow_redirects=False)
+    assert r.status_code == 303 and "2+meldingen+gearchiveerd" in r.headers["location"]
+    r = k.post("/meldingen/bulk", headers=form, data={"actie": "verwijder", "alle": "1", "bron": "clara"}, follow_redirects=False)
+    assert "1+melding+naar+de+prullenbak" in r.headers["location"] and "bron=clara" in r.headers["location"]
+    assert k.post("/meldingen/bulk", headers=form, data={"actie": "onzin"}).status_code == 400
+    assert "Vink+eerst" in k.post("/meldingen/bulk", headers=form, data={"actie": "gelezen"}, follow_redirects=False).headers["location"]
+    with _db() as c:
+        n = meldingen.aantallen(c)
+        assert (n["open"], n["archief"], n["verwijderd"]) == (1, 2, 1)
+        c.execute("UPDATE meldingen SET status = 'verwijderd' WHERE id = %s", (ids[1],))  # zonder sleutel
+    assert "Prullenbak legen" in k.get("/meldingen?map=verwijderd", headers=KOP).text
+    k.post("/meldingen/legen", headers=form)
+    with _db() as c:
+        assert meldingen.aantallen(c)["verwijderd"] == 0
+        assert meldingen.melden(c, "belangrijk", "clara", "Botsing morgen", sleutel="b1") is None  # komt niet terug
+        assert c.execute("SELECT count(*) AS n FROM meldingen WHERE id = %s", (ids[1],)).fetchone()["n"] == 0
+        assert [m["id"] for m in meldingen.nieuw_sinds(c, 0)] == [ids[2]]
+    k.post("/meldingen/stil", headers=form, data={"stil_gezondheid": "1"})
+    with _db() as c:
+        assert meldingen.stil(c) == {"gezondheid"} and meldingen.nieuw_sinds(c, 0) == []
+        c.execute("DELETE FROM instellingen WHERE sleutel = 'meldingen_stil'")
+        c.execute("DELETE FROM meldingen")
 
 if __name__ == "__main__":
     for naam, functie in list(globals().items()):

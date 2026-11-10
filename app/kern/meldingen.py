@@ -41,6 +41,45 @@ def afhandelen(c, mid, actie):
                      (status, mid)).fetchone()
 
 
+def afhandelen_veel(c, ids, actie):
+    """Als afhandelen, voor een hele selectie in één keer; actie 'gelezen' of 'ongelezen' zet alleen dat vinkje.
+    Geeft het aantal."""
+    ids = [int(i) for i in ids][:5000]
+    if not ids:
+        return 0
+    if actie in ("gelezen", "ongelezen"):
+        return c.execute("UPDATE meldingen SET gelezen = %s WHERE id = ANY(%s)", (actie == "gelezen", ids)).rowcount
+    status = ACTIES[actie]
+    if status == "open":
+        return c.execute("UPDATE meldingen SET status = 'open', afgehandeld = NULL WHERE id = ANY(%s) AND status <> 'open'", (ids,)).rowcount
+    return c.execute("UPDATE meldingen SET status = %s, gelezen = true, afgehandeld = now() WHERE id = ANY(%s) AND status <> %s",
+                     (status, ids, status)).rowcount
+
+
+def prullenbak_legen(c):
+    """De prullenbak leegmaken. Meldingen met een sleutel blijven als 'gewist' bewaard (onzichtbaar), anders zou
+    dezelfde melding bij de volgende controle opnieuw verschijnen; de rest gaat echt weg."""
+    weg = c.execute("DELETE FROM meldingen WHERE status = 'verwijderd' AND sleutel IS NULL").rowcount
+    return weg + c.execute("UPDATE meldingen SET status = 'gewist', tekst = '', link = '' WHERE status = 'verwijderd'").rowcount
+
+
+STIL = "meldingen_stil"
+
+
+def stil(c):
+    """De bronnen waarvan meldingen niet op je scherm verschijnen (geen banner, geen bureaubladmelding)."""
+    r = c.execute("SELECT waarde FROM instellingen WHERE sleutel = %s", (STIL,)).fetchone()
+    try:
+        return set(json.loads(r["waarde"])) if r and r["waarde"] else set()
+    except ValueError:
+        return set()
+
+
+def stil_opslaan(c, bronnen):
+    c.execute("""INSERT INTO instellingen (sleutel, waarde) VALUES (%s, %s)
+                 ON CONFLICT (sleutel) DO UPDATE SET waarde = EXCLUDED.waarde, bijgewerkt = now()""", (STIL, json.dumps(sorted(bronnen))))
+
+
 def aantallen(c):
     """Per map het aantal meldingen, en bij Open ook hoeveel er nog ongelezen zijn."""
     uit = {m[0]: 0 for m in MAPPEN} | {"ongelezen": 0}
@@ -59,7 +98,7 @@ def open_meldingen(c, limiet=20):
 
 def nieuw_sinds(c, na_id):
     return c.execute("SELECT id, niveau, bron, titel, tekst, link FROM meldingen WHERE id > %s AND NOT gelezen AND status = 'open' "
-                     "AND niveau <> 'normaal' ORDER BY id", (na_id,)).fetchall()
+                     "AND niveau <> 'normaal' AND NOT (bron = ANY(%s)) ORDER BY id", (na_id, sorted(stil(c)))).fetchall()
 
 
 def telegram(tekst):

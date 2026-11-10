@@ -682,3 +682,22 @@ tr.uit td { opacity: .55; }
 .archiefregel { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--lijn); }
 .archiefwat { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 320px; }
 .archiefbeschrijving { overflow-wrap: anywhere; }
+
+/* Meldingen beheren */
+.meldingmappen.breed { grid-template-columns: repeat(4, 1fr); margin: 0 0 14px; background: var(--wit, #fff); }
+@media (max-width: 640px) { .meldingmappen.breed { grid-template-columns: 1fr 1fr; } }
+.meldingfilter { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.meldingfilter input[type=search] { flex: 1 1 220px; width: auto; }
+.meldingfilter select { width: auto; }
+.bulkbalk { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--lijn);
+  position: sticky; top: 0; background: var(--wit, #fff); z-index: 2; }
+.bulkbalk .knoppenrij { margin: 0; }
+.meldingregel { display: flex; gap: 10px; align-items: flex-start; padding: 9px 4px; border-bottom: 1px solid var(--lijn); cursor: pointer; font-weight: normal; }
+.meldingregel:hover { background: var(--ijs); }
+.meldingregel input.kies { margin-top: 3px; flex: 0 0 auto; }
+.meldingregel.gelezen .meldingwat { opacity: .7; }
+.meldingwat { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.niveaustip { flex: 0 0 4px; align-self: stretch; border-radius: 2px; background: var(--lijn); }
+.meldingregel.urgent .niveaustip { background: var(--rood, #C62828); }
+.meldingregel.belangrijk .niveaustip { background: #E0A100; }
+.kopknoppen { margin: 0; gap: 6px; flex-wrap: nowrap; }

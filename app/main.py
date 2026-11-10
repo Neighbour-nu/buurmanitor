@@ -7,6 +7,7 @@ import asyncio
 import datetime as dt
 import os
 from contextlib import AsyncExitStack, asynccontextmanager
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
@@ -250,11 +251,110 @@ def iris_nieuw(request: Request):
 
 # ---------- Meldingen ----------
 
-@app.get("/meldingen")
-def meldingen_scherm(map: str = "open"):  # pylint: disable=redefined-builtin
-    """De meldingen staan nu op Vandaag; oude links komen daar uit, in de goede map."""
+BRONNAMEN = {"clara": "Clara (agenda)", "bram": "Bram (post)", "noor": "Noor (taken)", "vera": "Vera (nieuws)",
+             "jesse": "Jesse (socials)", "iris": "Iris", "aankondiging": "Aankondigingen", "gezondheid": "Server",
+             "politiek": "Politiek", "zerohero": "ZEROHERO"}
+MELDINGEN_PER_PAGINA = 100
+BULK_ACTIES = ("gelezen", "ongelezen", *meldingen.ACTIES)
+
+
+def _bronnaam(b):
+    return BRONNAMEN.get(b, (b or "").replace("_", " ").capitalize())
+
+
+def _meldingfilter(bron):
+    """Uit de vraag of het formulier: map, bron, niveau, zoekterm, alleen ongelezen."""
     mappen = {m[0] for m in meldingen.MAPPEN}
-    return RedirectResponse(("/?meldingen=" + map if map in mappen and map != "open" else "/") + "#meldingen", status_code=303)
+    f = {"map": str(bron.get("map") or "open"), "bron": str(bron.get("bron") or "")[:40], "niveau": str(bron.get("niveau") or ""),
+         "q": str(bron.get("q") or "").strip()[:100], "ongelezen": "1" if str(bron.get("ongelezen") or "") == "1" else ""}
+    f["map"] = f["map"] if f["map"] in mappen else "open"
+    f["niveau"] = f["niveau"] if f["niveau"] in meldingen.NIVEAUS else ""
+    return f
+
+
+def _meldingwaar(f):
+    delen, args = ["status = %s"], [f["map"]]
+    if f["bron"]:
+        delen.append("bron = %s")
+        args.append(f["bron"])
+    if f["niveau"]:
+        delen.append("niveau = %s")
+        args.append(f["niveau"])
+    if f["q"]:
+        delen.append("(titel ILIKE %s OR tekst ILIKE %s)")
+        args += [f"%{f['q']}%"] * 2
+    if f["ongelezen"]:
+        delen.append("NOT gelezen")
+    return " AND ".join(delen), args
+
+
+def _meldingadres(f, **extra):
+    return "/meldingen?" + urlencode({k: v for k, v in (f | extra).items() if v and not (k == "map" and v == "open")})
+
+
+@app.get("/meldingen", response_class=HTMLResponse)
+def meldingen_scherm(request: Request, pagina: int = 1, melding: str = ""):
+    """Alle meldingen beheren: per map, filteren op bron, niveau en tekst, en meerdere tegelijk afhandelen."""
+    f = _meldingfilter(request.query_params)
+    pagina = max(1, pagina)
+    waar, args = _meldingwaar(f)
+    volgorde = "gelezen, CASE niveau WHEN 'urgent' THEN 0 WHEN 'belangrijk' THEN 1 ELSE 2 END, id DESC" if f["map"] == "open" \
+        else "coalesce(afgehandeld, tijd) DESC, id DESC"
+    with db.pool.connection() as c:
+        totaal = c.execute(f"SELECT count(*) AS n FROM meldingen WHERE {waar}", args).fetchone()["n"]
+        lijst = c.execute(f"SELECT * FROM meldingen WHERE {waar} ORDER BY {volgorde} LIMIT %s OFFSET %s",
+                          (*args, MELDINGEN_PER_PAGINA, (pagina - 1) * MELDINGEN_PER_PAGINA)).fetchall()
+        bronnen = c.execute("""SELECT bron, count(*) FILTER (WHERE status = %s) AS n, count(*) AS totaal,
+                                      count(*) FILTER (WHERE status = 'open' AND NOT gelezen) AS ongelezen
+                               FROM meldingen WHERE status <> 'gewist' GROUP BY bron ORDER BY bron""", (f["map"],)).fetchall()
+        aantallen = meldingen.aantallen(c)
+        stil = meldingen.stil(c)
+    return templates.TemplateResponse("meldingen.html", ctx(
+        request, "vandaag", lijst=lijst, f=f, totaal=totaal, pagina=pagina, meer=pagina * MELDINGEN_PER_PAGINA < totaal,
+        bronnen=bronnen, bronnaam=_bronnaam, stil=stil, aantallen=aantallen, meldingmappen=meldingen.MAPPEN,
+        niveaus=meldingen.NIVEAUS, adres=lambda **x: _meldingadres(f, **x), melding=melding,
+        telegram=bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID)))
+
+
+@app.post("/meldingen/bulk")
+async def meldingen_bulk(request: Request):
+    """Meerdere meldingen tegelijk: de aangevinkte, of (alle=1) alles wat aan het filter voldoet."""
+    controleer_herkomst(request)
+    form = await request.form()
+    f = _meldingfilter(form)
+    actie = str(form.get("actie", ""))
+    if actie not in BULK_ACTIES:
+        raise HTTPException(400)
+    with db.pool.connection() as c:
+        if form.get("alle") == "1":
+            waar, args = _meldingwaar(f)
+            ids = [r["id"] for r in c.execute(f"SELECT id FROM meldingen WHERE {waar}", args).fetchall()]
+        else:
+            ids = [int(i) for i in form.getlist("id") if str(i).isdigit()]
+        n = meldingen.afhandelen_veel(c, ids, actie)
+    wat = {"gelezen": "als gelezen gemarkeerd", "ongelezen": "als ongelezen gemarkeerd", "opgelost": "afgevinkt",
+           "archief": "gearchiveerd", "verwijder": "naar de prullenbak", "terug": "teruggezet naar Open"}[actie]
+    tekst = f"{n} melding{'en' if n != 1 else ''} {wat}." if n else ("Vink eerst meldingen aan." if not ids else "Er veranderde niets.")
+    return RedirectResponse(_meldingadres(f, melding=tekst), status_code=303)
+
+
+@app.post("/meldingen/legen")
+def meldingen_legen(request: Request):
+    controleer_herkomst(request)
+    with db.pool.connection() as c:
+        n = meldingen.prullenbak_legen(c)
+    return RedirectResponse(_meldingadres({"map": "verwijderd"}, melding=f"Prullenbak geleegd ({n})."), status_code=303)
+
+
+@app.post("/meldingen/stil")
+async def meldingen_stil(request: Request):
+    """Per bron: verschijnen de meldingen op je scherm (banner en bureaublad) of alleen in de lijst."""
+    controleer_herkomst(request)
+    form = await request.form()
+    with db.pool.connection() as c:
+        alle = {r["bron"] for r in c.execute("SELECT DISTINCT bron FROM meldingen").fetchall()}
+        meldingen.stil_opslaan(c, {b for b in alle if form.get(f"stil_{b}") == "1"})
+    return RedirectResponse(_meldingadres(_meldingfilter(form), melding="Opgeslagen.") + "#bronnen", status_code=303)
 
 
 def _terug_meldingen(request):

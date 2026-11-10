@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block titel %}Meldingen · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Meldingen</h1>
+    <p class="motto">Alle meldingen op een rij: zoeken, filteren en meerdere tegelijk afhandelen. Hieronder kies je ook welke bronnen op je scherm mogen verschijnen.</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="/#meldingen">Terug naar Vandaag</a></div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+
+<nav class="meldingmappen breed" aria-label="Mappen voor meldingen">
+  {% for status, naam, uitleg in meldingmappen %}
+  <a href="{{ adres(map=status, pagina='') }}" class="{{ 'actief' if status == f.map }}" title="{{ uitleg }}" {% if status == f.map %}aria-current="page"{% endif %}>
+    <span>{{ naam }}</span><span class="aantal">{% if status == 'open' and aantallen.ongelezen %}<b>{{ aantallen.ongelezen }}</b>/{% endif %}{{ aantallen[status] }}</span></a>
+  {% endfor %}
+</nav>
+
+<section class="kaart">
+  <form method="get" action="/meldingen" class="meldingfilter">
+    {% if f.map != 'open' %}<input type="hidden" name="map" value="{{ f.map }}">{% endif %}
+    <input type="search" name="q" value="{{ f.q }}" placeholder="Zoek in titel en tekst" aria-label="Zoek in de meldingen">
+    <select name="bron" aria-label="Bron"><option value="">Alle bronnen</option>
+      {% for b in bronnen if b.n or b.bron == f.bron %}<option value="{{ b.bron }}" {{ 'selected' if b.bron == f.bron }}>{{ bronnaam(b.bron) }} ({{ b.n }})</option>{% endfor %}</select>
+    <select name="niveau" aria-label="Niveau"><option value="">Alle niveaus</option>
+      {% for n in niveaus %}<option value="{{ n }}" {{ 'selected' if n == f.niveau }}>{{ n }}</option>{% endfor %}</select>
+    {% if f.map == 'open' %}<label class="vink"><input type="checkbox" name="ongelezen" value="1" {{ 'checked' if f.ongelezen }}> Alleen ongelezen</label>{% endif %}
+    <button class="knop" type="submit">Filteren</button>
+    {% if f.q or f.bron or f.niveau or f.ongelezen %}<a class="klein" href="{{ adres(q='', bron='', niveau='', ongelezen='') }}">filter wissen</a>{% endif %}
+  </form>
+
+  <form method="post" action="/meldingen/bulk" id="meldingbulk">
+    {% for k in ('map', 'bron', 'niveau', 'q', 'ongelezen') %}<input type="hidden" name="{{ k }}" value="{{ f[k] }}">{% endfor %}
+    <div class="bulkbalk">
+      <label class="vink"><input type="checkbox" id="allesaan" aria-label="Alles op deze pagina aanvinken"> <span id="gekozen">{{ totaal }} melding{{ 'en' if totaal != 1 }}</span></label>
+      <span class="knoppenrij">
+        {% if f.map == 'open' %}
+          <button class="knop klein vol" name="actie" value="opgelost">✓ Opgelost</button>
+          <button class="knop klein" name="actie" value="gelezen">Gelezen</button>
+          <button class="knop klein" name="actie" value="ongelezen">Ongelezen</button>
+          <button class="knop klein" name="actie" value="archief">Archiveren</button>
+          <button class="knop klein" name="actie" value="verwijder">Verwijderen</button>
+        {% elif f.map == 'verwijderd' %}
+          <button class="knop klein" name="actie" value="terug">Terugzetten</button>
+        {% else %}
+          <button class="knop klein" name="actie" value="terug">Terug naar Open</button>
+          {% if f.map == 'opgelost' %}<button class="knop klein" name="actie" value="archief">Archiveren</button>{% endif %}
+          <button class="knop klein" name="actie" value="verwijder">Verwijderen</button>
+        {% endif %}
+      </span>
+      {% if totaal > lijst|length %}<label class="vink noot" title="Ook de meldingen op de andere pagina's"><input type="checkbox" name="alle" value="1"> alle {{ totaal }} die aan het filter voldoen</label>{% endif %}
+    </div>
+    <div class="meldingtabel">
+    {% for m in lijst %}
+      <label class="meldingregel {{ m.niveau }} {{ 'gelezen' if m.gelezen and f.map == 'open' }}" id="m{{ m.id }}">
+        <input type="checkbox" name="id" value="{{ m.id }}" class="kies" aria-label="{{ m.titel }}">
+        <span class="niveaustip" title="{{ m.niveau }}"></span>
+        <span class="meldingwat"><span><b>{{ m.titel }}</b>{% if f.map == 'open' and not m.gelezen %} <span class="label groen">nieuw</span>{% endif %}</span>
+          {% if m.tekst %}<span class="meldingtekst">{{ m.tekst|truncate(240) }}</span>{% endif %}
+          <span class="noot">{{ bronnaam(m.bron) }} · {{ geleden(m.tijd) }}{% if m.afgehandeld and f.map != 'open' %} · afgehandeld {{ geleden(m.afgehandeld) }}{% endif %}{% if m.link %} · <a href="{{ m.link }}">bekijk</a>{% endif %}</span></span>
+      </label>
+    {% else %}
+      <p class="noot">{% if f.q or f.bron or f.niveau or f.ongelezen %}Geen meldingen die aan het filter voldoen.{% elif f.map == 'open' %}Geen open meldingen.{% elif f.map == 'opgelost' %}Nog niets afgevinkt.{% elif f.map == 'archief' %}Het archief is leeg.{% else %}De prullenbak is leeg.{% endif %}</p>
+    {% endfor %}
+    </div>
+  </form>
+  {% if pagina > 1 or meer %}
+  <p class="knoppenrij">
+    {% if pagina > 1 %}<a class="knop klein" href="{{ adres(pagina=pagina - 1) }}">← Nieuwer</a>{% endif %}
+    {% if meer %}<a class="knop klein" href="{{ adres(pagina=pagina + 1) }}">Ouder →</a>{% endif %}
+  </p>
+  {% endif %}
+  {% if f.map == 'verwijderd' and aantallen.verwijderd %}
+  <form method="post" action="/meldingen/legen"><button class="knop klein" type="submit"
+    onclick="return confirm('De prullenbak definitief leegmaken? Dit kun je niet terugdraaien.')">Prullenbak legen</button>
+    <span class="noot">Een melding die Buurmanitor bij een volgende controle opnieuw zou maken, onthoudt hij wel, zodat hij niet terugkomt.</span></form>
+  {% endif %}
+</section>
+
+<section class="kaart" id="bronnen">
+  <h2>Wat verschijnt op je scherm</h2>
+  <p class="noot">Urgente en belangrijke meldingen komen als banner en (als je dat toestaat) op je bureaublad. Zet een bron op stil
+    en zijn meldingen staan alleen nog in de lijst.</p>
+  {% if bronnen %}
+  <form method="post" action="/meldingen/stil">
+    {% for k in ('map', 'bron', 'niveau', 'q', 'ongelezen') %}<input type="hidden" name="{{ k }}" value="{{ f[k] }}">{% endfor %}
+    <table class="tabel">
+      <tr><th>Bron</th><th>Meldingen</th><th>Stil</th></tr>
+      {% for b in bronnen %}
+      <tr><td><a href="{{ adres(bron=b.bron, pagina='') }}">{{ bronnaam(b.bron) }}</a></td>
+        <td class="noot">{{ b.totaal }}{% if b.ongelezen %}, {{ b.ongelezen }} ongelezen{% endif %}</td>
+        <td><input type="checkbox" name="stil_{{ b.bron }}" value="1" {{ 'checked' if b.bron in stil }} aria-label="{{ bronnaam(b.bron) }} stil"></td></tr>
+      {% endfor %}
+    </table>
+    <p><button class="knop vol" type="submit">Opslaan</button></p>
+  </form>
+  {% else %}<p class="noot">Nog geen meldingen.</p>{% endif %}
+  <div class="meldingstatus" id="meldingstatus">
+    <p class="noot"><span class="tekst">Bureaubladmeldingen: even kijken…</span></p>
+    <p class="knoppenrij"><button id="meldingen-aan" class="knop klein" type="button" hidden>Meldingen op dit apparaat aanzetten</button>
+      <button id="meldingen-test" class="knop klein" type="button" hidden>Testmelding sturen</button></p>
+  </div>
+  <p class="noot"><a href="/meldingen/aankondigingen">Aankondigingen</a> van vergaderingen en taken instellen.
+    Telegram voor urgente meldingen: {{ 'ingesteld' if telegram else 'niet ingesteld' }}.</p>
+</section>
+
+<script>
+(function () {
+  const vorm = document.getElementById("meldingbulk");
+  if (!vorm) return;
+  const alles = document.getElementById("allesaan"), teller = document.getElementById("gekozen");
+  const vakjes = () => Array.from(vorm.querySelectorAll("input.kies"));
+  const standaard = teller.textContent;
+  function tel() {
+    const n = vakjes().filter(v => v.checked).length;
+    teller.textContent = n ? n + " gekozen" : standaard;
+    alles.checked = n > 0 && n === vakjes().length;
+    alles.indeterminate = n > 0 && n < vakjes().length;
+  }
+  alles.addEventListener("change", () => { vakjes().forEach(v => { v.checked = alles.checked; }); tel(); });
+  vorm.addEventListener("change", e => { if (e.target.classList.contains("kies")) tel(); });
+  // Klik op een link in een regel: volgen, niet aanvinken.
+  vorm.querySelectorAll(".meldingregel a").forEach(a => a.addEventListener("click", e => e.stopPropagation()));
+})();
+</script>
+{% endblock %}
