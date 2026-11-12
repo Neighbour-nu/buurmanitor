@@ -1,6 +1,7 @@
 """De schermen van Bram: de postkamer (/bram) en de mail-instellingen (/bram/instellingen).
 
-Bram doet niets in je mailbox uit zichzelf: archiveren, labelen en gelezen markeren gebeurt alleen na jouw klik.
+Bram doet niets in je mailbox uit zichzelf: archiveren, labelen en gelezen markeren gebeurt alleen na jouw klik, of
+door een regel die je zelf hebt gemaakt (/bram/regels).
 Koppelen loopt via dezelfde apps en hetzelfde terugkeeradres als Clara (/clara/koppel/.../terug); daar ziet de
 portal aan het koppelverzoek dat het voor Bram is.
 """
@@ -18,7 +19,7 @@ from ..clara import kluis, web as clara_web
 from ..clara.web import _nieuwe_staat  # koppelverzoeken delen de tabel oauth_staat met Clara
 from ..kern import claude, config, db, planner
 from ..kern.web import DAGEN, controleer_herkomst, ctx, templates
-from . import bronnen, gesprek, mailhtml, sync
+from . import bronnen, gesprek, mailhtml, regels, sync
 
 router = APIRouter()
 DOMEINEN = config.DOMEINEN
@@ -293,8 +294,12 @@ def bericht_scherm(request: Request, bid: int, melding: str = "", fout: str = ""
         recent = sync.recente_mappen(c, account=k["id"])
         weergave = mailweergave(volledig, b["van_adres"], bool(beelden), _vertrouwd(c))
         verzoek = vergaderverzoek(c, b, volledig)
+    namen = [x["naam"] for x in (volledig or {}).get("bijlagen") or []]
+    factuur = bool(namen) and (bool(regels.FACTUUR.search(b["onderwerp"])) or any(regels.FACTUUR.search(n) for n in namen))
+    regel_link = "/bram/regels?" + urlencode({"van": b["van_adres"], "account": k["id"], "naam": b["van_naam"][:60]}
+                                            | ({"factuur": "1", "map": "Facturen", "naam": f"Facturen van {b['van_naam']}"[:60]} if factuur else {})) + "#regelvorm"
     return templates.TemplateResponse("bram_bericht.html", ctx(
-        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, weergave=weergave, verzoek=verzoek, groep_nu=groep(b), groepen=GROEPEN, labels=labels,
+        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, weergave=weergave, verzoek=verzoek, regel_link=regel_link, groep_nu=groep(b), groepen=GROEPEN, labels=labels,
         label_namen=dict(labels), lees_fout=lees_fout, berichten=berichten, mappen=mappen_, recent=recent,
         voorstellen=voorstellen, klaar=klaar, doelen=clara_web._schrijfdoelen(agendas),  # pylint: disable=protected-access
         eigen=clara_web._reisdoelen(agendas), melding=melding, fout=fout, tz=config.TZ,  # pylint: disable=protected-access
@@ -628,3 +633,135 @@ async def koppeling_bijwerken(request: Request, kid: int):
                   (str(f.get("naam", "")).strip()[:80] or k["naam"], domein if domein in dict(DOMEINEN) else k["domein"],
                    f.get("actief") == "1", f.get("claude") == "1", kid))
     return _terug("/bram/instellingen", melding="Opgeslagen.")
+
+
+# ---------------------------------------------------------------- regels voor binnenkomende mail
+
+def _mapnamen(c, ks):
+    """Namen van mappen en labels per account, voor de keuzelijst bij het maken van een regel (wat lukt)."""
+    mappen_, labels_ = set(), set()
+    for k in ks:
+        try:
+            mappen_ |= {n for _, n in sync.mappen(c, k)}
+            labels_ |= {n for _, n in sync.labels(c, k)}
+        except Exception:  # noqa: BLE001  (een account dat niet bereikbaar is: dan zonder voorbeelden)
+            continue
+    return sorted(mappen_, key=str.lower), sorted(labels_, key=str.lower)
+
+
+@router.get("/bram/regels", response_class=HTMLResponse)
+def regels_scherm(request: Request, bewerk: int = 0, melding: str = "", fout: str = ""):
+    """De regels: lijst, nieuwe regel (ook vooraf ingevuld vanuit een mail) en het logboek."""
+    qp = request.query_params
+    with db.pool.connection() as c:
+        ks = sync.koppelingen(c, alleen_actief=True)
+        lijst = c.execute("""SELECT r.*, k.naam AS koppeling FROM post_regels r LEFT JOIN post_koppelingen k ON k.id = r.koppeling_id
+                             ORDER BY r.volgorde, r.id""").fetchall()
+        log = c.execute("""SELECT l.*, r.naam AS regel, k.naam AS koppeling FROM post_regel_log l
+                           LEFT JOIN post_regels r ON r.id = l.regel_id LEFT JOIN post_koppelingen k ON k.id = l.koppeling_id
+                           ORDER BY l.id DESC LIMIT 40""").fetchall()
+        mapnamen, labelnamen = _mapnamen(c, ks)
+    vorm = next((dict(r) for r in lijst if r["id"] == bewerk), None)
+    if vorm is None:  # nieuw, eventueel vooraf ingevuld (vanuit een mail of na een fout)
+        v = {k: qp.get(k, "") for k in regels.TEKSTVELDEN} | {"bijlage": qp.get("bijlage", ""), "factuur": qp.get("factuur") == "1"}
+        vooraf = qp.get("vooraf") == "1"  # teruggestuurd na een fout: vinkjes zoals ze stonden
+        a = {"gelezen": qp.get("gelezen") == "1" if vooraf else True, "map": qp.get("map", ""), "label": qp.get("label", ""),
+             "archiveren": qp.get("archiveren") == "1", "maken": qp.get("maken") == "1" if vooraf else True}
+        vorm = {"id": 0, "naam": qp.get("naam", ""), "koppeling_id": int(qp.get("account") or 0) or None, "voorwaarden": v, "acties": a}
+    return templates.TemplateResponse("bram_regels.html", ctx(
+        request, "bram", lijst=lijst, log=log, ks=ks, vorm=vorm, beschrijf=regels.beschrijf, mapnamen=mapnamen,
+        labelnamen=labelnamen, melding=melding, fout=fout, tz=config.TZ))
+
+
+@router.post("/bram/regels")
+async def regel_opslaan(request: Request):
+    controleer_herkomst(request)
+    f = await request.form()
+    v, a, fout = regels.uit_formulier(f)
+    rid = int(f.get("id") or 0)
+    naam = str(f.get("naam") or "").strip()[:120]
+    try:
+        account = int(f.get("account") or 0) or None
+    except ValueError:
+        account = None
+    if fout:
+        terug = {k: str(f.get(k) or "") for k in (*regels.TEKSTVELDEN, "bijlage", "factuur", "gelezen", "archiveren", "map", "label",
+                                                  "maken", "naam", "account")}
+        return _terug("/bram/regels?" + urlencode({k: w for k, w in terug.items() if w} | {"vooraf": "1"}) + "#regelvorm",
+                      fout=fout)
+    if not naam:
+        naam = (f"Naar {a['map']}" if a.get("map") else "Regel") + (f" ({regels.beschrijf(v, {})[0]})" if v else "")
+        naam = naam[:120]
+
+    def doe():
+        with db.pool.connection() as c:
+            if account and not c.execute("SELECT 1 FROM post_koppelingen WHERE id = %s", (account,)).fetchone():
+                raise HTTPException(400)
+            if rid:
+                r = c.execute("""UPDATE post_regels SET naam = %s, koppeling_id = %s, voorwaarden = %s, acties = %s
+                                 WHERE id = %s RETURNING id""", (naam, account, json.dumps(v), json.dumps(a), rid)).fetchone()
+                if not r:
+                    raise HTTPException(404)
+                return rid
+            return c.execute("""INSERT INTO post_regels (naam, koppeling_id, voorwaarden, acties, volgorde)
+                                VALUES (%s, %s, %s, %s, (SELECT coalesce(max(volgorde), 0) + 1 FROM post_regels)) RETURNING id""",
+                             (naam, account, json.dumps(v), json.dumps(a))).fetchone()["id"]
+    nieuw_id = await asyncio.to_thread(doe)
+    return _terug(f"/bram/regels/{nieuw_id}/probeer", melding=f"Regel '{naam}' opgeslagen. Hij geldt vanaf nu voor nieuwe mail. "
+                  "Hieronder zie je welke mails die nu in je inbox staan eraan voldoen.")
+
+
+@router.post("/bram/regels/{rid:int}/{actie}")
+async def regel_actie(request: Request, rid: int, actie: str):
+    """Aan of uit, hoger of lager in de volgorde, verwijderen, of nu toepassen op mails uit de inbox."""
+    controleer_herkomst(request)
+    if actie not in ("aan", "uit", "omhoog", "omlaag", "weg", "toepassen"):
+        raise HTTPException(404)
+    f = await request.form()
+
+    def doe():
+        with db.pool.connection() as c:
+            r = c.execute("SELECT * FROM post_regels WHERE id = %s", (rid,)).fetchone()
+            if not r:
+                raise HTTPException(404)
+            if actie in ("aan", "uit"):
+                c.execute("UPDATE post_regels SET actief = %s WHERE id = %s", (actie == "aan", rid))
+                return f"Regel '{r['naam']}' staat {actie}."
+            if actie == "weg":
+                c.execute("DELETE FROM post_regels WHERE id = %s", (rid,))
+                return f"Regel '{r['naam']}' verwijderd."
+            if actie == "toepassen":
+                ids = [int(i) for i in f.getlist("id") if str(i).isdigit()]
+                gelukt, fouten = regels.nu_toepassen(c, r, ids)
+                return f"Regel '{r['naam']}' toegepast op {gelukt} mail{'s' if gelukt != 1 else ''}." + (
+                    f" Niet gelukt: {'; '.join(fouten)[:300]}" if fouten else "")
+            lijst = [x["id"] for x in c.execute("SELECT id FROM post_regels ORDER BY volgorde, id").fetchall()]
+            i = lijst.index(rid)
+            j = i - 1 if actie == "omhoog" else i + 1
+            if 0 <= j < len(lijst):
+                lijst[i], lijst[j] = lijst[j], lijst[i]
+            for n, x in enumerate(lijst, 1):
+                c.execute("UPDATE post_regels SET volgorde = %s WHERE id = %s", (n, x))
+            return ""
+    try:
+        tekst = await asyncio.to_thread(doe)
+    except (bronnen.BronFout, kluis.KluisFout) as e:
+        return _terug("/bram/regels", fout=str(e)[:300])
+    return _terug("/bram/regels#regels", **({"melding": tekst} if tekst else {}))
+
+
+@router.get("/bram/regels/{rid:int}/probeer", response_class=HTMLResponse)
+def regel_probeer(request: Request, rid: int, melding: str = ""):
+    """Welke mails in de inbox nu aan de regel voldoen, met een knop om de regel daar meteen op toe te passen."""
+    with db.pool.connection() as c:
+        r = c.execute("""SELECT r.*, k.naam AS koppeling FROM post_regels r LEFT JOIN post_koppelingen k ON k.id = r.koppeling_id
+                         WHERE r.id = %s""", (rid,)).fetchone()
+        if not r:
+            raise HTTPException(404)
+        try:
+            passend, onbekend = regels.proef(c, r)
+            fout = ""
+        except (bronnen.BronFout, kluis.KluisFout) as e:
+            passend, onbekend, fout = [], 0, str(e)
+    return templates.TemplateResponse("bram_regel_proef.html", ctx(
+        request, "bram", r=r, passend=passend, onbekend=onbekend, beschrijf=regels.beschrijf, melding=melding, fout=fout, tz=config.TZ))

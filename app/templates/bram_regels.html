@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block titel %}Regels · Post · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Regels voor binnenkomende mail</h1>
+    <p class="motto">Bram verwerkt bepaalde mails meteen als ze binnenkomen, in Gmail en Outlook. Bijvoorbeeld: facturen als gelezen markeren
+      en naar de map Facturen. De eerste regel die past, wordt uitgevoerd.</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="/bram">Terug naar Post</a></div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+
+<section class="kaart" id="regels">
+  <h2>Je regels</h2>
+  {% if lijst %}
+  <table class="tabel regeltabel">
+    <tr><th></th><th>Regel</th><th>Als</th><th>Dan</th><th>Gedaan</th><th></th></tr>
+    {% for r in lijst %}{% set als, dan = beschrijf(r.voorwaarden, r.acties) %}
+    <tr class="{{ '' if r.actief else 'uitgezet' }}">
+      <td class="volgorde"><form method="post" class="inline">
+        <button class="pijl" formaction="/bram/regels/{{ r.id }}/omhoog" title="Hoger" aria-label="{{ r.naam }} hoger" {{ 'disabled' if loop.first }}>▲</button>
+        <button class="pijl" formaction="/bram/regels/{{ r.id }}/omlaag" title="Lager" aria-label="{{ r.naam }} lager" {{ 'disabled' if loop.last }}>▼</button></form></td>
+      <td><b>{{ r.naam }}</b><br><span class="noot">{{ r.koppeling or 'alle mailboxen' }}{% if not r.actief %} · <b>uit</b>{% endif %}</span></td>
+      <td>{{ als }}</td>
+      <td>{{ dan }}</td>
+      <td class="noot">{{ r.aantal }}×{% if r.laatst %}<br>{{ geleden(r.laatst) }}{% endif %}</td>
+      <td><form method="post" class="knoppenrij regelknoppen">
+        <a class="knop klein" href="/bram/regels?bewerk={{ r.id }}#regelvorm">Bewerken</a>
+        <a class="knop klein" href="/bram/regels/{{ r.id }}/probeer">Probeer</a>
+        {% if r.actief %}<button class="knop klein" formaction="/bram/regels/{{ r.id }}/uit">Uitzetten</button>
+        {% else %}<button class="knop klein vol" formaction="/bram/regels/{{ r.id }}/aan">Aanzetten</button>{% endif %}
+        <button class="knop klein" formaction="/bram/regels/{{ r.id }}/weg" onclick="return confirm('Regel {{ r.naam|e }} verwijderen?')">Verwijderen</button>
+      </form></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="noot">Nog geen regels. Maak er hieronder een, of open een mail en kies "Regel maken voor mail als deze".</p>
+  {% endif %}
+</section>
+
+<section class="kaart" id="regelvorm">
+  <h2>{{ 'Regel bewerken' if vorm.id else 'Nieuwe regel' }}</h2>
+  {% set v = vorm.voorwaarden %}{% set a = vorm.acties %}
+  <form method="post" action="/bram/regels" class="regelvorm">
+    <input type="hidden" name="id" value="{{ vorm.id }}">
+    <div class="velden">
+      <label>Naam <input type="text" name="naam" value="{{ vorm.naam }}" placeholder="bijvoorbeeld Facturen"></label>
+      <label>Voor <select name="account"><option value="">Alle mailboxen</option>
+        {% for k in ks %}<option value="{{ k.id }}" {{ 'selected' if vorm.koppeling_id == k.id }}>{{ k.naam }} ({{ 'Gmail' if k.soort == 'google' else 'Outlook' }})</option>{% endfor %}</select></label>
+    </div>
+    <fieldset>
+      <legend>Als de mail</legend>
+      <p class="noot">Alles wat je invult moet kloppen. Meerdere woorden met komma's ertussen: één ervan is genoeg. Hoofdletters maken niet uit.</p>
+      <div class="velden">
+        <label class="vink breed"><input type="checkbox" name="factuur" value="1" {{ 'checked' if v.factuur }}> lijkt op een factuur
+          <span class="noot">(een bijlage, en "factuur", "invoice", "nota", "rekening" en dergelijke in het onderwerp of de naam van de bijlage)</span></label>
+        <label>van <input type="text" name="van" value="{{ v.van }}" placeholder="adres, domein of naam, bijv. @kpn.com, Vodafone"></label>
+        <label>aan <input type="text" name="aan" value="{{ v.aan }}" placeholder="bijv. facturen@neighbour.nu"></label>
+        <label>onderwerp bevat <input type="text" name="onderwerp" value="{{ v.onderwerp }}" placeholder="bijv. factuur, invoice"></label>
+        <label>tekst bevat <input type="text" name="tekst" value="{{ v.tekst }}" placeholder="in het onderwerp of het begin van de mail"></label>
+        <label>bijlage <select name="bijlage"><option value="">maakt niet uit</option>
+          <option value="ja" {{ 'selected' if v.bijlage == 'ja' }}>met bijlage</option><option value="nee" {{ 'selected' if v.bijlage == 'nee' }}>zonder bijlage</option></select></label>
+        <label>naam bijlage bevat <input type="text" name="bijlage_naam" value="{{ v.bijlage_naam }}" placeholder="bijv. factuur, .pdf"></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Dan</legend>
+      <div class="velden">
+        <label class="vink breed"><input type="checkbox" name="gelezen" value="1" {{ 'checked' if a.gelezen }}> als gelezen markeren</label>
+        <label>verplaatsen naar map <input type="text" name="map" value="{{ a.map }}" list="mapnamen" placeholder="bijv. Facturen (leeg: niet verplaatsen)"></label>
+        <label class="vink"><input type="checkbox" name="maken" value="1" {{ 'checked' if a.maken }}> map (of label) maken als hij er nog niet is</label>
+        <label>label (Gmail) of categorie (Outlook) <input type="text" name="label" value="{{ a.label }}" list="labelnamen" placeholder="leeg: geen label"></label>
+        <label class="vink breed"><input type="checkbox" name="archiveren" value="1" {{ 'checked' if a.archiveren }}> archiveren (uit de inbox, als je geen map kiest)</label>
+      </div>
+      <datalist id="mapnamen">{% for n in mapnamen %}<option value="{{ n }}">{% endfor %}</datalist>
+      <datalist id="labelnamen">{% for n in labelnamen %}<option value="{{ n }}">{% endfor %}</datalist>
+      <p class="noot">In Gmail is een map een label: de mail krijgt het label en gaat uit de inbox. Een map zoek Bram op naam op in elke
+        mailbox, dus "Facturen" vindt ook "Administratie/Facturen" als die naam maar één keer voorkomt.</p>
+    </fieldset>
+    <p class="knoppenrij"><button class="knop vol" type="submit">{{ 'Opslaan' if vorm.id else 'Regel maken' }}</button>
+      {% if vorm.id %}<a class="knop" href="/bram/regels#regelvorm">Annuleren</a>{% endif %}</p>
+  </form>
+</section>
+
+<section class="kaart" id="logboek">
+  <h2>Wat de regels deden</h2>
+  {% for l in log %}
+    <p class="logregel {{ 'urgent' if l.fout }}"><span class="noot">{{ geleden(l.tijd) }} · {{ l.koppeling or '' }} · {{ l.regel or 'verwijderde regel' }}</span><br>
+      <b>{{ l.onderwerp }}</b> <span class="noot">van {{ l.van }}</span><br>
+      {% if l.fout %}<span class="rood">Niet gelukt: {{ l.fout }}</span>{% else %}{{ l.wat }}{% endif %}</p>
+  {% else %}<p class="noot">Nog niets gedaan.</p>{% endfor %}
+</section>
+{% endblock %}

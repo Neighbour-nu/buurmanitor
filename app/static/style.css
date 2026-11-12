@@ -701,3 +701,15 @@ tr.uit td { opacity: .55; }
 .meldingregel.urgent .niveaustip { background: var(--rood, #C62828); }
 .meldingregel.belangrijk .niveaustip { background: #E0A100; }
 .kopknoppen { margin: 0; gap: 6px; flex-wrap: nowrap; }
+
+/* Bram: regels */
+.regeltabel td { vertical-align: top; }
+.regeltabel tr.uitgezet td:not(:last-child) { opacity: .55; }
+.regeltabel .volgorde { white-space: nowrap; width: 1%; }
+.pijl { border: 1px solid var(--lijn); background: var(--wit); border-radius: 4px; cursor: pointer; font-size: 11px; padding: 2px 5px; color: var(--blauwdonker); }
+.pijl[disabled] { opacity: .3; cursor: default; }
+.regelknoppen { justify-content: flex-end; margin: 0; }
+.regelvorm fieldset { border: 1px solid var(--lijn); border-radius: 6px; padding: 10px 14px; margin: 12px 0; }
+.regelvorm legend { font-weight: 600; padding: 0 6px; color: var(--blauwdonker); }
+.logregel { padding: 6px 0; border-bottom: 1px solid var(--lijn); margin: 0; }
+.logregel .rood { color: var(--rood, #C62828); }

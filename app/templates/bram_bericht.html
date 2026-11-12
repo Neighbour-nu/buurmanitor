@@ -10,6 +10,7 @@
   <div class="knoppen">
     <a class="knop" href="/bram">Terug naar de post</a>
     {% if b.link %}<a class="knop" href="{{ b.link }}" target="_blank" rel="noopener">Openen in {{ 'Gmail' if k.soort == 'google' else 'Outlook' }}</a>{% endif %}
+    <a class="knop" href="{{ regel_link }}" title="Een regel maken zodat Bram mail als deze voortaan vanzelf verwerkt">⚡ Regel maken</a>
     {% if b.status == 'open' %}<form method="post" class="inline"><input type="hidden" name="terug" value="bericht">
       <button class="knop" formaction="/bram/bericht/{{ b.id }}/archiveren">Archiveren</button>
       <button class="knop" formaction="/bram/bericht/{{ b.id }}/verwijderen" onclick="return confirm('Deze mail naar de prullenbak?')">Verwijderen</button>

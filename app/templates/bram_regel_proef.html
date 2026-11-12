@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block titel %}Regel proberen · Post · Buurmanitor{% endblock %}
+{% block inhoud %}
+{% set als, dan = beschrijf(r.voorwaarden, r.acties) %}
+<section class="kopregel">
+  <div>
+    <h1>{{ r.naam }}</h1>
+    <p class="motto">Als {{ als }}: {{ dan }}. Voor {{ r.koppeling or 'alle mailboxen' }}.{% if not r.actief %} Deze regel staat uit.{% endif %}</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="/bram/regels">Terug naar de regels</a></div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+<section class="kaart">
+  <h2>Mails in je inbox die nu aan de regel voldoen <span class="aantal">{{ passend|length }}</span></h2>
+  {% if onbekend %}<p class="noot">Bij {{ onbekend }} mail{{ 's' if onbekend != 1 }} kon Bram de bijlagen niet bekijken; die staan er niet bij.</p>{% endif %}
+  {% if passend %}
+  <form method="post" action="/bram/regels/{{ r.id }}/toepassen">
+    {% for b in passend %}
+    <label class="meldingregel"><input type="checkbox" name="id" value="{{ b.id }}" class="kies" checked aria-label="{{ b.onderwerp }}">
+      <span class="meldingwat"><span><b>{{ b.onderwerp }}</b></span>
+        <span class="noot">{{ b.van_naam }} · {{ b.koppeling }} · {{ b.ontvangen.astimezone(tz).strftime('%d-%m %H.%M') }}{% if b.bijlagen %} · 📎 {{ b.bijlagen|join(', ')|truncate(80) }}{% endif %}</span></span></label>
+    {% endfor %}
+    <p class="knoppenrij"><button class="knop vol" type="submit">Regel nu toepassen op de aangevinkte mails</button></p>
+  </form>
+  {% else %}
+  <p class="noot">Op dit moment voldoet geen mail in je inbox aan deze regel. Nieuwe mail die wel voldoet, verwerkt Bram vanaf nu vanzelf.</p>
+  {% endif %}
+</section>
+{% endblock %}

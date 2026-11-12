@@ -86,7 +86,7 @@ def bericht(**kw):
     """Eén bericht in de vorm die Bram bewaart (zonder de tekst zelf)."""
     b = {"extern_id": "", "draad": "", "van_naam": "", "van_adres": "", "aan": "", "onderwerp": "", "fragment": "",
          "ontvangen": None, "gelezen": False, "labels": [], "link": "", "nieuwsbrief": False, "bron_categorie": "",
-         "tekst": ""}
+         "tekst": "", "bijlagen": None}
     b.update(kw)
     b["onderwerp"] = (b["onderwerp"] or "").strip()[:300] or "(geen onderwerp)"
     b["fragment"] = re.sub(r"\s+", " ", html.unescape(b["fragment"] or "")).strip()[:300]
@@ -172,8 +172,10 @@ def _data_url(soort, ruw):
     return f"data:{soort};base64," + base64.b64encode(ruw).decode()
 
 
-def gmail_bericht(toegang, mid, account, met_tekst=False):
-    if met_tekst:
+def gmail_bericht(toegang, mid, account, met_tekst=False, met_bijlagen=False):
+    """Eén bericht. Met met_bijlagen (of met_tekst) ook de namen van de bijlagen, voor de regels van Bram; anders zijn
+    die onbekend (None)."""
+    if met_tekst or met_bijlagen:
         m = _gmail(toegang, f"/messages/{mid}?format=full")
     else:
         kop = "&".join(f"metadataHeaders={h}" for h in ("From", "To", "Cc", "Subject", "Date", "List-Unsubscribe"))
@@ -192,7 +194,32 @@ def gmail_bericht(toegang, mid, account, met_tekst=False):
                    gelezen="UNREAD" not in labels, labels=[x for x in labels if not x.startswith("CATEGORY_")],
                    link=f"https://mail.google.com/mail/u/?authuser={urllib.parse.quote(account)}#all/{m['id']}",
                    nieuwsbrief=bool(koppen.get("list-unsubscribe")) or cat in ("promotions", "social"),
-                   bron_categorie=cat, tekst=_gmail_tekst(m.get("payload")) if met_tekst else "")
+                   bron_categorie=cat, tekst=_gmail_tekst(m.get("payload")) if met_tekst else "",
+                   bijlagen=bijlage_namen_gmail(m.get("payload")) if (met_tekst or met_bijlagen) else None)
+
+
+def bijlage_namen_gmail(deel):
+    """De namen van de echte bijlagen (geen afbeeldingen die in de tekst van de mail staan). Pure functie."""
+    uit = []
+
+    def loop(d):
+        koppen = {h["name"].lower(): h["value"] for h in d.get("headers") or []}
+        if d.get("filename") and not (koppen.get("content-disposition", "").lower().startswith("inline")
+                                      and (d.get("mimeType") or "").startswith("image/")):
+            uit.append(d["filename"][:200])
+        for p in d.get("parts") or []:
+            loop(p)
+    loop(deel or {})
+    return uit
+
+
+def gmail_bijlage_namen(toegang, mid):
+    return bijlage_namen_gmail(_gmail(toegang, f"/messages/{mid}?format=full").get("payload"))
+
+
+def ms_bijlage_namen(toegang, mid):
+    j = _graph(toegang, f"/me/messages/{urllib.parse.quote(mid)}/attachments?$select=name,isInline")
+    return [x.get("name", "")[:200] for x in j.get("value", []) if not x.get("isInline") and x.get("name")]
 
 
 def gmail_labels(toegang):
@@ -221,6 +248,15 @@ def gmail_label(toegang, mid, label_id):
     gmail_wijzig(toegang, mid, erbij=[label_id])
 
 
+def ms_map_maken(toegang, naam):
+    """Een nieuwe map in Outlook, naast Postvak IN. Geeft het id."""
+    return _graph(toegang, "/me/mailFolders", body={"displayName": naam}, methode="POST").get("id", "")
+
+
+def gmail_label_maken(toegang, naam):
+    return _gmail(toegang, "/labels", body={"name": naam, "labelListVisibility": "labelShow", "messageListVisibility": "show"}).get("id", "")
+
+
 def gmail_archiveer_in(toegang, mid, label_id, draad=""):
     """Archiveren in een map (in Gmail: een label): het label erbij en uit de inbox; met de draad de hele conversatie."""
     wijziging = {"addLabelIds": [label_id], "removeLabelIds": ["INBOX"]}
@@ -237,7 +273,7 @@ def _graph(toegang, pad, koppen=None, **kw):
 
 
 VELDEN = ("id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,isRead,webLink,"
-          "categories,inferenceClassification")
+          "categories,inferenceClassification,hasAttachments")
 
 
 def ms_berichten(toegang, met_tekst=False, nu=None):
@@ -270,7 +306,8 @@ def ms_bericht(m):
                    labels=m.get("categories") or [], link=m.get("webLink", ""),
                    nieuwsbrief=m.get("inferenceClassification") == "other",
                    bron_categorie=m.get("inferenceClassification", ""),
-                   tekst=((m.get("body") or {}).get("content") or "") if "body" in m else "")
+                   tekst=((m.get("body") or {}).get("content") or "") if "body" in m else "",
+                   bijlagen=None if m.get("hasAttachments") else [])
 
 
 def ms_tekst(toegang, mid):

@@ -4,7 +4,8 @@
 - Mag Claude de inhoud lezen (per account in te stellen), dan gaat de tekst van nieuwe berichten één keer naar Claude
   (licht model) voor één regel per bericht: wat het is, wat het vraagt, wat Bram voorstelt. Anders sorteert Bram op
   regels: nieuwsbrieven en automatische berichten herkent hij aan de kenmerken die Gmail en Outlook zelf meegeven.
-- Archiveren, labelen en gelezen markeren gebeurt alleen na een klik van Martijn (zie web.py).
+- Archiveren, labelen en gelezen markeren gebeurt alleen na een klik van Martijn (zie web.py), of door een regel die
+  hij zelf heeft gemaakt (zie regels.py).
 """
 import datetime as dt
 import json
@@ -15,7 +16,7 @@ import time
 from .. import personas
 from ..clara import kluis
 from ..kern import claude, config, meldingen, planner
-from . import bronnen
+from . import bronnen, regels
 
 CATEGORIEEN = {"actie": "Actie", "antwoord": "Antwoord nodig", "lezen": "Lezen", "info": "Ter info",
                "nieuwsbrief": "Nieuwsbrief", "automatisch": "Automatisch"}
@@ -49,6 +50,12 @@ def toegang(c, k):
             c.execute("UPDATE post_koppelingen SET geheim = %s WHERE id = %s", (kluis.sluit(nieuw), k["id"]))
         _toegang[k["id"]] = (token, time.monotonic() + max(60, int(duur) - 120))
         return token
+
+
+def vergeet_mappen(kid):
+    with _slot:
+        _labels.pop(kid, None)
+        _mappen.pop(kid, None)
 
 
 def vergeet_toegang(kid):
@@ -99,11 +106,13 @@ def opslaan(c, k, berichten, nu=None):
                           WHERE koppeling_id = %(k)s AND extern_id = %(e)s""", velden | {"k": k["id"], "e": b["extern_id"]})
             continue
         r = c.execute("""INSERT INTO post_berichten (koppeling_id, extern_id, draad, van_naam, van_adres, aan, onderwerp,
-                            fragment, ontvangen, gelezen, labels, link, nieuwsbrief, bron_categorie)
+                            fragment, ontvangen, gelezen, labels, link, nieuwsbrief, bron_categorie, bijlagen)
                          VALUES (%(k)s, %(extern_id)s, %(draad)s, %(van_naam)s, %(van_adres)s, %(aan)s, %(onderwerp)s,
-                            %(fragment)s, %(ontvangen)s, %(gelezen)s, %(labels_j)s, %(link)s, %(nieuwsbrief)s, %(bron_categorie)s)
+                            %(fragment)s, %(ontvangen)s, %(gelezen)s, %(labels_j)s, %(link)s, %(nieuwsbrief)s, %(bron_categorie)s,
+                            %(bijlagen_j)s::jsonb)
                          ON CONFLICT (koppeling_id, extern_id) DO NOTHING RETURNING id""",
-                      b | {"k": k["id"], "labels_j": json.dumps(b["labels"])}).fetchone()
+                      b | {"k": k["id"], "labels_j": json.dumps(b["labels"]),
+                           "bijlagen_j": None if b.get("bijlagen") is None else json.dumps(b["bijlagen"])}).fetchone()
         if r:
             nieuw.append(b | {"id": r["id"]})
     # Wat niet meer in de inbox staat is weg: gearchiveerd of verwijderd, hier of in Gmail en Outlook zelf. Alleen
@@ -248,12 +257,16 @@ def synchroniseer(c, k, nu=None):
         meldingen.melden(c, "belangrijk", "bram", f"Mail van {k['naam']} wordt niet opgehaald", str(e), "/bram/instellingen",
                          sleutel=f"bram-koppeling-{k['id']}-{nu:%Y-%m-%d}")
         return f"{k['naam']}: {e}"
+    door_regels = 0
+    if nieuw and not eerste:  # bij het eerste koppelen niet: dan is alles 'nieuw'; daarvoor is 'Nu toepassen' er
+        nieuw, door_regels = regels.toepassen(c, k, nieuw)
     oordelen, fout = sorteren(c, k, nieuw)
     if not eerste:
         melden(c, k, nieuw, oordelen, nu)
     c.execute("UPDATE post_koppelingen SET laatst = %s, fout = %s WHERE id = %s",
               (nu, f"Sorteren met Claude lukte niet: {fout}"[:500] if fout else None, k["id"]))
-    return f"{k['naam']}: {len(berichten)} in de inbox" + (f", {len(nieuw)} nieuw" if nieuw else "") + (f", {weg} weg" if weg else "")
+    return (f"{k['naam']}: {len(berichten)} in de inbox" + (f", {len(nieuw)} nieuw" if nieuw else "") + (f", {weg} weg" if weg else "")
+            + (f", {door_regels} door regels" if door_regels else ""))
 
 
 @planner.taak("post", elke=dt.timedelta(minutes=5))

@@ -25,6 +25,7 @@
       <span><span class="pdot {{ k.domein }}"></span>{{ k.naam }}</span><span class="aantal">{{ per_account.get(k.id, '') }}</span></a>
     {% endfor %}
     <a href="{{ lijst_adres(map, account, not praat) }}{{ '#gesprek' if not praat }}" class="pmap praat-link {{ 'actief' if praat }}"><span>💬 {{ 'Gesprek sluiten' if praat else 'Vraag Bram' }}</span></a>
+    <a href="/bram/regels" class="pmap klein-link"><span>⚡ Regels</span></a>
     <a href="/bram/instellingen" class="pmap klein-link"><span>⚙ Instellingen</span></a>
     {% if not koppelingen %}<p class="noot">Nog geen mailbox gekoppeld. <a href="/bram/instellingen">Koppel er een</a>.</p>{% endif %}
   </nav>

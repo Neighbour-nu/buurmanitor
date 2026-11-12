@@ -858,3 +858,142 @@ def test_miniweergave_op_vandaag(klant):
     assert 'minibericht ongelezen actie' in mini
     with db.pool.connection() as c:
         c.execute("DELETE FROM post_koppelingen")
+
+
+# ---------------------------------------------------------------- regels voor binnenkomende mail
+
+def test_regels_passen():
+    from app.bram import regels  # pylint: disable=import-outside-toplevel
+    v, a, fout = regels.uit_formulier({"factuur": "1", "gelezen": "1", "map": "Facturen", "archiveren": "1", "maken": "1"})
+    assert not fout and v == {"factuur": True} and a == {"gelezen": True, "map": "Facturen", "maken": True}  # map: archiveren vervalt
+    assert regels.uit_formulier({"gelezen": "1"})[2].startswith("Geef minstens één voorwaarde")
+    assert regels.uit_formulier({"van": "kpn"})[2] == "Kies minstens één actie."
+    assert regels.beschrijf(v, a) == ("lijkt op een factuur", 'gelezen, naar map "Facturen" (maken als hij er niet is)')
+    assert regels.beschrijf({"van": "kpn, @vodafone.nl", "bijlage": "ja"}, {"archiveren": True}) == ('van "kpn" of "@vodafone.nl" en met bijlage', "archiveren")
+
+    factuur = {"van_adres": "facturen@kpn.com", "van_naam": "KPN", "onderwerp": "Je nieuwe rekening staat klaar", "fragment": "", "aan": ""}
+    assert regels.past({"factuur": True}, factuur) is None  # bijlagen nog onbekend
+    assert regels.past({"factuur": True}, factuur | {"bijlagen": ["Rekening-2026-11.pdf"]}) is True
+    assert regels.past({"factuur": True}, factuur | {"bijlagen": []}) is False  # alleen een link, geen bijlage
+    assert regels.past({"factuur": True}, factuur | {"onderwerp": "Hallo", "bijlagen": ["foto.jpg"]}) is False
+    assert regels.past({"factuur": True}, factuur | {"onderwerp": "Hallo", "bijlagen": ["INV-2231.pdf"]}) is True
+    assert regels.past({"van": "kpn", "factuur": True}, factuur | {"van_adres": "x@ziggo.nl", "van_naam": "Ziggo"}) is False  # zonder bijlagen te halen
+    assert regels.past({"van": "Vodafone, kpn"}, factuur) is True and regels.past({"onderwerp": "factuur, invoice"}, factuur) is False
+    assert regels.past({"bijlage": "nee"}, factuur | {"bijlagen": []}) is True
+    assert regels.past({"bijlage_naam": ".pdf"}, factuur | {"bijlagen": ["a.PDF"]}) is True
+
+    r1 = {"id": 1, "koppeling_id": 7, "voorwaarden": {"van": "kpn"}}
+    r2 = {"id": 2, "koppeling_id": None, "voorwaarden": {"factuur": True}}
+    assert regels.kies([r1, r2], factuur | {"koppeling_id": 3}) == ("?", r2)  # r1 geldt alleen voor account 7
+    assert regels.kies([r1, r2], factuur | {"koppeling_id": 7})[1] is r1
+    lijst = [("L1", "Administratie/Facturen"), ("L2", "Privé"), ("F3", "Postvak IN / Klanten")]
+    assert regels.zoek_naam(lijst, "facturen") == "L1" and regels.zoek_naam(lijst, "Postvak IN/Klanten") == "F3"
+    assert regels.zoek_naam(lijst, "Onbekend") is None
+    assert regels.zoek_naam(lijst + [("L9", "Oud/Facturen")], "Facturen") is None  # twee keer: niet raden
+
+
+def test_bijlagenamen_gmail():
+    deel = {"parts": [{"mimeType": "text/plain", "body": {"data": ""}},
+                      {"filename": "Factuur 123.pdf", "mimeType": "application/pdf", "body": {"attachmentId": "a1"}},
+                      {"filename": "logo.png", "mimeType": "image/png", "headers": [{"name": "Content-Disposition", "value": "inline"}],
+                       "body": {"attachmentId": "a2"}}]}
+    assert bronnen.bijlage_namen_gmail(deel) == ["Factuur 123.pdf"]
+    assert bronnen.ms_bericht({"id": "x", "hasAttachments": True})["bijlagen"] is None
+    assert bronnen.ms_bericht({"id": "x", "hasAttachments": False})["bijlagen"] == []
+
+
+def test_regels_op_nieuwe_mail(klant, monkeypatch):
+    from app.clara import kluis  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    gmail = NepGmail()
+    gmail.installeer(monkeypatch)
+    monkeypatch.setattr(bronnen, "gmail_labels", lambda tok: [("Label_7", "Administratie/Facturen"), ("Label_8", "Belangrijk")])
+    monkeypatch.setattr(bronnen, "ms_toegang", lambda refresh, tenant: ("tok", 3600, None))
+    with db.pool.connection() as c:
+        c.execute("TRUNCATE post_koppelingen, post_regels CASCADE")
+        c.execute("DELETE FROM meldingen WHERE bron = 'bram'")
+        g = c.execute("""INSERT INTO post_koppelingen (soort, naam, account, geheim, laatst) VALUES ('google', 'Neighbour', 'martijn@neighbour.nu', %s, now())
+                         RETURNING *""", (kluis.sluit("1//mail"),)).fetchone()
+        m = c.execute("""INSERT INTO post_koppelingen (soort, naam, account, tenant, geheim, laatst) VALUES ('microsoft', 'Upper Spire', 'm@us.com', 't', %s, now())
+                         RETURNING *""", (kluis.sluit("ms"),)).fetchone()
+    # Een regel maken op het scherm, vooraf ingevuld vanuit een mail.
+    assert 'value="facturen@kpn.com"' in klant.get("/bram/regels?van=facturen@kpn.com&factuur=1&map=Facturen", headers=KOP).text
+    r = klant.post("/bram/regels", headers=FORM, data={"naam": "Facturen", "factuur": "1", "gelezen": "1", "map": "Facturen", "maken": "1"},
+                   follow_redirects=False)
+    assert r.status_code == 303 and "/probeer" in r.headers["location"]
+    assert "fout=Geef+minstens" in klant.post("/bram/regels", headers=FORM, data={"gelezen": "1"}, follow_redirects=False).headers["location"]
+    with db.pool.connection() as c:
+        regel = c.execute("SELECT * FROM post_regels").fetchone()
+        assert regel["voorwaarden"] == {"factuur": True} and regel["koppeling_id"] is None
+
+    # Gmail: een factuur met pdf en een gewone mail komen binnen.
+    factuur = gmail_ruw("f1", "KPN <facturen@kpn.com>", "Je nieuwe rekening", "Bekijk je rekening")
+    factuur["payload"]["parts"].append({"filename": "Rekening-nov.pdf", "mimeType": "application/pdf", "body": {"attachmentId": "x1"}})
+    gmail.zet(factuur)
+    gmail.zet(gmail_ruw("f2", "Jan <jan@club.nl>", "Training dinsdag", "Kom je ook?"))
+    # Outlook: een invoice met bijlage; de map Facturen bestaat daar nog niet.
+    inbox = [bronnen.ms_bericht({"id": "O1", "subject": "Invoice 2026-118", "isRead": False, "receivedDateTime": "2026-11-12T08:00:00Z",
+                                 "hasAttachments": True, "from": {"emailAddress": {"name": "Hosting", "address": "billing@host.nl"}}})]
+    monkeypatch.setattr(bronnen, "ms_berichten", lambda tok, met_tekst=False, nu=None: [dict(b) for b in inbox if b["extern_id"] not in verplaatst])
+    monkeypatch.setattr(bronnen, "ms_bijlage_namen", lambda tok, mid: ["INV-118.pdf"])
+    monkeypatch.setattr(bronnen, "ms_mappen", lambda tok: [("A1", "Archief")])
+    gemaakt, verplaatst, gelezen = [], [], []
+    monkeypatch.setattr(bronnen, "ms_map_maken", lambda tok, naam: gemaakt.append(naam) or "F-nieuw")
+    monkeypatch.setattr(bronnen, "ms_gelezen", lambda tok, mid: gelezen.append(mid))
+    monkeypatch.setattr(bronnen, "ms_verplaats", lambda tok, mid, map_id: verplaatst.append((mid, map_id)) or "O1-verplaatst")
+    with db.pool.connection() as c:
+        assert "1 door regels" in sync.synchroniseer(c, g)
+        assert "1 door regels" in sync.synchroniseer(c, m)
+        rij = {r["extern_id"]: r for r in c.execute("SELECT * FROM post_berichten")}
+        log = c.execute("SELECT * FROM post_regel_log ORDER BY id").fetchall()
+        assert c.execute("SELECT aantal FROM post_regels").fetchone()["aantal"] == 2
+    assert ("f1", ["Label_7"], ["UNREAD", "INBOX"]) in gmail.gewijzigd and "f1" not in gmail.inbox and "f2" in gmail.inbox
+    assert rij["f1"]["status"] == "weg" and rij["f1"]["gelezen"] and rij["f1"]["bijlagen"] == ["Rekening-nov.pdf"]
+    assert rij["f2"]["status"] == "open" and rij["f2"]["categorie"]  # gewone mail: gewoon door Bram gesorteerd
+    assert gemaakt == ["Facturen"] and gelezen == ["O1"] and verplaatst == [("O1", "F-nieuw")] and rij["O1-verplaatst"]["status"] == "weg"
+    assert [x["wat"] for x in log] == ["gelezen, naar Facturen", "gelezen, naar Facturen"]
+    pagina = klant.get("/bram/regels", headers=KOP).text
+    assert "lijkt op een factuur" in pagina and "2×" in pagina and "Je nieuwe rekening" in pagina and "Invoice 2026-118" in pagina
+
+    # Probeer: wat staat er nu in de inbox dat voldoet; en de regel daar meteen op toepassen.
+    factuur2 = gmail_ruw("f3", "Ziggo <noreply@ziggo.nl>", "Uw factuur", "Factuur")
+    factuur2["payload"]["parts"].append({"filename": "factuur.pdf", "mimeType": "application/pdf", "body": {"attachmentId": "x2"}})
+    with db.pool.connection() as c:
+        c.execute("""INSERT INTO post_berichten (koppeling_id, extern_id, van_naam, van_adres, onderwerp, ontvangen)
+                     VALUES (%s, 'f3', 'Ziggo', 'noreply@ziggo.nl', 'Uw factuur', now()) RETURNING id""", (g["id"],))
+        bid = c.execute("SELECT id FROM post_berichten WHERE extern_id = 'f3'").fetchone()["id"]
+    gmail.zet(factuur2)
+    rid = regel["id"]
+    proef = klant.get(f"/bram/regels/{rid}/probeer", headers=KOP).text
+    assert "Uw factuur" in proef and "Training dinsdag" not in proef and "📎 factuur.pdf" in proef
+    r = klant.post(f"/bram/regels/{rid}/toepassen", headers=FORM, data={"id": [str(bid)]}, follow_redirects=False)
+    assert "toegepast+op+1+mail" in r.headers["location"] and "f3" not in gmail.inbox
+
+    # Een map die er niet is en niet gemaakt mag worden: niets doen, wel in het logboek en een melding.
+    klant.post("/bram/regels", headers=FORM, data={"id": str(rid), "naam": "Facturen", "factuur": "1", "gelezen": "1", "map": "Bestaat niet"})
+    factuur3 = gmail_ruw("f4", "KPN <facturen@kpn.com>", "Je nieuwe rekening (dec)", "x")
+    factuur3["payload"]["parts"].append({"filename": "Rekening-dec.pdf", "mimeType": "application/pdf", "body": {"attachmentId": "x3"}})
+    gmail.zet(factuur3)
+    with db.pool.connection() as c:
+        sync.synchroniseer(c, g)
+        assert c.execute("SELECT fout FROM post_regel_log ORDER BY id DESC LIMIT 1").fetchone()["fout"] == 'De map "Bestaat niet" bestaat niet in Neighbour.'
+        assert c.execute("SELECT count(*) AS n FROM meldingen WHERE bron = 'bram' AND titel LIKE 'Regel%%'").fetchone()["n"] == 1
+    assert "f4" in gmail.inbox
+
+    # Volgorde, uitzetten en verwijderen.
+    klant.post("/bram/regels", headers=FORM, data={"naam": "KPN", "van": "kpn", "label": "Belangrijk"})
+    with db.pool.connection() as c:
+        twee = [r["naam"] for r in c.execute("SELECT naam FROM post_regels ORDER BY volgorde, id")]
+        tweede = c.execute("SELECT id FROM post_regels WHERE naam = 'KPN'").fetchone()["id"]
+    assert twee == ["Facturen", "KPN"]
+    klant.post(f"/bram/regels/{tweede}/omhoog", headers=FORM)
+    klant.post(f"/bram/regels/{rid}/uit", headers=FORM)
+    with db.pool.connection() as c:
+        assert [r["naam"] for r in c.execute("SELECT naam FROM post_regels ORDER BY volgorde, id")] == ["KPN", "Facturen"]
+        assert [r["naam"] for r in sync.regels.actieve(c, g["id"])] == ["KPN"]
+    klant.post(f"/bram/regels/{rid}/weg", headers=FORM)
+    assert klant.post("/bram/regels/999999/aan", headers=FORM).status_code == 404
+    assert klant.post(f"/bram/regels/{tweede}/onzin", headers=FORM).status_code == 404
+    with db.pool.connection() as c:
+        assert c.execute("SELECT count(*) AS n FROM post_regels").fetchone()["n"] == 1
+        c.execute("TRUNCATE post_koppelingen, post_regels CASCADE")

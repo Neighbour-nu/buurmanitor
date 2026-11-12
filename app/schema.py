@@ -318,6 +318,31 @@ MIGRATIES = [
     # (na het aanmaken, zodat het ook op een lege database werkt) soort 'bulk' erbij
     "ALTER TABLE post_voorstellen DROP CONSTRAINT IF EXISTS post_voorstellen_soort_check",
     "ALTER TABLE post_voorstellen ADD CONSTRAINT post_voorstellen_soort_check CHECK (soort IN ('antwoord', 'afspraak', 'herinnering', 'bulk'))",
+    # Regels voor binnenkomende mail (zie bram/regels.py): als een nieuwe mail aan de voorwaarden voldoet, doet Bram
+    # meteen wat de regel zegt (gelezen, label, naar een map of archiveren). Volgorde telt: de eerste regel die past.
+    """CREATE TABLE IF NOT EXISTS post_regels (
+        id serial PRIMARY KEY,
+        naam text NOT NULL,
+        actief boolean NOT NULL DEFAULT true,
+        volgorde int NOT NULL DEFAULT 0,
+        koppeling_id int REFERENCES post_koppelingen(id) ON DELETE CASCADE,
+        voorwaarden jsonb NOT NULL DEFAULT '{}',
+        acties jsonb NOT NULL DEFAULT '{}',
+        aantal int NOT NULL DEFAULT 0,
+        laatst timestamptz,
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    """CREATE TABLE IF NOT EXISTS post_regel_log (
+        id serial PRIMARY KEY,
+        regel_id int REFERENCES post_regels(id) ON DELETE CASCADE,
+        koppeling_id int REFERENCES post_koppelingen(id) ON DELETE CASCADE,
+        van text NOT NULL DEFAULT '',
+        onderwerp text NOT NULL DEFAULT '',
+        wat text NOT NULL DEFAULT '',
+        fout text NOT NULL DEFAULT '',
+        tijd timestamptz NOT NULL DEFAULT now())""",
+    "CREATE INDEX IF NOT EXISTS post_regel_log_tijd ON post_regel_log (tijd DESC)",
+    # De namen van de bijlagen (NULL: niet bekend), voor regels als 'met een factuur in de bijlage'.
+    "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS bijlagen jsonb",
     # ---------- Taken: kanbanbord ----------
     # Een taak met eventueel een start- en einddatum; dan staat hij ook als afspraak in de agenda (agenda_*: welke).
     """CREATE TABLE IF NOT EXISTS takenbord (
