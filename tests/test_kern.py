@@ -254,7 +254,9 @@ def _meldingen_afvinken_archiveren_verwijderen(k):
         assert meldingen.melden(c, "belangrijk", "clara", "Botsing morgen", sleutel="b1") is None  # komt niet terug
         assert c.execute("SELECT count(*) AS n FROM meldingen WHERE id = %s", (ids[1],)).fetchone()["n"] == 0
         assert [m["id"] for m in meldingen.nieuw_sinds(c, 0)] == [ids[2]]
-    k.post("/meldingen/stil", headers=form, data={"stil_gezondheid": "1"})
+    r = k.post("/meldingen/stil", headers=form, data={"stil_gezondheid": "1"}, follow_redirects=False)
+    assert r.headers["location"] == "/meldingen/instellingen?melding=Opgeslagen.#bronnen"
+    assert 'name="stil_gezondheid"' in k.get("/meldingen/instellingen", headers=KOP).text
     with _db() as c:
         assert meldingen.stil(c) == {"gezondheid"} and meldingen.nieuw_sinds(c, 0) == []
         c.execute("DELETE FROM instellingen WHERE sleutel = 'meldingen_stil'")

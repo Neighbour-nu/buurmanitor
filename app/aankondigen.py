@@ -5,7 +5,7 @@ hij verschijnt als banner en (als je dat toestaat) als melding op je bureaublad.
 aangekondigd. Een paar uur later ruimt Buurmanitor de aankondiging zelf op (naar het archief), zodat je meldingen
 niet vollopen met wat al voorbij is.
 
-Wat wordt aangekondigd (in te stellen op /meldingen/aankondigingen):
+Wat wordt aangekondigd (in te stellen op /meldingen/instellingen):
 - vergaderingen en afspraken met een tijd in je eigen agenda's (niet die je hebt afgewezen of die vrij staan, en niet
   die van Sanne of Brigit, tenzij je meegaat); reistijd van Clara als 'tijd om te vertrekken';
 - taken met een begintijd (ook als ze niet in de agenda staan);

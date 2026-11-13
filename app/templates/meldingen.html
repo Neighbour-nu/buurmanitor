@@ -4,9 +4,9 @@
 <section class="kopregel">
   <div>
     <h1>Meldingen</h1>
-    <p class="motto">Alle meldingen op een rij: zoeken, filteren en meerdere tegelijk afhandelen. Hieronder kies je ook welke bronnen op je scherm mogen verschijnen.</p>
+    <p class="motto">Alle meldingen op een rij: zoeken, filteren en meerdere tegelijk afhandelen.</p>
   </div>
-  <div class="knoppen"><a class="knop" href="/#meldingen">Terug naar Vandaag</a></div>
+  <div class="knoppen"><a class="knop" href="/meldingen/instellingen">⚙ Instellingen</a><a class="knop" href="/#meldingen">Terug naar Vandaag</a></div>
 </section>
 {% if melding %}<p class="item">{{ melding }}</p>{% endif %}
 
@@ -33,7 +33,7 @@
   <form method="post" action="/meldingen/bulk" id="meldingbulk">
     {% for k in ('map', 'bron', 'niveau', 'q', 'ongelezen') %}<input type="hidden" name="{{ k }}" value="{{ f[k] }}">{% endfor %}
     <div class="bulkbalk">
-      <label class="vink"><input type="checkbox" id="allesaan" aria-label="Alles op deze pagina aanvinken"> <span id="gekozen">{{ totaal }} melding{{ 'en' if totaal != 1 }}</span></label>
+      <label class="vink"><input type="checkbox" id="allesaan" aria-label="Alles op deze pagina aanvinken"><span id="gekozen">{{ totaal }} melding{{ 'en' if totaal != 1 }}</span></label>
       <span class="knoppenrij">
         {% if f.map == 'open' %}
           <button class="knop klein vol" name="actie" value="opgelost">✓ Opgelost</button>
@@ -78,32 +78,6 @@
   {% endif %}
 </section>
 
-<section class="kaart" id="bronnen">
-  <h2>Wat verschijnt op je scherm</h2>
-  <p class="noot">Urgente en belangrijke meldingen komen als banner en (als je dat toestaat) op je bureaublad. Zet een bron op stil
-    en zijn meldingen staan alleen nog in de lijst.</p>
-  {% if bronnen %}
-  <form method="post" action="/meldingen/stil">
-    {% for k in ('map', 'bron', 'niveau', 'q', 'ongelezen') %}<input type="hidden" name="{{ k }}" value="{{ f[k] }}">{% endfor %}
-    <table class="tabel">
-      <tr><th>Bron</th><th>Meldingen</th><th>Stil</th></tr>
-      {% for b in bronnen %}
-      <tr><td><a href="{{ adres(bron=b.bron, pagina='') }}">{{ bronnaam(b.bron) }}</a></td>
-        <td class="noot">{{ b.totaal }}{% if b.ongelezen %}, {{ b.ongelezen }} ongelezen{% endif %}</td>
-        <td><input type="checkbox" name="stil_{{ b.bron }}" value="1" {{ 'checked' if b.bron in stil }} aria-label="{{ bronnaam(b.bron) }} stil"></td></tr>
-      {% endfor %}
-    </table>
-    <p><button class="knop vol" type="submit">Opslaan</button></p>
-  </form>
-  {% else %}<p class="noot">Nog geen meldingen.</p>{% endif %}
-  <div class="meldingstatus" id="meldingstatus">
-    <p class="noot"><span class="tekst">Bureaubladmeldingen: even kijken…</span></p>
-    <p class="knoppenrij"><button id="meldingen-aan" class="knop klein" type="button" hidden>Meldingen op dit apparaat aanzetten</button>
-      <button id="meldingen-test" class="knop klein" type="button" hidden>Testmelding sturen</button></p>
-  </div>
-  <p class="noot"><a href="/meldingen/aankondigingen">Aankondigingen</a> van vergaderingen en taken instellen.
-    Telegram voor urgente meldingen: {{ 'ingesteld' if telegram else 'niet ingesteld' }}.</p>
-</section>
 
 <script>
 (function () {

@@ -92,9 +92,12 @@ def test_planner_en_instellingen(klant):
         assert aankondigen.taak_aankondigen(c, nu + dt.timedelta(hours=4))
         assert c.execute("SELECT status FROM meldingen WHERE id = %s", (m["id"],)).fetchone()["status"] == "archief"
     # Instellen: 60 minuten van tevoren, zonder vergaderingen.
-    pagina = klant.get("/meldingen/aankondigingen", headers=KOP).text
+    pagina = klant.get("/meldingen/instellingen", headers=KOP).text
     assert "Hoe ver van tevoren" in pagina and "Over 12 min: Fractieoverleg" in pagina
-    assert 'href="/meldingen/aankondigingen"' in klant.get("/", headers=KOP).text
+    assert 'id="meldingstatus"' in pagina and "meldingen-test" in pagina  # bureaubladmeldingen staan hier, niet meer op Vandaag
+    vandaag = klant.get("/", headers=KOP).text
+    assert 'href="/meldingen/instellingen"' in vandaag and 'id="meldingstatus"' not in vandaag
+    assert klant.get("/meldingen/aankondigingen", headers=KOP, follow_redirects=False).headers["location"] == "/meldingen/instellingen#aankondigingen"
     assert klant.post("/meldingen/aankondigingen", headers=KOP, data={"minuten": "60"}).status_code == 403
     klant.post("/meldingen/aankondigingen", headers=FORM, data={"minuten": "60", "taken": "1", "deadlines": "1", "ochtend": "07:30"})
     with db.pool.connection() as c:

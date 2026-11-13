@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block titel %}Instellingen voor meldingen · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Instellingen voor meldingen</h1>
+    <p class="motto">Wat er op je scherm verschijnt, op welk apparaat, en welke aankondigingen je krijgt.</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="/meldingen">Alle meldingen</a><a class="knop" href="/#meldingen">Terug naar Vandaag</a></div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+
+<div class="raster instellingenraster">
+<section class="kaart" id="bureaublad">
+  <h2>Bureaubladmeldingen</h2>
+  <p class="noot">Urgente en belangrijke meldingen verschijnen als melding op je bureaublad, zolang er een Buurmanitor-tabblad open is.
+    Dit stel je per apparaat en per browser in.</p>
+  <div class="meldingstatus instelblok" id="meldingstatus">
+    <p class="tekst">Bureaubladmeldingen: even kijken…</p>
+    <div class="knoppenrij"><button id="meldingen-aan" class="knop vol" type="button" hidden>Meldingen op dit apparaat aanzetten</button>
+      <button id="meldingen-test" class="knop" type="button" hidden>Testmelding sturen</button></div>
+  </div>
+  <p class="noot">Telegram voor urgente meldingen: {% if telegram %}<span class="label groen">ingesteld</span>{% else %}<span class="label">niet ingesteld</span>{% endif %}</p>
+</section>
+
+<section class="kaart" id="aankondigingen">
+  <h2>Aankondigingen</h2>
+  <p class="noot">Een melding kort voordat een vergadering, afspraak of taak begint, en 's ochtends voor deadlines van vandaag.
+    Na een paar uur ruimt Buurmanitor ze zelf op.</p>
+  <form method="post" action="/meldingen/aankondigingen" class="instelvorm">
+    <label class="vink"><input type="checkbox" name="vergaderingen" value="1" {{ 'checked' if inst.vergaderingen }}>
+      <span>Vergaderingen en afspraken uit je agenda's <span class="noot">(ook reistijd van Clara als "tijd om te vertrekken"; niet wat je afwees, wat vrij staat of de agenda's van anderen)</span></span></label>
+    <label class="vink"><input type="checkbox" name="taken" value="1" {{ 'checked' if inst.taken }}> <span>Taken met een begintijd</span></label>
+    <label class="vink"><input type="checkbox" name="deadlines" value="1" {{ 'checked' if inst.deadlines }}> <span>Taken waarvan de deadline vandaag is</span></label>
+    <div class="veldrij">
+      <label>Hoe ver van tevoren <select name="minuten">{% for m in keuzes %}<option value="{{ m }}" {{ 'selected' if inst.minuten == m }}>{{ m }} minuten</option>{% endfor %}</select></label>
+      <label>Deadlines melden vanaf <input type="time" name="ochtend" value="{{ inst.ochtend }}"></label>
+      <button class="knop vol" type="submit">Opslaan</button>
+    </div>
+  </form>
+  {% if recent %}<p class="noot">Laatste: {% for r in recent %}{{ r.titel }} ({{ geleden(r.tijd) }}){{ '; ' if not loop.last }}{% endfor %}</p>{% endif %}
+</section>
+</div>
+
+<section class="kaart" id="bronnen">
+  <h2>Wat verschijnt op je scherm</h2>
+  <p class="noot">Zet een bron op stil en zijn meldingen staan alleen nog in de lijst: geen banner en geen bureaubladmelding.</p>
+  {% if bronnen %}
+  <form method="post" action="/meldingen/stil">
+    <table class="tabel bronnentabel">
+      <tr><th>Bron</th><th>Meldingen</th><th class="midden">Stil</th></tr>
+      {% for b in bronnen %}
+      <tr><td><a href="/meldingen?bron={{ b.bron }}">{{ bronnaam(b.bron) }}</a></td>
+        <td class="noot">{{ b.totaal }}{% if b.ongelezen %}, {{ b.ongelezen }} ongelezen{% endif %}</td>
+        <td class="midden"><input type="checkbox" name="stil_{{ b.bron }}" value="1" {{ 'checked' if b.bron in stil }} aria-label="{{ bronnaam(b.bron) }} stil"></td></tr>
+      {% endfor %}
+    </table>
+    <div class="knoppenrij"><button class="knop vol" type="submit">Opslaan</button></div>
+  </form>
+  {% else %}<p class="noot">Nog geen meldingen.</p>{% endif %}
+</section>
+{% endblock %}

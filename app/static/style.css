@@ -713,3 +713,33 @@ tr.uit td { opacity: .55; }
 .regelvorm legend { font-weight: 600; padding: 0 6px; color: var(--blauwdonker); }
 .logregel { padding: 6px 0; border-bottom: 1px solid var(--lijn); margin: 0; }
 .logregel .rood { color: var(--rood, #C62828); }
+
+/* ---------- Uitlijning: knoppen, velden en vinkjes overal even hoog en op één lijn ---------- */
+.knop { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 38px; line-height: 1.2;
+        vertical-align: middle; white-space: nowrap; }
+.knop.klein { min-height: 28px; padding: 3px 9px; }
+.knop.klein.ikoon { border: 1px solid var(--blauw); background: var(--wit); border-radius: 4px; padding: 3px 8px; font-size: 14px; display: inline-flex; }
+.knop.klein.ikoon:hover { background: var(--ijs); }
+input[type=text], input[type=search], input[type=email], input[type=url], input[type=number], input[type=time],
+input[type=date], select { box-sizing: border-box; min-height: 38px; padding: 6px 10px; border: 1px solid #BCD0EA; border-radius: 4px;
+  font: inherit; background: var(--wit); color: var(--inkt); vertical-align: middle; }
+input[type=time], input[type=date], input[type=number] { width: auto; }
+input[type=checkbox], input[type=radio] { width: 17px; height: 17px; margin: 0; flex: 0 0 auto; accent-color: var(--blauw); vertical-align: middle; }
+label.vink, .velden label.vink { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; color: var(--inkt); line-height: 1.35; }
+label.vink > input[type=checkbox] { align-self: flex-start; margin-top: 2px; }
+.knoppen, .knoppenrij, .meldingfilter, .bulkbalk, .archiefzoek { align-items: center; }
+.knoppenrij form.inline, .knoppen form.inline, .kopknoppen form.inline { margin: 0; display: inline-flex; }
+.kopregel { align-items: center; }
+.kopregel .knoppen { flex-wrap: wrap; justify-content: flex-end; }
+h2 .kopknoppen { display: inline-flex; gap: 6px; align-items: center; flex-wrap: nowrap; margin: 0; }
+.tabel th.midden, .tabel td.midden { text-align: center; }
+.tabel td { vertical-align: middle; }
+/* instellingen voor meldingen */
+.instellingenraster { align-items: start; }
+.instelblok { background: var(--ijs); border-radius: 6px; padding: 10px 12px; margin: 10px 0; }
+.instelblok .tekst { margin: 0 0 8px; }
+.instelblok .knoppenrij { margin: 0; }
+.instelvorm { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+.veldrij { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.veldrij label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--zacht); }
+.bronnentabel { max-width: 640px; }

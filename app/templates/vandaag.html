@@ -62,7 +62,8 @@
     {% set mapnaam = (meldingmappen | selectattr(0, 'equalto', meldingmap) | first)[1] %}
     <h2><span>Meldingen{% if meldingmap != 'open' %} <span class="noot">· {{ mapnaam }}</span>{% endif %}</span>
       <span class="knoppenrij kopknoppen">{% if meldingmap == 'open' and aantallen.ongelezen %}<form method="post" action="/meldingen/alles-gelezen" class="inline"><button class="knop klein" type="submit">Alles gelezen</button></form>{% endif %}
-      <a class="knop klein" href="/meldingen{{ '?map=' ~ meldingmap if meldingmap != 'open' }}" title="Alle meldingen beheren: zoeken, filteren, meerdere tegelijk">⚙ Beheren</a></span></h2>
+      <a class="knop klein" href="/meldingen{{ '?map=' ~ meldingmap if meldingmap != 'open' }}" title="Alle meldingen beheren: zoeken, filteren, meerdere tegelijk">Beheren</a>
+      <a class="knop klein ikoon" href="/meldingen/instellingen" title="Instellingen voor meldingen: bureaublad, aankondigingen, stille bronnen" aria-label="Instellingen voor meldingen">⚙</a></span></h2>
     <div class="meldinglijst">
     {% for m in lijst_meldingen %}
       <div class="item {{ m.niveau }} {{ 'gelezen' if m.gelezen and meldingmap == 'open' }}" id="m{{ m.id }}"><b>{{ m.titel }}</b>{% if meldingmap == 'open' and not m.gelezen %} <span class="label groen">nieuw</span>{% endif %}<br>
@@ -89,12 +90,6 @@
         <span>{{ naam }}</span><span class="aantal">{% if status == 'open' and aantallen.ongelezen %}<b>{{ aantallen.ongelezen }}</b>/{% endif %}{{ aantallen[status] }}</span></a>
       {% endfor %}
     </nav>
-    <div class="meldingstatus" id="meldingstatus">
-      <p class="noot"><span class="tekst">Bureaubladmeldingen: even kijken…</span></p>
-      <p class="knoppenrij"><button id="meldingen-aan" class="knop klein" type="button" hidden>Meldingen op dit apparaat aanzetten</button>
-        <button id="meldingen-test" class="knop klein" type="button" hidden>Testmelding sturen</button></p>
-    </div>
-    <p class="noot"><a href="/meldingen/aankondigingen">Aankondigingen</a> van vergaderingen en taken instellen.</p>
   </section>
   </div>
   <div class="vkolom">

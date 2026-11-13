@@ -357,7 +357,7 @@ async def meldingen_stil(request: Request):
     with db.pool.connection() as c:
         alle = {r["bron"] for r in c.execute("SELECT DISTINCT bron FROM meldingen").fetchall()}
         meldingen.stil_opslaan(c, {b for b in alle if form.get(f"stil_{b}") == "1"})
-    return RedirectResponse(_meldingadres(_meldingfilter(form), melding="Opgeslagen.") + "#bronnen", status_code=303)
+    return RedirectResponse("/meldingen/instellingen?melding=Opgeslagen.#bronnen", status_code=303)
 
 
 def _terug_meldingen(request):
@@ -391,13 +391,24 @@ def meldingen_alles_gelezen(request: Request):
     return RedirectResponse("/#meldingen", status_code=303)
 
 
-@app.get("/meldingen/aankondigingen", response_class=HTMLResponse)
-def aankondigingen_scherm(request: Request, melding: str = ""):
+@app.get("/meldingen/instellingen", response_class=HTMLResponse)
+def meldingen_instellingen(request: Request, melding: str = ""):
+    """Instellingen voor meldingen: bureaubladmeldingen op dit apparaat, aankondigingen en welke bronnen stil zijn."""
     with db.pool.connection() as c:
         inst = aankondigen.instellingen(c)
-        recent = c.execute("""SELECT titel, tijd FROM meldingen WHERE bron = 'aankondiging' ORDER BY id DESC LIMIT 8""").fetchall()
-    return templates.TemplateResponse("aankondigingen.html", ctx(
-        request, "vandaag", inst=inst, keuzes=aankondigen.KEUZE_MINUTEN, recent=recent, melding=melding))
+        recent = c.execute("""SELECT titel, tijd FROM meldingen WHERE bron = 'aankondiging' ORDER BY id DESC LIMIT 6""").fetchall()
+        bronnen = c.execute("""SELECT bron, count(*) AS totaal, count(*) FILTER (WHERE status = 'open' AND NOT gelezen) AS ongelezen
+                               FROM meldingen WHERE status <> 'gewist' GROUP BY bron ORDER BY bron""").fetchall()
+        stil = meldingen.stil(c)
+    return templates.TemplateResponse("meldingen_instellingen.html", ctx(
+        request, "vandaag", inst=inst, keuzes=aankondigen.KEUZE_MINUTEN, recent=recent, melding=melding, bronnen=bronnen,
+        stil=stil, bronnaam=_bronnaam, telegram=bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID)))
+
+
+@app.get("/meldingen/aankondigingen")
+def aankondigingen_scherm():
+    """Oude link: de aankondigingen staan nu bij de instellingen voor meldingen."""
+    return RedirectResponse("/meldingen/instellingen#aankondigingen", status_code=303)
 
 
 @app.post("/meldingen/aankondigingen")
@@ -417,7 +428,7 @@ async def aankondigingen_opslaan(request: Request):
                "minuten": minuten if minuten in aankondigen.KEUZE_MINUTEN else 15, "ochtend": ochtend}
     with db.pool.connection() as c:
         aankondigen.opslaan(c, waarden)
-    return RedirectResponse("/meldingen/aankondigingen?melding=Opgeslagen.", status_code=303)
+    return RedirectResponse("/meldingen/instellingen?melding=Aankondigingen+opgeslagen.#aankondigingen", status_code=303)
 
 
 @app.get("/api/meldingen")
