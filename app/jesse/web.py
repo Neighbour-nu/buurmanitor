@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .. import personas
-from ..kern import config, db
+from ..kern import config, db, planner
 from ..kern.web import controleer_herkomst, ctx, templates
 from . import luisteren
 
@@ -91,11 +91,8 @@ async def verberg(request: Request, bid: int):
 async def vernieuwen(request: Request):
     controleer_herkomst(request)
 
-    def doe():
-        with db.pool.connection() as c:
-            return luisteren.taak_socials(c)
-    uitslag = await asyncio.to_thread(doe)
-    return _terug("/jesse/bronnen", melding=f"Opgehaald: {uitslag}.")
+    uitslag = await asyncio.to_thread(planner.draai, db.achtergrond, "socials", True)  # onder het slot van de planner
+    return _terug("/jesse/bronnen", melding=f"Opgehaald: {uitslag}." if uitslag else planner.BEZIG)
 
 
 # ---------------------------------------------------------------- bronnen

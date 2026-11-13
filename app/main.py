@@ -40,6 +40,31 @@ def _gezondheid(c):
     return gezondheid.controle(c)
 
 
+# Nachtelijk opruimen: wat alleen even nodig was, groeit anders ongemerkt door (en maakt schermen trager).
+# Bewaartermijnen in dagen. Meldingen die je verwijderde blijven staan (anders komen ze terug).
+OPRUIMEN = [
+    ("routes", "DELETE FROM routes WHERE bijgewerkt < now() - interval '30 days'"),
+    ("meldingen", "DELETE FROM meldingen WHERE status IN ('opgelost', 'archief') AND coalesce(afgehandeld, tijd) < now() - interval '365 days'"),
+    ("agenda", "DELETE FROM agenda_items WHERE eind < now() - interval '400 days'"),
+    ("voorstellen", """DELETE FROM agenda_voorstellen WHERE status <> 'open' AND aangemaakt < now() - interval '90 days'"""),
+    ("voorstellen", """DELETE FROM post_voorstellen WHERE status <> 'open' AND aangemaakt < now() - interval '90 days'"""),
+    ("voorstellen", """DELETE FROM taak_voorstellen WHERE status <> 'open' AND aangemaakt < now() - interval '90 days'"""),
+    ("voorstellen", """DELETE FROM vera_voorstellen WHERE status <> 'open' AND aangemaakt < now() - interval '90 days'"""),
+    ("voorstellen", """DELETE FROM jesse_voorstellen WHERE status = 'weg' AND aangemaakt < now() - interval '90 days'"""),
+    ("voorstellen", """DELETE FROM crm_voorstellen WHERE status <> 'open' AND aangemaakt < now() - interval '90 days'"""),
+    ("logboek", "DELETE FROM logboek WHERE tijd < now() - interval '400 days'"),
+    ("verbruik", "DELETE FROM claude_gebruik WHERE tijd < now() - interval '400 days'"),
+]
+
+
+@planner.taak("opruimen", om=dt.time(3, 40))
+def _opruimen(c):
+    weg = {}
+    for soort, sql in OPRUIMEN:
+        weg[soort] = weg.get(soort, 0) + c.execute(sql).rowcount
+    return ", ".join(f"{n} {s}" for s, n in weg.items() if n) or "niets op te ruimen"
+
+
 @asynccontextmanager
 async def lifespan(_app):
     db.pool.open(wait=True, timeout=30)
@@ -221,9 +246,14 @@ async def iris_vraag(request: Request):
     return RedirectResponse(f"/iris?g={gid}#laatste", status_code=303)
 
 
+GESPREK_SCHERM = {"noor": "/taken", "bram": "/bram", "vera": "/vera", "jesse": "/jesse", "clara": "/clara", "iris": "/iris"}
+
+
 def _terug_gesprek(form, persona):
-    terug = str(form.get("terug") or f"/{persona}")
-    return terug if terug.startswith(("/clara", "/iris")) and "//" not in terug else f"/{persona}"
+    """Terug naar het scherm van de persona (of het meegegeven eigen adres), nooit naar een ander domein."""
+    scherm = GESPREK_SCHERM.get(persona, "/iris")
+    terug = str(form.get("terug") or scherm)
+    return terug if terug.startswith(tuple(GESPREK_SCHERM.values())) and "//" not in terug and "\\" not in terug else scherm
 
 
 @app.post("/gesprek/{gid}/archief")
@@ -235,7 +265,8 @@ async def gesprek_archief(request: Request, gid: int):
     if not g:
         raise HTTPException(404)
     terug = _terug_gesprek(form, g["persona"])
-    return RedirectResponse(terug if g["gearchiveerd"] else f"/{g['persona']}?g={gid}", status_code=303)
+    scherm = GESPREK_SCHERM.get(g["persona"], "/iris")
+    return RedirectResponse(terug if g["gearchiveerd"] else f"{scherm}?g={gid}", status_code=303)
 
 
 @app.post("/gesprek/{gid}/weg")

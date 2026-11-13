@@ -41,20 +41,29 @@ def koppelingen(c, alleen_actief=False):
     return c.execute("SELECT * FROM agenda_koppelingen" + (" WHERE actief" if alleen_actief else "") + " ORDER BY id").fetchall()
 
 
+_slot_per_account = {}
+
+
 def toegang(c, k):
-    """Een geldig toegangstoken voor Google of Microsoft (vernieuwd met het refresh-token uit de kluis)."""
+    """Een geldig toegangstoken voor Google of Microsoft (vernieuwd met het refresh-token uit de kluis). Het slot geldt
+    per account: een trage vernieuwing van het ene account houdt de andere niet op."""
     with _slot:
-        token, verloopt = _toegang.get(k["id"], (None, 0))
+        account_slot = _slot_per_account.setdefault(k["id"], threading.Lock())
+    with account_slot:
+        with _slot:
+            token, verloopt = _toegang.get(k["id"], (None, 0))
         if token and verloopt > time.monotonic():
             return token
-        refresh = kluis.open_(k["geheim"])
+        geheim = c.execute("SELECT geheim FROM agenda_koppelingen WHERE id = %s", (k["id"],)).fetchone()  # het nieuwste
+        refresh = kluis.open_(geheim["geheim"] if geheim else k["geheim"])
         if k["soort"] == "google":
             token, duur, nieuw = bronnen.google_toegang(refresh)
         else:
             token, duur, nieuw = bronnen.ms_toegang(refresh, k["tenant"], not k["schrijven"])
         if nieuw and nieuw != refresh:  # Microsoft wisselt het refresh-token regelmatig
             c.execute("UPDATE agenda_koppelingen SET geheim = %s WHERE id = %s", (kluis.sluit(nieuw), k["id"]))
-        _toegang[k["id"]] = (token, time.monotonic() + max(60, int(duur) - 120))
+        with _slot:
+            _toegang[k["id"]] = (token, time.monotonic() + max(60, int(duur) - 120))
         return token
 
 

@@ -43,8 +43,13 @@ def _slot(naam):
     return f"buurmanitor:taak:{naam}"
 
 
-def draai(pool, naam, forceer=False):
-    """Voer één taak uit als hij aan de beurt is (of forceer). Geeft het resultaat terug, of None."""
+BEZIG = "Dat wordt op dit moment al bijgewerkt; kijk over een minuut nog eens."
+
+
+def draai(pool, naam, forceer=False, functie=None):
+    """Voer één taak uit als hij aan de beurt is (of forceer). Geeft het resultaat terug, of None (ook als hij al
+    ergens anders bezig is). Met functie: die in plaats van de gewone (bijvoorbeeld met extra opties voor een knop),
+    onder hetzelfde slot, zodat een knop en de planner nooit tegelijk hetzelfde doen."""
     regel = TAKEN[naam]
     with pool.connection() as c:
         if not c.execute("SELECT pg_try_advisory_lock(hashtext(%s)) AS ok", (_slot(naam),)).fetchone()["ok"]:
@@ -58,7 +63,7 @@ def draai(pool, naam, forceer=False):
                          ON CONFLICT (naam) DO UPDATE SET bezig_sinds = now()""", (naam,))
             begin = time.monotonic()
             try:
-                resultaat, fout = str(regel["functie"](c) or "klaar")[:1000], None
+                resultaat, fout = str((functie or regel["functie"])(c) or "klaar")[:1000], None
             except Exception as e:  # noqa: BLE001
                 resultaat, fout = None, f"{e}\n{traceback.format_exc()[-1500:]}"
             c.execute("UPDATE taken SET laatst = %s, resultaat = %s, fout = %s, bezig_sinds = NULL, duur_ms = %s WHERE naam = %s",

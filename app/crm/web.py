@@ -101,7 +101,8 @@ def kansen_scherm(request: Request, activiteit: str = "", gesloten: int = 0, mel
     for a in acts:
         mijn = [k for k in lijst if k["activiteit"] == a["code"]] if not act else []
         per.append({"a": a, "aantal": len(mijn), "waarde": sum((k["waarde"] or 0) for k in mijn),
-                    "gewogen": sum(model.gewogen(k) for k in mijn), "achter": sum(1 for k in mijn if model.achter(k, dt.date.today()))})
+                    "gewogen": sum(model.gewogen(k) for k in mijn),
+                    "achter": sum(1 for k in mijn if model.achter(k, dt.datetime.now(config.TZ).date()))})
     kolommen = []
     if act:
         for code, naam, uit in model.fases(act["soort"]):
@@ -249,8 +250,10 @@ def kans_weg(request: Request, kid: int):
         k = c.execute("DELETE FROM crm_kansen WHERE id = %s RETURNING *", (kid,)).fetchone()
         if not k:
             raise HTTPException(404)
-        if k["taak_id"]:
-            c.execute("DELETE FROM takenbord WHERE id = %s AND status <> 'afgerond'", (k["taak_id"],))
+        if k["taak_id"]:  # de open taak van de volgende stap gaat mee weg, ook uit de agenda
+            t = c.execute("DELETE FROM takenbord WHERE id = %s AND status <> 'afgerond' RETURNING *", (k["taak_id"],)).fetchone()
+            if t:
+                model.agenda([], weg=[t])
     return _terug(f"/crm?activiteit={k['activiteit']}", melding=f"Kans '{k['titel']}' verwijderd.")
 
 
@@ -430,8 +433,9 @@ async def nieuw_opslaan(request: Request):
                               (titel, activiteit, str(f.get("omschrijving") or "")[:4000], model.datum(f.get("datum")), org, contact)).fetchone()
                 stap = str(f.get("volgende_stap") or "").strip()
                 if stap:
-                    c.execute("""INSERT INTO takenbord (titel, status, prio, einddatum, project_id) VALUES (%s, 'gepland', 'middel', %s, %s)""",
-                              (stap[:200], model.datum(f.get("volgende_datum")), p["id"]))
+                    model.agenda([c.execute("""INSERT INTO takenbord (titel, status, prio, einddatum, project_id)
+                                               VALUES (%s, 'gepland', 'middel', %s, %s) RETURNING id""",
+                                            (stap[:200], model.datum(f.get("volgende_datum")), p["id"])).fetchone()["id"]])
                 ids, pad = {"project_id": p["id"]}, f"/crm/project/{p['id']}"
             if bron in ("mail", "nieuws", "social") and (bron_titel or bron_url or bericht_id):
                 model.tijdlijn(c, bron, bron_titel, "", bron_url, bericht_id=bericht_id, **ids)
@@ -470,7 +474,7 @@ def _projecten(c, waar="true", args=()):
 
 
 @router.get("/crm/projecten", response_class=HTMLResponse)
-def projecten_scherm(request: Request, activiteit: str = "", alles: int = 0, melding: str = ""):
+def projecten_scherm(request: Request, activiteit: str = "", alles: int = 0, melding: str = "", fout: str = ""):
     with db.pool.connection() as c:
         acts = model.activiteiten(c)
         waar, args = ["(%s OR p.status NOT IN ('afgerond', 'gestopt'))"], [bool(alles)]
@@ -480,7 +484,7 @@ def projecten_scherm(request: Request, activiteit: str = "", alles: int = 0, mel
         lijst = _projecten(c, " AND ".join(waar), tuple(args))
         sjablonen = c.execute("SELECT id, naam FROM crm_sjablonen ORDER BY naam").fetchall()
     return templates.TemplateResponse("crm_projecten.html", _ctx(
-        request, "projecten", acts=acts, lijst=lijst, activiteit=activiteit, alles=alles, melding=melding, sjablonen=sjablonen,
+        request, "projecten", acts=acts, lijst=lijst, activiteit=activiteit, alles=alles, melding=melding, fout=fout, sjablonen=sjablonen,
         statussen=model.PROJECTSTATUS))
 
 
@@ -560,8 +564,9 @@ async def project_taak(request: Request, pid: int):
         with db.pool.connection() as c:
             if not c.execute("SELECT 1 FROM crm_projecten WHERE id = %s", (pid,)).fetchone():
                 raise HTTPException(404)
-            c.execute("""INSERT INTO takenbord (titel, status, prio, einddatum, project_id) VALUES (%s, 'gepland', %s, %s, %s)""",
-                      (titel, f.get("prio") if f.get("prio") in ("laag", "middel", "hoog") else "middel", model.datum(f.get("einddatum")), pid))
+            model.agenda([c.execute("""INSERT INTO takenbord (titel, status, prio, einddatum, project_id) VALUES (%s, 'gepland', %s, %s, %s)
+                                       RETURNING id""", (titel, f.get("prio") if f.get("prio") in ("laag", "middel", "hoog") else "middel",
+                                                         model.datum(f.get("einddatum")), pid)).fetchone()["id"]])
             c.execute("UPDATE crm_projecten SET bijgewerkt = now() WHERE id = %s", (pid,))
     await asyncio.to_thread(doe)
     return _terug(f"/crm/project/{pid}#taken")
@@ -608,7 +613,7 @@ def project_weg(request: Request, pid: int):
 # ---------------------------------------------------------------- relaties
 
 @router.get("/crm/relaties", response_class=HTMLResponse)
-def relaties_scherm(request: Request, q: str = "", activiteit: str = "", verborgen: int = 0, melding: str = ""):
+def relaties_scherm(request: Request, q: str = "", activiteit: str = "", verborgen: int = 0, melding: str = "", fout: str = ""):
     q = q.strip()[:100]
     zoek = f"%{q}%"
     with db.pool.connection() as c:
@@ -628,11 +633,11 @@ def relaties_scherm(request: Request, q: str = "", activiteit: str = "", verborg
         totaal = c.execute("SELECT count(*) AS n FROM crm_contacten WHERE NOT verborgen").fetchone()["n"]
     return templates.TemplateResponse("crm_relaties.html", _ctx(
         request, "relaties", contacten=contacten, organisaties=organisaties, q=q, activiteit=activiteit, verborgen=verborgen,
-        acts=acts, totaal=totaal, melding=melding))
+        acts=acts, totaal=totaal, melding=melding, fout=fout))
 
 
 @router.get("/crm/contact/{cid:int}", response_class=HTMLResponse)
-def contact_scherm(request: Request, cid: int, melding: str = ""):
+def contact_scherm(request: Request, cid: int, melding: str = "", fout: str = ""):
     with db.pool.connection() as c:
         p = c.execute("""SELECT p.*, o.naam AS organisatie FROM crm_contacten p LEFT JOIN crm_organisaties o ON o.id = p.organisatie_id
                          WHERE p.id = %s""", (cid,)).fetchone()
@@ -645,7 +650,7 @@ def contact_scherm(request: Request, cid: int, melding: str = ""):
         projecten = _projecten(c, "p.contact_id = %s", (cid,))
         acts = model.activiteiten(c)
     return templates.TemplateResponse("crm_contact.html", _ctx(
-        request, "relaties", p=p, mails=mails, kansen=kansen, projecten=projecten, acts=acts, melding=melding))
+        request, "relaties", p=p, mails=mails, kansen=kansen, projecten=projecten, acts=acts, melding=melding, fout=fout))
 
 
 @router.post("/crm/contact/{cid:int}")
@@ -681,7 +686,7 @@ async def contact_opslaan(request: Request, cid: int):
                              v).fetchone()["id"], ""
     nieuw_id, fout = await asyncio.to_thread(doe)
     if fout:
-        return _terug(f"/crm/contact/{cid}" if cid else "/crm/relaties", melding=fout)
+        return _terug(f"/crm/contact/{cid}" if cid else "/crm/relaties", fout=fout)
     return _terug(f"/crm/contact/{nieuw_id}", melding="Opgeslagen.")
 
 

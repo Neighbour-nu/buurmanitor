@@ -176,7 +176,10 @@ def test_kans_van_mail_tot_project(klant, monkeypatch):
     assert "Kick-off gepland" in pagina and 'href="https://drive.google.com/x"' in pagina and "javascript:" not in pagina
 
 
-def test_projecten_sjablonen_en_takenbord(klant):
+def test_projecten_sjablonen_en_takenbord(klant, monkeypatch):
+    from app.taken import web as taken_web  # pylint: disable=import-outside-toplevel
+    naar_agenda = []
+    monkeypatch.setattr(taken_web, "agenda_op_achtergrond", lambda tids, weg=None: naar_agenda.extend(tids))
     r = klant.post("/crm/sjablonen", headers=FORM, follow_redirects=False,
                    data={"naam": "Keeperscongres", "activiteit": "zerohero", "taken": "Locatie vastleggen | -180\nSprekers bevestigen | -90\nEvaluatie | +7"})
     assert "3+taken" in r.headers["location"]
@@ -189,7 +192,9 @@ def test_projecten_sjablonen_en_takenbord(klant):
         taken = c.execute("SELECT titel, einddatum FROM takenbord WHERE project_id = %s ORDER BY einddatum", (pid,)).fetchall()
     assert [(t["titel"], t["einddatum"]) for t in taken] == [("Locatie vastleggen", dt.date(2026, 8, 7)), ("Sprekers bevestigen", dt.date(2026, 11, 5)),
                                                               ("Evaluatie", dt.date(2027, 2, 10))]
+    assert len(naar_agenda) == 3  # de deadlines gaan (op de achtergrond) ook de agenda in, net als bij Noor
     klant.post(f"/crm/project/{pid}/taak", headers=FORM, data={"titel": "Catering regelen", "einddatum": "2027-01-15"})
+    assert len(naar_agenda) == 4
     pagina = klant.get(f"/crm/project/{pid}", headers=KOP).text
     assert "Catering regelen" in pagina and "0/4" in pagina
     # Op het takenbord: met het project erbij, en te filteren.

@@ -139,29 +139,40 @@ def volgende_stap_taak(c, k):
     if not open_:
         if t and t["status"] != "afgerond":
             c.execute("UPDATE takenbord SET status = 'afgerond', afgerond = now(), bijgewerkt = now() WHERE id = %s", (t["id"],))
+            agenda([t["id"]])
         return k.get("taak_id")
     titel = f"{k['volgende_stap'].strip()[:150]} ({k['titel'][:60]})"
     oms = f"Volgende stap voor de kans '{k['titel']}'. Zie /crm/kans/{k['id']}."
     if t and t["status"] != "afgerond":
         c.execute("""UPDATE takenbord SET titel = %s, einddatum = %s, beschrijving = %s, bijgewerkt = now() WHERE id = %s""",
                   (titel, k.get("volgende_datum"), oms, t["id"]))
+        if (t["titel"], t["einddatum"]) != (titel, k.get("volgende_datum")):
+            agenda([t["id"]])
         return t["id"]
     tid = c.execute("""INSERT INTO takenbord (titel, beschrijving, status, prio, einddatum, kans_id, project_id)
                        VALUES (%s, %s, 'gepland', 'middel', %s, %s, %s) RETURNING id""",
                     (titel, oms, k.get("volgende_datum"), k["id"], k.get("project_id"))).fetchone()["id"]
     c.execute("UPDATE crm_kansen SET taak_id = %s WHERE id = %s", (tid, k["id"]))
+    agenda([tid])
     return tid
 
 
 def sjabloon_toepassen(c, project, sjabloon):
     """De vaste taken van een sjabloon bij een project op het takenbord zetten. Geeft het aantal."""
-    n = 0
+    ids = []
     for t in taken_uit_sjabloon(sjabloon["taken"] or [], project.get("datum")):
-        c.execute("""INSERT INTO takenbord (titel, beschrijving, status, prio, einddatum, project_id)
-                     VALUES (%s, %s, 'gepland', 'middel', %s, %s)""",
-                  (t["titel"], f"Uit het sjabloon '{sjabloon['naam']}' voor {project['titel']}.", t["einddatum"], project["id"]))
-        n += 1
-    return n
+        ids.append(c.execute("""INSERT INTO takenbord (titel, beschrijving, status, prio, einddatum, project_id)
+                                VALUES (%s, %s, 'gepland', 'middel', %s, %s) RETURNING id""",
+                             (t["titel"], f"Uit het sjabloon '{sjabloon['naam']}' voor {project['titel']}.", t["einddatum"],
+                              project["id"])).fetchone()["id"])
+    agenda(ids)
+    return len(ids)
+
+
+def agenda(tids, weg=None):
+    """De deadlines van deze taken (ook) in de agenda zetten of bijwerken, op de achtergrond (zoals bij Noor)."""
+    from ..taken import web as taken_web  # pylint: disable=import-outside-toplevel
+    taken_web.agenda_op_achtergrond(tids, weg)
 
 
 def json_dump(x):

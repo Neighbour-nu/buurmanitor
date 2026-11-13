@@ -116,6 +116,17 @@ def test_database_kern():
         b = meldingen.melden(c, "belangrijk", "test", "Nog eens", sleutel="dubbel")
         assert a and b is None
         assert [m["titel"] for m in meldingen.nieuw_sinds(c, 0)] == ["Eerste"]
+        # Nachtelijk opruimen: oud en afgehandeld weg, recent en verwijderde meldingen (tegen terugkomen) blijven.
+        c.execute("DELETE FROM routes")
+        c.execute("INSERT INTO routes (sleutel, duur, bijgewerkt) VALUES ('oud', 5, now() - interval '40 days'), ('vers', 5, now())")
+        c.execute("""INSERT INTO meldingen (niveau, bron, titel, sleutel, status, afgehandeld) VALUES
+                     ('normaal', 'test', 'Oud opgelost', 'o1', 'opgelost', now() - interval '400 days'),
+                     ('normaal', 'test', 'Oud verwijderd', 'o2', 'verwijderd', now() - interval '400 days')""")
+        uitslag = main._opruimen(c)  # pylint: disable=protected-access
+        assert "1 routes" in uitslag and "1 meldingen" in uitslag, uitslag
+        assert [r["sleutel"] for r in c.execute("SELECT sleutel FROM routes")] == ["vers"]
+        assert c.execute("SELECT 1 FROM meldingen WHERE sleutel = 'o2'").fetchone()
+        assert "opruimen" in planner.TAKEN
 
 
 def test_planner_met_slot():

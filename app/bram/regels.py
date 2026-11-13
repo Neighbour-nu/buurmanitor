@@ -26,7 +26,7 @@ from . import bronnen
 VOORWAARDEN = ("van", "aan", "onderwerp", "tekst", "bijlage", "bijlage_naam", "factuur")
 TEKSTVELDEN = ("van", "aan", "onderwerp", "tekst", "bijlage_naam")
 FACTUUR = re.compile(r"factu(u)?r|invoice|\bnota\b|rekening|receipt|kwitantie|betaalbewijs|creditnota|\bbon\b|\binv[-_ ]?\d", re.I)
-PROEF_MAX = 60  # zoveel bijlagenlijsten haalt een proef hooguit op
+PROEF_MAX = 15  # zoveel bijlagenlijsten haalt een proef hooguit op (het scherm wacht erop)
 LOG_BEWAREN = 1000
 
 

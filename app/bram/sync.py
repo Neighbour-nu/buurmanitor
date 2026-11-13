@@ -134,8 +134,11 @@ def opslaan(c, k, berichten, nu=None):
     grens = oudste if oudste and len(ids) >= bronnen.MAX_BERICHTEN else nu - dt.timedelta(days=bronnen.DAGEN_TERUG)
     weg = c.execute("""UPDATE post_berichten SET status = 'weg' WHERE koppeling_id = %s AND status = 'open'
                        AND ontvangen >= %s AND NOT (extern_id = ANY(%s::text[])) RETURNING id""", (k["id"], grens, ids)).fetchall()
-    c.execute("""DELETE FROM post_berichten WHERE koppeling_id = %s
-                 AND ((status = 'weg' AND gezien < now() - interval '60 days') OR ontvangen < %s)""",
+    # Oude mail opruimen, behalve mail waar een taak of een kans/project naar verwijst (die link moet blijven werken).
+    c.execute("""DELETE FROM post_berichten b WHERE koppeling_id = %s
+                 AND ((status = 'weg' AND gezien < now() - interval '60 days') OR ontvangen < %s)
+                 AND NOT EXISTS (SELECT 1 FROM takenbord t WHERE t.bericht_id = b.id)
+                 AND NOT EXISTS (SELECT 1 FROM crm_tijdlijn t WHERE t.bericht_id = b.id)""",
               (k["id"], nu - dt.timedelta(days=bronnen.DAGEN_TERUG + 30)))
     c.execute("UPDATE post_berichten SET status = 'weg' WHERE koppeling_id = %s AND status = 'open' AND ontvangen < %s",
               (k["id"], nu - dt.timedelta(days=bronnen.DAGEN_TERUG)))
@@ -287,11 +290,9 @@ def taak_post(c):
 
 # ---------------------------------------------------------------- na een klik van Martijn
 
-def _bewaard(soort, kid):
+def _bewaard(c, soort, kid):
     """De laatst opgehaalde lijst uit de database (blijft bewaard na een herstart): (lijst, leeftijd in seconden)."""
-    from ..kern import db  # pylint: disable=import-outside-toplevel
-    with db.pool.connection() as c:
-        r = c.execute("SELECT waarde, bijgewerkt FROM instellingen WHERE sleutel = %s", (f"bram_{soort}_{kid}",)).fetchone()
+    r = c.execute("SELECT waarde, bijgewerkt FROM instellingen WHERE sleutel = %s", (f"bram_{soort}_{kid}",)).fetchone()
     if not r or not r["waarde"]:
         return None, None
     try:
@@ -347,7 +348,7 @@ def _lijst(c, k, soort, vers=False, wachten=True):
     if lijst is not None and tot > time.monotonic() and not vers:
         return lijst
     if not vers:
-        bewaard, leeftijd = _bewaard(soort, k["id"])
+        bewaard, leeftijd = _bewaard(c, soort, k["id"])
         if bewaard is not None:
             with _slot:
                 cache[k["id"]] = (bewaard, time.monotonic() + max(0, GELDIG - leeftijd))

@@ -50,7 +50,7 @@
     <p class="knoppenrij">
       <button class="knop vol" name="actie" value="opslaan">Opslaan</button>
       {% if k.soort in ('google', 'microsoft') %}<button class="knop" name="actie" value="agendas">Lijst agenda's verversen</button>{% endif %}
-      <button class="knop" name="actie" value="weg">Ontkoppelen</button>
+      <button class="knop" name="actie" value="weg" onclick="return confirm('Deze agenda ontkoppelen? De afspraken ervan verdwijnen uit Buurmanitor (in de agenda zelf blijven ze staan).')">Ontkoppelen</button>
     </p>
   </form>
 </section>

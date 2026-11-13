@@ -8,6 +8,7 @@ import datetime as dt
 import json
 import os
 import re
+import threading
 import urllib.parse
 
 os.environ.setdefault("DATABASE_URL", os.environ.get("TEST_DATABASE_URL", "postgresql://niemand@localhost/niets"))
@@ -33,6 +34,13 @@ KOP = {"Remote-User": "martijn", "X-Proxy-Geheim": "test-geheim"}
 FORM = KOP | {"Origin": "https://buurmanitor.neighbour.nu"}
 UTC = dt.timezone.utc
 
+
+
+def _eerste_ophaalronde_klaar():
+    """Na het koppelen haalt Bram de mail op de achtergrond op; wacht daarop."""
+    for t in threading.enumerate():
+        if t.name == "bram-eerste-keer":
+            t.join(20)
 
 def _b64(t):
     return base64.urlsafe_b64encode(t.encode()).decode().rstrip("=")
@@ -250,6 +258,7 @@ def test_koppelen_sorteren_en_opruimen(klant, monkeypatch):
     staat = dict(x.split("=", 1) for x in r.headers["location"].split("?", 1)[1].split("&"))["state"]
     r = klant.get(f"/clara/koppel/google/terug?code=x&state={staat}", headers=KOP, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"].startswith("/bram/instellingen?melding=") and "gekoppeld" in r.headers["location"]
+    _eerste_ophaalronde_klaar()
     with db.pool.connection() as c:
         k = c.execute("SELECT * FROM post_koppelingen").fetchone()
         assert k["account"] == "martijn@neighbour.nu" and k["claude"] and k["domein"] == "zerohero" and "1//mail" not in k["geheim"]
@@ -355,6 +364,7 @@ def test_outlook_archiveren_krijgt_nieuw_id(klant, monkeypatch):
     staat = dict(x.split("=", 1) for x in r.headers["location"].split("?", 1)[1].split("&"))["state"]
     r = klant.get(f"/clara/koppel/microsoft/terug?code=x&state={staat}", headers=KOP, follow_redirects=False)
     assert r.headers["location"].startswith("/bram/instellingen?melding=")
+    _eerste_ophaalronde_klaar()
     with db.pool.connection() as c:
         k = c.execute("SELECT * FROM post_koppelingen WHERE soort = 'microsoft'").fetchone()
         assert not k["claude"] and k["tenant"] == "t1"

@@ -6,6 +6,7 @@ Martijn), en past die aan of haalt hem weg als de taak verandert. Een taak kan o
 """
 import asyncio
 import datetime as dt
+import threading
 import json
 
 from fastapi import APIRouter, HTTPException, Request
@@ -151,18 +152,39 @@ def agenda_bijwerken(c, tid):
         return f"maar de agenda lukte niet: {e}"
 
 
+def agenda_op_achtergrond(tids, weg=None):
+    """De afspraken bij deze taken bijwerken zonder dat het scherm erop wacht (bijvoorbeeld na een sjabloon met veel
+    taken). Met weg: eerst de afspraak van deze (al verwijderde) taakrijen weghalen."""
+    tids = [t for t in tids if t]
+    if not tids and not weg:
+        return
+
+    def werk():
+        try:
+            with db.achtergrond.connection() as c:
+                for t in weg or []:
+                    _weg_uit_agenda(c, t)
+                for tid in tids:
+                    agenda_bijwerken(c, tid)
+        except Exception:  # noqa: BLE001  (de planner trekt het later recht)
+            pass
+    threading.Thread(target=werk, name="taken-agenda", daemon=True).start()
+
+
 @planner.taak("takenagenda", elke=dt.timedelta(hours=6))
 def taak_takenagenda(c):
     """Afgeronde taken met een afspraak die nog in de toekomst staat: de agenda gelijktrekken (ook voor taken die
     afgerond werden voordat dit zo werkte)."""
-    rijen = c.execute("""SELECT id, agenda_spec FROM takenbord WHERE status = 'afgerond' AND agenda_extern <> ''
-                         AND coalesce(einddatum, startdatum) >= (afgerond AT TIME ZONE 'Europe/Amsterdam')::date""").fetchall()
+    rijen = c.execute("""SELECT id, agenda_spec FROM takenbord WHERE (status = 'afgerond' AND agenda_extern <> ''
+                           AND coalesce(einddatum, startdatum) >= (afgerond AT TIME ZONE 'Europe/Amsterdam')::date)
+                         OR (status <> 'afgerond' AND agenda_extern = '' AND agenda_fout = '' AND gearchiveerd IS NULL
+                           AND coalesce(einddatum, startdatum) >= current_date)""").fetchall()
     gedaan = 0
     for r in rijen:
         agenda_bijwerken(c, r["id"])
         na = c.execute("SELECT agenda_spec FROM takenbord WHERE id = %s", (r["id"],)).fetchone()
         gedaan += bool(na and na["agenda_spec"] != r["agenda_spec"])
-    return f"{len(rijen)} afgeronde taken nagekeken, {gedaan} afspraken aangepast of weggehaald"
+    return f"{len(rijen)} taken nagekeken, {gedaan} afspraken gezet, aangepast of weggehaald"
 
 
 def uit_formulier(f):
@@ -256,8 +278,11 @@ def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, w
                          "starttijd": None, "einddatum": None, "eindtijd": None, "doel": "", "bericht_id": None, "agenda_fout": "",
                          "project_id": project or None}
             if bericht:
-                b = c.execute("SELECT * FROM post_berichten WHERE id = %s", (bericht,)).fetchone()
-                if b:
+                al = c.execute("SELECT * FROM takenbord WHERE bericht_id = %s ORDER BY id DESC LIMIT 1", (bericht,)).fetchone()
+                b = None if al else c.execute("SELECT * FROM post_berichten WHERE id = %s", (bericht,)).fetchone()
+                if al:  # van deze mail is al een taak: die openen in plaats van een dubbele te maken
+                    formulier, melding = al, "Van deze mail is al een taak gemaakt; die staat hieronder open."
+                elif b:
                     formulier |= uit_bericht(b)
         mail = c.execute("SELECT id, onderwerp, van_naam FROM post_berichten WHERE id = %s", (formulier["bericht_id"],)).fetchone() \
             if formulier and formulier.get("bericht_id") else None
@@ -295,9 +320,14 @@ async def taak_nieuw(request: Request):
 
     def doe():
         with db.pool.connection() as c:
+            al = c.execute("SELECT id FROM takenbord WHERE bericht_id = %s", (bericht_id,)).fetchone() if bericht_id else None
+            if al:  # dubbel geklikt of het formulier nog eens verstuurd
+                return al["id"], None
             tid = nieuw(c, velden, bericht_id)
             return tid, agenda_bijwerken(c, tid)
     tid, agenda = await asyncio.to_thread(doe)
+    if agenda is None:
+        return _terug(f"/taken?bewerk={tid}#formulier", melding="Van deze mail stond al een taak; er is geen tweede gemaakt.")
     return _terug(_terug_adres(f, f"/taken#taak-{tid}"), melding=f"Taak '{velden['titel']}' staat bij {STATUS_NAMEN[velden['status']]}" + (f", {agenda}" if agenda else "") + ".")
 
 

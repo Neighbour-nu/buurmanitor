@@ -9,6 +9,7 @@ import asyncio
 import datetime as dt
 import json
 import re
+import threading
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request
@@ -187,7 +188,7 @@ async def postkamer_nieuw(request: Request):
 async def vernieuwen(request: Request):
     controleer_herkomst(request)
     uitslag = await asyncio.to_thread(planner.draai, db.achtergrond, "post", True)
-    return _terug("/bram", melding=(uitslag or "Bijgewerkt.")[:300])
+    return _terug("/bram", melding=(uitslag or planner.BEZIG)[:300])
 
 
 def _bericht(c, bid):
@@ -529,8 +530,9 @@ async def bulk(request: Request):
                 try:
                     if actie == "taak":
                         from ..taken import web as taken_web  # pylint: disable=import-outside-toplevel
-                        voorstel = taken_web.uit_bericht(b)
-                        taken_web.nieuw(c, {k: v for k, v in voorstel.items() if k != "bericht_id"}, b["id"])
+                        if not c.execute("SELECT 1 FROM takenbord WHERE bericht_id = %s", (b["id"],)).fetchone():  # niet dubbel
+                            voorstel = taken_web.uit_bericht(b)
+                            taken_web.nieuw(c, {k: v for k, v in voorstel.items() if k != "bericht_id"}, b["id"])
                     elif actie == "map":
                         laatste = sync.archiveer_in(c, b, map_id)
                         doe.map_naam = laatste.split(" (met ")[0].removeprefix("gearchiveerd in ")
@@ -610,11 +612,15 @@ async def koppeling_klaar(soort, code, opties):
                              gegevens.get("tenant", ""), opties.get("domein", "prive"), kluis.sluit(gegevens["refresh"]),
                              bool(opties.get("claude")))).fetchone()["id"]
 
-    def eerste_keer():
-        with db.pool.connection() as c:
-            return sync.synchroniseer(c, c.execute("SELECT * FROM post_koppelingen WHERE id = %s", (kid,)).fetchone())
-    uitslag = await asyncio.to_thread(eerste_keer)
-    return _terug("/bram/instellingen", melding=f"{gegevens['account'] or soort} {'opnieuw gekoppeld' if bestaand else 'gekoppeld'}. {uitslag}")
+    def eerste_keer():  # op de achtergrond: bij een volle mailbox duurt dat even, en daar hoef je niet op te wachten
+        try:
+            with db.achtergrond.connection() as c:
+                sync.synchroniseer(c, c.execute("SELECT * FROM post_koppelingen WHERE id = %s", (kid,)).fetchone())
+        except Exception:  # noqa: BLE001  (de planner probeert het over vijf minuten opnieuw en toont dan de fout)
+            pass
+    threading.Thread(target=eerste_keer, name="bram-eerste-keer", daemon=True).start()
+    return _terug("/bram/instellingen", melding=f"{gegevens['account'] or soort} {'opnieuw gekoppeld' if bestaand else 'gekoppeld'}. "
+                                                "De mail wordt nu op de achtergrond opgehaald; over een minuut staat hij in Bram.")
 
 
 @router.post("/bram/koppeling/{kid:int}")

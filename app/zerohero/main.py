@@ -4,6 +4,7 @@ Leest de database doellijn (gevuld door de n8n-werkstromen) en toont de schermen
 Vandaag, Inbox en Congres. Inloggen gebeurt vooraf door Authelia (via Caddy);
 de app vertrouwt de header Remote-User die Caddy meestuurt.
 """
+import asyncio
 import datetime as dt
 import hmac
 import html
@@ -680,9 +681,15 @@ async def upload_beeld(request: Request, cid: int, bestand: UploadFile = File(..
     c = q1("SELECT * FROM concepten WHERE id = %s", (cid,))
     if not c or not wp.wp_actief():
         raise HTTPException(400, "Geen concept of geen WordPress-gegevens")
+    inhoud = await bestand.read(25 * 1024 * 1024 + 1)
+    # Verkleinen en naar WordPress sturen kost seconden: in een thread, zodat de rest van Buurmanitor door kan.
+    c, fout = await asyncio.to_thread(_verwerk_beeld, c, cid, inhoud, bestand.filename, alt, bijschrift)
+    return templates.TemplateResponse("_uitgelicht.html", ctx(request, c=c, fout=fout))
+
+
+def _verwerk_beeld(c, cid, inhoud, bestandsnaam, alt, bijschrift):
     fout = ""
     try:
-        inhoud = await bestand.read(25 * 1024 * 1024 + 1)
         if len(inhoud) > 25 * 1024 * 1024:
             raise ValueError("Het bestand is groter dan 25 MB.")
         import io
@@ -702,7 +709,7 @@ async def upload_beeld(request: Request, cid: int, bestand: UploadFile = File(..
         else:
             img.convert("RGB").save(uit, "JPEG", quality=86, optimize=True, progressive=True)
             mime, ext = "image/jpeg", "jpg"
-        basis = (bestand.filename or f"concept-{cid}").rsplit(".", 1)[0].lower()
+        basis = (bestandsnaam or f"concept-{cid}").rsplit(".", 1)[0].lower()
         naam = "".join(ch if ch.isalnum() else "-" for ch in basis).strip("-")[:60] or f"concept-{cid}"
         c = _zet_beeld(c, uit.getvalue(), mime, f"{naam}.{ext}", alt.strip() or c.get("blog_titel") or "",
                        bijschrift.strip(), "eigen")
@@ -710,7 +717,7 @@ async def upload_beeld(request: Request, cid: int, bestand: UploadFile = File(..
         fout = str(e)
     except Exception as e:  # noqa: BLE001
         fout = "Uploaden naar WordPress is niet gelukt: " + str(e)[:200]
-    return templates.TemplateResponse("_uitgelicht.html", ctx(request, c=c, fout=fout))
+    return c, fout
 
 
 @app.post("/concepten/{cid}/publiceer", response_class=HTMLResponse)

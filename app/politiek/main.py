@@ -837,7 +837,7 @@ async def fractie_notulen_maak(request: Request, bestand: UploadFile = File(None
     vergaderingen = []
     try:
         maandag = datum - dt.timedelta(days=datum.weekday())
-        for ev in notubiz.evenementen(maandag, maandag + dt.timedelta(days=6)):
+        for ev in await asyncio.to_thread(notubiz.evenementen, maandag, maandag + dt.timedelta(days=6)):
             if ev["soort"] in ("commissie", "raad"):
                 vergaderingen.append((f"{ev['naam']} {whaller.d(ev['start'].date())}", "", []))
     except Exception:  # noqa: BLE001 - de agenda is een hulp, geen voorwaarde

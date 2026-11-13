@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from .. import personas
 import json
 
-from ..kern import claude, config, db
+from ..kern import claude, config, db, planner
 from ..kern.web import controleer_herkomst, ctx, templates
 from . import gesprek, nieuws
 
@@ -110,11 +110,8 @@ async def verberg(request: Request, bid: int):
 async def vernieuwen(request: Request):
     controleer_herkomst(request)
 
-    def doe():
-        with db.pool.connection() as c:
-            return nieuws.taak_nieuws(c)
-    uitslag = await asyncio.to_thread(doe)
-    return _terug("/vera/bronnen", melding=f"Opgehaald: {uitslag}.")
+    uitslag = await asyncio.to_thread(planner.draai, db.achtergrond, "nieuws", True)  # onder het slot van de planner
+    return _terug("/vera/bronnen", melding=f"Opgehaald: {uitslag}." if uitslag else planner.BEZIG)
 
 
 # ---------------------------------------------------------------- bronnen

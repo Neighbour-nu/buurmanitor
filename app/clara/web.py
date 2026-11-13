@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from .. import personas
-from ..kern import claude, config, db
+from ..kern import claude, config, db, planner
 from ..kern.web import DAGEN, controleer_herkomst, ctx, templates
 from . import analyse, bronnen, gesprek, kluis, reis, spiegel, sync
 
@@ -152,11 +152,12 @@ def _reis_als_bezet(plan):
 
 
 @router.post("/clara/vernieuwen")
-def vernieuwen(request: Request):
+async def vernieuwen(request: Request):
+    """Nu bijwerken: onder het slot van de planner, zodat er nooit twee keer tegelijk wordt gesynchroniseerd (dan zouden
+    reistijdblokken of doorgezette blokken dubbel kunnen komen)."""
     controleer_herkomst(request)
-    with db.pool.connection() as c:
-        uitslag = sync.taak_agenda(c, forceer=True)
-    return _terug("/clara", melding=uitslag[:300])
+    uitslag = await asyncio.to_thread(planner.draai, db.achtergrond, "agenda", True, lambda c: sync.taak_agenda(c, forceer=True))
+    return _terug("/clara", melding=(uitslag or planner.BEZIG)[:300])
 
 
 # ---------------------------------------------------------------- iets in de agenda zetten (na een klik)
@@ -539,7 +540,7 @@ async def koppel_start(request: Request, soort: str):
                 return _terug("/clara/koppelingen", fout=str(e))
             k = c.execute("""INSERT INTO agenda_koppelingen (soort, naam, domein, geheim) VALUES ('ics', %s, %s, %s)
                              RETURNING *""", (naam or "Agendalink", domein, kluis.sluit(url))).fetchone()
-            sync.synchroniseer(c, k, forceer=True)
+            await asyncio.to_thread(_sync_los, k["id"])
             return _terug("/clara/koppelingen", melding=f"Agendalink '{k['naam']}' gekoppeld ({aantal} afspraken in het venster).")
         if soort == "raad":
             if c.execute("SELECT 1 FROM agenda_koppelingen WHERE soort = 'raad'").fetchone():

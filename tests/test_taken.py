@@ -150,8 +150,8 @@ def test_bord_agenda_en_kolommen(klant, monkeypatch):
     with db.pool.connection() as c:
         oud = web.nieuw(c, {"titel": "Oude taak", "beschrijving": "", "prio": "laag", "status": "afgerond", "startdatum": s, "doel": f"{k}|primary"})
         c.execute("UPDATE takenbord SET agenda_koppeling = %s, agenda_id = 'primary', agenda_extern = 'oud-ev', agenda_spec = 'oud' WHERE id = %s", (k, oud))
-        assert web.taak_takenagenda(c) == "1 afgeronde taken nagekeken, 1 afspraken aangepast of weggehaald" and weg[-1] == "oud-ev"
-        assert web.taak_takenagenda(c) == "0 afgeronde taken nagekeken, 0 afspraken aangepast of weggehaald"
+        assert web.taak_takenagenda(c) == "1 taken nagekeken, 1 afspraken gezet, aangepast of weggehaald" and weg[-1] == "oud-ev"
+        assert web.taak_takenagenda(c) == "0 taken nagekeken, 0 afspraken gezet, aangepast of weggehaald"
         c.execute("DELETE FROM takenbord WHERE id = %s", (oud,))
     # Toch niet af: terug naar Actief, en de afspraak komt terug.
     klant.post(f"/taken/{tid}/status", headers=FORM, data={"status": "actief"})
@@ -183,9 +183,13 @@ def test_taak_uit_een_mail(klant):
     klant.post("/taken/nieuw", headers=FORM, data={"titel": "Onderwerp 0", "prio": "hoog", "bericht_id": str(ids[0])})
     pagina = klant.get("/taken", headers=KOP).text
     assert f'href="/bram/bericht/{ids[0]}">Onderwerp 0' in pagina
+    # Nog eens (dubbel geklikt, of later opnieuw vanuit de mail): geen tweede taak, wel de bestaande open.
+    r = klant.post("/taken/nieuw", headers=FORM, follow_redirects=False, data={"titel": "Onderwerp 0", "prio": "hoog", "bericht_id": str(ids[0])})
+    assert "bewerk=" in r.headers["location"] and "geen+tweede" in r.headers["location"]
+    assert "al een taak gemaakt" in klant.get(f"/taken?nieuw=1&bericht={ids[0]}", headers=KOP).text
     # Meer mails tegelijk vanuit Post: elk een taak in Nieuw.
-    r = klant.post("/bram/bulk", headers=FORM, follow_redirects=False, data={"bericht": [str(ids[1]), str(ids[2])], "actie": "taak"})
-    assert "2+berichten+als+taak+in+Taken+gezet" in r.headers["location"], r.headers["location"]
+    r = klant.post("/bram/bulk", headers=FORM, follow_redirects=False, data={"bericht": [str(ids[0]), str(ids[1]), str(ids[2])], "actie": "taak"})
+    assert "3+berichten+als+taak+in+Taken+gezet" in r.headers["location"], r.headers["location"]
     with db.pool.connection() as c:
         rijen = c.execute("SELECT titel, status, prio, bericht_id FROM takenbord ORDER BY id").fetchall()
         assert [(x["titel"], x["status"], x["prio"]) for x in rijen] == [("Onderwerp 0", "nieuw", "hoog"), ("Onderwerp 1", "nieuw", "hoog"),
