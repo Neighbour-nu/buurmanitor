@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block inhoud %}
 <h1 class="titel">Ochtendbriefing</h1>
+{% if beheer == 'buurmanitor' %}<div class="melding">De ochtendmail wordt nu verstuurd vanuit Buurmanitor, waar je zelf de onderdelen, opmaak en
+  ontvangers instelt: <a href="{{ overzichten_url }}">Dagelijkse overzichten</a>. Hieronder staat de oude briefing; die gaat niet meer vanzelf weg.</div>
+{% else %}<p class="uitleg">Wil je de inhoud en opmaak zelf bepalen, of de briefing ook naar fractieleden sturen? Dat kan bij
+  <a href="{{ overzichten_url }}">Dagelijkse overzichten</a> in Buurmanitor.</p>{% endif %}
 <p class="uitleg">Elke dag om {{ tijd }} uur via Telegram en mail. Dit is hoe de briefing er nu uit zou zien.
 {% if taak %}Laatst verstuurd {{ geleden(taak.laatst) }}{% if taak.resultaat %} ({{ taak.resultaat }}){% endif %}.{% endif %}</p>
 {% if melding %}<div class="melding">{{ melding }}</div>{% endif %}

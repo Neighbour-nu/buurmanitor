@@ -6,7 +6,7 @@
 <title>{% block titel %}Buurmanitor{% endblock %}</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=38">
+<link rel="stylesheet" href="/static/style.css?v=39">
 {% block kop %}{% endblock %}
 </head>
 <body>
@@ -32,6 +32,7 @@
 <div id="banner" class="banner" hidden></div>
 <main class="{% block main_klasse %}{% endblock %}">{% block inhoud %}{% endblock %}</main>
 <footer class="voet">
+  <a href="/overzichten">Dagelijkse overzichten</a>
   <a href="/gezondheid">Gezondheid</a>
   <a href="{{ auth_url }}/logout">Uitloggen</a>
 </footer>

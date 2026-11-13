@@ -813,3 +813,34 @@ a.kaart.crmact:hover { border-color: var(--blauw); }
 @media (max-width: 760px) {
   .clara-raster, .gesprek-raster, .noorgesprek, .sraster { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Overzichten: instellingen links, voorbeeld rechts (op een smal scherm onder elkaar) */
+.overzicht-raster { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 680px); gap: 16px; align-items: start; }
+.overzicht-raster .voorbeeld { position: sticky; top: 12px; }
+.voorbeeld iframe { width: 100%; height: 78vh; min-height: 520px; border: 1px solid var(--lijn); border-radius: 4px; background: #F4F4F4; }
+.tabel.onderdelen td { vertical-align: top; }
+.tabel.onderdelen tr.uitgezet td:not(:first-child) { opacity: .55; }
+.tabel.onderdelen { table-layout: fixed; }
+.tabel.onderdelen th:nth-child(1) { width: 44px; } .tabel.onderdelen th:nth-child(4) { width: 62px; }
+.tabel.onderdelen th:nth-child(3) { width: 44%; }
+.tabel.onderdelen td.wat .noot { font-size: 13px; line-height: 1.35; margin-top: 2px; }
+.tabel.onderdelen input[type=text] { flex: 1 1 auto; min-width: 0; width: 100%; }
+.tabel.onderdelen label.optie, .tabel.onderdelen label.vink { display: flex; gap: 6px; align-items: center; font-size: 14px; margin: 3px 0; color: var(--inkt); }
+.tabel.onderdelen .pijlen { white-space: nowrap; text-align: right; }
+input.smal { width: 64px; }
+form.ontvanger { border-bottom: 1px solid var(--lijn); padding-bottom: 8px; align-items: center; }
+form.ontvanger .knoppenrij { margin: 0; }
+form.ontvanger.uitgezet { opacity: .6; }
+.velden .breed, .velden p.breed { flex: 1 1 100%; margin: 0; }
+.rood { color: var(--rooddonker); }
+@media (max-width: 1100px) {
+  .overzicht-raster { grid-template-columns: 1fr; }
+  .overzicht-raster .voorbeeld { position: static; }
+  .tabel.onderdelen, .tabel.onderdelen tbody, .tabel.onderdelen tr, .tabel.onderdelen td { display: block; width: 100% !important; }
+  .tabel.onderdelen tr:first-child { display: none; }
+  .tabel.onderdelen tr { border-bottom: 1px solid var(--lijn); padding: 6px 0; }
+  .tabel.onderdelen td { border: 0; padding: 3px 4px; text-align: left; }
+}
+.schuifbaar { overflow-x: auto; }
+.schuifbaar .tabel td, .schuifbaar .tabel th { white-space: nowrap; }
+.schuifbaar .tabel td.noot { white-space: normal; min-width: 180px; }

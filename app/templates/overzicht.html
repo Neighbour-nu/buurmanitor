@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block titel %}{{ o.naam }} · Overzichten · Buurmanitor{% endblock %}
+{% block main_klasse %}breed{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>{{ o.naam }}</h1>
+    <p class="motto">{{ soorten[o.werkruimte] }} · {{ o.tijd.strftime('%H.%M') }} uur, {{ dagen_tekst(o.dagen) }} ·
+      {% if o.actief %}<span class="label groen">aan</span>{% else %}<span class="label">uit</span>{% endif %}
+      {% if o.laatst %}<span class="noot">laatst verstuurd {{ geleden(o.laatst) }}{% if o.uitslag %}: {{ o.uitslag }}{% endif %}</span>{% endif %}</p>
+  </div>
+  <div class="knoppen">
+    <a class="knop" href="/overzichten">Alle overzichten</a>
+    <form method="post" action="/overzichten/{{ o.id }}/stuur" class="inline"><input type="hidden" name="wat" value="proef">
+      <button class="knop" type="submit" title="Alleen naar ontvangers met de rol Ikzelf, met [Proef] in het onderwerp">Proef naar mij</button></form>
+    <form method="post" action="/overzichten/{{ o.id }}/stuur" class="inline"><input type="hidden" name="wat" value="iedereen">
+      <button class="knop" type="submit" onclick="return confirm('Dit overzicht nu naar alle {{ ontvangers|selectattr('actief')|list|length }} actieve ontvangers sturen?')">Nu naar iedereen</button></form>
+  </div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+
+<div class="overzicht-raster">
+<div>
+<form method="post" action="/overzichten/{{ o.id }}" id="instellingen">
+<section class="kaart">
+  <h2>Wanneer en hoe</h2>
+  <div class="velden">
+    <label class="vink"><input type="checkbox" name="actief" value="1" {{ 'checked' if o.actief }}> <span><b>Aan</b>: vanzelf versturen</span></label>
+    <label>Naam <input type="text" name="naam" value="{{ o.naam }}" required></label>
+    <label>Tijd <input type="time" name="tijd" value="{{ o.tijd.strftime('%H:%M') }}"></label>
+  </div>
+  <div class="vinkjes" role="group" aria-label="Dagen">
+    {% for d in range(7) %}<label class="vink"><input type="checkbox" name="dag_{{ d }}" value="1" {{ 'checked' if d in o.dagen }}> {{ dagen_kort[d] }}</label>{% endfor %}
+  </div>
+  <div class="velden">
+    <label class="vink"><input type="checkbox" name="telegram" value="1" {{ 'checked' if o.telegram }}> <span>Ook een korte versie via Telegram (alleen naar jou)</span></label>
+    <label class="vink"><input type="checkbox" name="leeg_versturen" value="1" {{ 'checked' if o.leeg_versturen }}> <span>Ook versturen als er niets te melden is</span></label>
+  </div>
+</section>
+
+<section class="kaart">
+  <h2>Opmaak</h2>
+  <p class="noot">In onderwerp, inleiding en afsluiting kun je <code>{datum}</code>, <code>{dag}</code>, <code>{naam}</code> en <code>{voornaam}</code> gebruiken
+    (de naam van de ontvanger). Bijvoorbeeld: <code>Goedemorgen {voornaam},</code></p>
+  <div class="velden">
+    <label class="breed">Onderwerp <input type="text" name="onderwerp" value="{{ o.onderwerp }}" placeholder="{{ o.kop or o.naam }}: {datum}"></label>
+    <label>Kop in de mail <input type="text" name="kop" value="{{ o.kop }}" placeholder="{{ o.naam }}"></label>
+    <label>Kleur <input type="color" name="kleur" value="{{ o.kleur }}"></label>
+    <label>Afzendernaam <input type="text" name="afzender" value="{{ o.afzender }}" placeholder="bijv. Promonitor"></label>
+    <label>Antwoorden naar <input type="text" name="antwoord_naar" value="{{ o.antwoord_naar }}" placeholder="leeg: naar het afzenderadres"></label>
+    <label class="breed">Inleiding <textarea name="intro" rows="3" placeholder="Goedemorgen {voornaam},">{{ o.intro }}</textarea></label>
+    <label class="breed">Afsluiting <textarea name="afsluiting" rows="2" placeholder="bijv. Succes vandaag! Martijn">{{ o.afsluiting }}</textarea></label>
+  </div>
+</section>
+
+<section class="kaart" id="onderdelen">
+  <h2>Onderdelen</h2>
+  <p class="noot">Vink aan wat erin moet, in deze volgorde (verschuiven met de pijltjes). <span class="label">alleen jij</span> gaat nooit naar
+    andere ontvangers; <span class="label">per persoon</span> is voor elke ontvanger anders. Links naar Buurmanitor krijgt alleen jij.</p>
+  <table class="tabel onderdelen">
+    <tr><th class="midden">Aan</th><th>Onderdeel</th><th>Instellingen</th><th></th></tr>
+    {% for inst, d in onderdelen %}
+    {% set i = loop.index0 %}
+    <tr class="{{ '' if inst.aan else 'uitgezet' }}">
+      <td class="midden"><input type="hidden" name="code_{{ i }}" value="{{ d.code }}">
+        <input type="checkbox" name="aan_{{ i }}" value="1" {{ 'checked' if inst.aan }} aria-label="{{ d.naam }} aan"></td>
+      <td class="wat"><b>{{ d.naam }}</b>{% if d.alleen_eigen %} <span class="label">alleen jij</span>{% endif %}{% if d.per_ontvanger %} <span class="label">per persoon</span>{% endif %}
+        <div class="noot">{{ d.uitleg }}</div></td>
+      <td class="instel">
+        <label class="optie">Titel <input type="text" name="titel_{{ i }}" value="{{ inst.titel or d.titel }}"></label>
+        {% if d.code != 'samenvatting' %}<label class="optie">Hoogstens <input type="number" name="max_{{ i }}" value="{{ inst.max or d.max }}" min="1" max="30" class="smal"> regels</label>
+        {% else %}<input type="hidden" name="max_{{ i }}" value="1">{% endif %}
+        {% for sleutel, label, soort, standaard in d.opties %}
+        {% if soort == 'vink' %}<label class="vink"><input type="checkbox" name="opt_{{ i }}_{{ sleutel }}" value="1" {{ 'checked' if optie(inst, d, sleutel) }}> {{ label }}</label>
+        {% else %}<label class="optie">{{ label }} <input type="number" name="opt_{{ i }}_{{ sleutel }}" value="{{ optie(inst, d, sleutel) }}" min="0" max="999" class="smal"></label>{% endif %}
+        {% endfor %}</td>
+      <td class="pijlen"><button class="pijl" name="verplaats" value="{{ i }}:op" {{ 'disabled' if loop.first }} title="Omhoog" aria-label="{{ d.naam }} omhoog">▲</button>
+        <button class="pijl" name="verplaats" value="{{ i }}:neer" {{ 'disabled' if loop.last }} title="Omlaag" aria-label="{{ d.naam }} omlaag">▼</button></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="knoppenrij"><button class="knop vol" type="submit">Opslaan</button></div>
+</section>
+</form>
+
+<section class="kaart" id="ontvangers">
+  <h2>Ontvangers</h2>
+  <p class="noot">Iedereen krijgt een eigen mail; ontvangers zien elkaars adres niet. <b>Ikzelf</b> krijgt alles, met links naar Buurmanitor.
+    Een <b>fractielid of ander</b> krijgt de openbare onderdelen, zonder links naar Buurmanitor, met onderaan hoe je je afmeldt.
+    {% if o.werkruimte == 'politiek' %}Kies bij een fractielid de persoon uit Promonitor, dan krijgt hij of zij de eigen deadlines en agendapunten.{% endif %}</p>
+  {% for r in ontvangers %}
+  <form method="post" action="/overzichten/ontvanger/{{ r.id }}" class="velden ontvanger{{ '' if r.actief else ' uitgezet' }}">
+    <label class="vink"><input type="checkbox" name="actief" value="1" {{ 'checked' if r.actief }}> Krijgt hem</label>
+    <label>Naam <input type="text" name="naam" value="{{ r.naam }}"></label>
+    <label>Mailadres <input type="text" name="email" value="{{ r.email }}"></label>
+    <label>Rol <select name="rol">{% for k, v in rollen.items() %}<option value="{{ k }}" {{ 'selected' if r.rol == k }}>{{ v }}</option>{% endfor %}</select></label>
+    {% if personen %}<label>Persoon in Promonitor <select name="persoon"><option value="">(geen)</option>
+      {% for p in personen %}<option value="{{ p.whaller }}" {{ 'selected' if r.persoon == p.whaller }}>{{ p.naam }}{% if p.rol %} ({{ p.rol }}){% endif %}</option>{% endfor %}</select></label>{% endif %}
+    <div class="knoppenrij"><button class="knop klein" type="submit" name="actie" value="opslaan">Opslaan</button>
+      <button class="knop klein" type="submit" name="actie" value="weg" onclick="return confirm('{{ r.naam or r.email }} van dit overzicht halen?')">Verwijderen</button></div>
+    {% if r.fout %}<p class="noot breed"><b class="rood">Laatste keer mislukt:</b> {{ r.fout }}</p>
+    {% elif r.laatst %}<p class="noot breed">Laatst ontvangen {{ geleden(r.laatst) }}</p>{% endif %}
+  </form>
+  {% else %}
+  <p class="item belangrijk">Nog geen ontvangers. Voeg eerst jezelf toe met de rol Ikzelf.</p>
+  {% endfor %}
+  <h3>Ontvanger toevoegen</h3>
+  <form method="post" action="/overzichten/{{ o.id }}/ontvangers" class="velden">
+    {% if personen %}<label>Persoon in Promonitor <select name="persoon"><option value="">(geen)</option>
+      {% for p in personen %}<option value="{{ p.whaller }}">{{ p.naam }}{% if p.rol %} ({{ p.rol }}){% endif %}</option>{% endfor %}</select></label>{% endif %}
+    <label>Naam <input type="text" name="naam" placeholder="{{ 'leeg: naam van de persoon' if personen else '' }}"></label>
+    <label>Mailadres <input type="text" name="email" required></label>
+    <label>Rol <select name="rol">{% for k, v in rollen.items() %}<option value="{{ k }}" {{ 'selected' if k == 'lid' }}>{{ v }}</option>{% endfor %}</select></label>
+    <button class="knop" type="submit">Toevoegen</button>
+  </form>
+</section>
+
+{% if log %}
+<section class="kaart">
+  <h2>Laatst verstuurd</h2>
+  <table class="tabel">
+    {% for l in log %}<tr><td class="noot">{{ l.tijd.astimezone(tz).strftime('%d-%m %H.%M') }}</td><td>{{ l.aan }}</td>
+      <td>{% if l.gelukt %}<span class="label groen">{{ 'proef' if l.tekst == 'proef' else 'verstuurd' }}</span>{% else %}<span class="label rood">mislukt</span> <span class="noot">{{ l.tekst }}</span>{% endif %}</td></tr>{% endfor %}
+  </table>
+</section>
+{% endif %}
+
+<section class="kaart">
+  <h2>Kopie of weg</h2>
+  <div class="knoppenrij">
+    <form method="post" action="/overzichten/{{ o.id }}/kopie" class="inline"><button class="knop" type="submit">Kopie maken</button></form>
+    <form method="post" action="/overzichten/{{ o.id }}/weg" class="inline"><button class="knop" type="submit" onclick="return confirm('Dit overzicht en de ontvangers ervan verwijderen?')">Verwijderen</button></form>
+  </div>
+  <p class="noot">Een kopie is handig voor een tweede variant, zoals een korte versie voor de hele fractie naast je eigen uitgebreide.</p>
+</section>
+</div>
+
+<section class="kaart voorbeeld" id="voorbeeld">
+  <h2>Voorbeeld</h2>
+  <div class="knoppenrij">
+    <label>Bekijk als <select id="bekijkals">
+      <option value="eigen">Ikzelf</option><option value="lid">Fractielid of ander</option>
+      {% for r in ontvangers %}<option value="{{ r.id }}">{{ r.naam or r.email }}</option>{% endfor %}</select></label>
+    <label class="vink"><input type="checkbox" id="metclaude"> Met samenvatting door Claude</label>
+  </div>
+  <p class="noot">Het voorbeeld laat zien wat er nu klaarstaat; sla eerst op als je iets hebt veranderd.</p>
+  <iframe id="kader" title="Voorbeeld van de mail" src="/overzichten/{{ o.id }}/voorbeeld" loading="lazy"></iframe>
+</section>
+</div>
+<script>
+(function () {
+  const kader = document.getElementById("kader"), als = document.getElementById("bekijkals"), claude = document.getElementById("metclaude");
+  function laad() { kader.src = "/overzichten/{{ o.id }}/voorbeeld?ontvanger=" + encodeURIComponent(als.value) + (claude.checked ? "&claude=1" : ""); }
+  als.addEventListener("change", laad);
+  claude.addEventListener("change", laad);
+})();
+</script>
+{% endblock %}

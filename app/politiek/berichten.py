@@ -16,14 +16,15 @@ import sys
 import urllib.parse
 import urllib.request
 from email.message import EmailMessage
-from email.utils import formatdate, make_msgid
+from email.utils import formataddr, formatdate, make_msgid, parseaddr
 
 
 def _env(naam, standaard=""):
     return (os.environ.get("POLITIEK_" + naam) or standaard).strip()  # in Buurmanitor: POLITIEK_SMTP_HOST enz.
 
 
-def stuur_mail(onderwerp, tekst, html=None, aan=None):
+def stuur_mail(onderwerp, tekst, html=None, aan=None, van_naam=None, antwoord_naar=None):
+    """van_naam: een andere naam bij hetzelfde afzenderadres (zoals 'ZEROHERO'). antwoord_naar: Reply-To."""
     host, poort = _env("SMTP_HOST"), int(_env("SMTP_PORT", "465"))
     gebruiker, wachtwoord = _env("SMTP_USER"), _env("SMTP_PASSWORD").replace(" ", "")
     aan = aan or _env("MAIL_AAN")
@@ -31,7 +32,12 @@ def stuur_mail(onderwerp, tekst, html=None, aan=None):
         raise RuntimeError("Mail is niet ingesteld: SMTP_HOST, SMTP_USER, SMTP_PASSWORD en MAIL_AAN zijn nodig.")
     bericht = EmailMessage()
     bericht["Subject"] = onderwerp
-    bericht["From"] = _env("MAIL_VAN") or gebruiker
+    van = _env("MAIL_VAN") or gebruiker
+    if van_naam:
+        van = formataddr((van_naam, parseaddr(van)[1] or gebruiker))
+    bericht["From"] = van
+    if antwoord_naar:
+        bericht["Reply-To"] = antwoord_naar
     bericht["To"] = aan
     bericht["Date"] = formatdate(localtime=True)
     bericht["Message-ID"] = make_msgid(domain=gebruiker.split("@")[-1])

@@ -17,6 +17,7 @@ from . import aankondigen, iris, personas  # noqa: F401  (aankondigen registreer
 from .bram import sync as bram_sync, web as bram_web  # noqa: F401  (sync registreert de planner-taak 'post')
 from .clara import sync as clara_sync, web as clara_web  # noqa: F401  (sync registreert de planner-taak)
 from .crm import relaties as crm_relaties, web as crm_web  # noqa: F401  (relaties registreert de planner-taak)
+from .overzichten import verzenden as overzichten_verzenden, web as overzichten_web  # noqa: F401  (verzenden registreert de planner-taak)
 from .taken import noor, web as taken_web
 from .jesse import luisteren as jesse_luisteren, web as jesse_web  # noqa: F401  (luisteren registreert de planner-taak)
 from .vera import nieuws as vera_nieuws, web as vera_web  # noqa: F401  (nieuws registreert de planner-taak)
@@ -54,6 +55,7 @@ OPRUIMEN = [
     ("voorstellen", """DELETE FROM crm_voorstellen WHERE status <> 'open' AND aangemaakt < now() - interval '90 days'"""),
     ("logboek", "DELETE FROM logboek WHERE tijd < now() - interval '400 days'"),
     ("verbruik", "DELETE FROM claude_gebruik WHERE tijd < now() - interval '400 days'"),
+    ("verzendlog", "DELETE FROM overzicht_verzonden WHERE tijd < now() - interval '180 days'"),
 ]
 
 
@@ -96,6 +98,7 @@ app.include_router(taken_web.router)
 app.include_router(vera_web.router)
 app.include_router(jesse_web.router)
 app.include_router(crm_web.router)
+app.include_router(overzichten_web.router)
 if politiek:
     app.mount("/politiek", prefix.Voorvoegsel(politiek.app, "/politiek"))
 if zerohero:

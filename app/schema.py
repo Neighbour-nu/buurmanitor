@@ -601,5 +601,50 @@ MIGRATIES = [
         kans_id int REFERENCES crm_kansen(id) ON DELETE SET NULL,
         project_id int REFERENCES crm_projecten(id) ON DELETE SET NULL,
         aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    # Dagelijkse overzichten per mail (Promonitor, ZEROHERO): zelf in te stellen onderdelen, opmaak, tijd en ontvangers.
+    # onderdelen: [{"code", "aan", "titel", "max", "opties": {...}}] in de volgorde van de mail.
+    """CREATE TABLE IF NOT EXISTS overzichten (
+        id serial PRIMARY KEY,
+        naam text NOT NULL,
+        werkruimte text NOT NULL CHECK (werkruimte IN ('politiek', 'zerohero')),
+        actief boolean NOT NULL DEFAULT false,
+        tijd time NOT NULL DEFAULT '08:00',
+        dagen int[] NOT NULL DEFAULT '{0,1,2,3,4,5,6}',
+        onderwerp text NOT NULL DEFAULT '',
+        kop text NOT NULL DEFAULT '',
+        intro text NOT NULL DEFAULT '',
+        afsluiting text NOT NULL DEFAULT '',
+        kleur text NOT NULL DEFAULT '#FF0000',
+        afzender text NOT NULL DEFAULT '',
+        antwoord_naar text NOT NULL DEFAULT '',
+        telegram boolean NOT NULL DEFAULT false,
+        leeg_versturen boolean NOT NULL DEFAULT true,
+        onderdelen jsonb NOT NULL DEFAULT '[]',
+        laatst timestamptz,
+        uitslag text NOT NULL DEFAULT '',
+        aangemaakt timestamptz NOT NULL DEFAULT now(),
+        bijgewerkt timestamptz NOT NULL DEFAULT now())""",
+    # rol eigen: Martijn zelf (alles, met links naar Buurmanitor). rol lid: een fractielid of ander (geen links naar
+    # Buurmanitor, geen persoonlijke onderdelen zoals agenda en taken). persoon: de Whaller-naam in Promonitor, voor de
+    # eigen deadlines en agendapunten van die persoon.
+    """CREATE TABLE IF NOT EXISTS overzicht_ontvangers (
+        id serial PRIMARY KEY,
+        overzicht_id int NOT NULL REFERENCES overzichten(id) ON DELETE CASCADE,
+        naam text NOT NULL DEFAULT '',
+        email text NOT NULL,
+        rol text NOT NULL DEFAULT 'lid' CHECK (rol IN ('eigen', 'lid')),
+        persoon text NOT NULL DEFAULT '',
+        actief boolean NOT NULL DEFAULT true,
+        laatst timestamptz,
+        fout text NOT NULL DEFAULT '',
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    "CREATE UNIQUE INDEX IF NOT EXISTS overzicht_ontvangers_uniek ON overzicht_ontvangers (overzicht_id, lower(email))",
+    """CREATE TABLE IF NOT EXISTS overzicht_verzonden (
+        id bigserial PRIMARY KEY,
+        overzicht_id int NOT NULL REFERENCES overzichten(id) ON DELETE CASCADE,
+        tijd timestamptz NOT NULL DEFAULT now(),
+        aan text NOT NULL,
+        gelukt boolean NOT NULL,
+        tekst text NOT NULL DEFAULT '')""",
+    "CREATE INDEX IF NOT EXISTS overzicht_verzonden_tijd ON overzicht_verzonden (overzicht_id, tijd DESC)",
 ]
-

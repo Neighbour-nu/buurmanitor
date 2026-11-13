@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titel %}Overzichten · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Dagelijkse overzichten</h1>
+    <p class="motto">De ochtendmail van Promonitor en ZEROHERO: zelf bepalen wat erin staat, hoe hij eruitziet, wanneer hij komt en wie hem krijgt.</p>
+  </div>
+</section>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+
+<section class="kaart">
+  <div class="schuifbaar"><table class="tabel">
+    <tr><th>Overzicht</th><th>Werkruimte</th><th>Wanneer</th><th class="midden">Ontvangers</th><th>Laatst</th><th class="midden">Aan</th></tr>
+    {% for o in lijst %}
+    <tr>
+      <td><a href="/overzichten/{{ o.id }}"><b>{{ o.naam }}</b></a></td>
+      <td>{{ soorten[o.werkruimte] }}</td>
+      <td>{{ o.tijd.strftime('%H.%M') }} uur, {{ dagen_tekst(o.dagen) }}</td>
+      <td class="midden">{{ o.ontvangers }}</td>
+      <td class="noot">{% if o.laatst %}{{ geleden(o.laatst) }}{% if o.uitslag %}: {{ o.uitslag|truncate(80) }}{% endif %}{% else %}nog niet verstuurd{% endif %}</td>
+      <td class="midden">{% if o.actief %}<span class="label groen">aan</span>{% else %}<span class="label">uit</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  <form method="post" action="/overzichten/nieuw" class="velden">
+    <label>Nieuw overzicht <input type="text" name="naam" placeholder="bijv. Weekstart fractie" required></label>
+    <label>Werkruimte <select name="werkruimte">{% for k, v in soorten.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+    <button class="knop" type="submit">Maken</button>
+  </form>
+</section>
+<p class="noot">Zet je het Promonitor-overzicht hier aan, dan stuurt Promonitor zijn oude ochtendbriefing niet meer (zo krijg je hem niet dubbel).
+  Het oude ZEROHERO-overzicht uit n8n zet je zelf uit in n8n, zodra dit overzicht naar wens is.
+  {% if not planner_aan %}<b>Let op: de planner staat uit, dus er gaat niets vanzelf weg.</b>{% elif taak and taak.laatst %}De planner keek {{ geleden(taak.laatst) }} ({{ taak.resultaat or 'geen uitslag' }}).{% endif %}</p>
+{% endblock %}

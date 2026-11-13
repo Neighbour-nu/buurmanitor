@@ -32,6 +32,10 @@ def _briefing(c):
 
 
 def _briefing_tijd(c):
+    # Beheert Buurmanitor de ochtendmail (Overzichten), dan stuurt Promonitor zijn eigen briefing niet meer.
+    beheer = c.execute("SELECT waarde FROM instellingen WHERE sleutel = 'briefing_beheer'").fetchone()
+    if beheer and beheer["waarde"] == "buurmanitor":
+        return False
     r = c.execute("SELECT waarde FROM instellingen WHERE sleutel = 'briefing_tijd'").fetchone()
     try:
         u, m = (int(x) for x in (r["waarde"] if r and r["waarde"] else "08.00").replace(":", ".").split("."))

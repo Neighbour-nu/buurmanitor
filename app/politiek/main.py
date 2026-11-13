@@ -679,7 +679,8 @@ def briefing_voorbeeld(request: Request):
     return templates.TemplateResponse("briefing.html", ctx(
         request, "vandaag", onderwerp=onderwerp, mail_html=html_, telegram=tg,
         taak=q1("SELECT * FROM taken WHERE naam = 'briefing'"), tijd=instelling("briefing_tijd", "08.00"),
-        melding=request.query_params.get("melding", "")))
+        melding=request.query_params.get("melding", ""), beheer=instelling("briefing_beheer", ""),
+        overzichten_url=f"https://{os.environ.get('PORTAL_HOST', 'buurmanitor.neighbour.nu')}/overzichten"))
 
 
 @app.post("/briefing/stuur")
