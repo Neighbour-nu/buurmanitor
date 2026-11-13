@@ -24,6 +24,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from . import adviseur, agenda, begroting, dashboard, stemadvies, dossiers as dossierkaarten, fractie, indeling, kennisbank, notubiz, raadsinfo, schermen, schrijven, sjablonen, taken, whaller
+from ..kern import tekst
 from .schema import EENMALIG, MIGRATIES, STANDAARD_INSTELLINGEN, STANDAARD_PERSONEN, WHALLER_NODIG
 
 DATABASE_URL = os.environ["POLITIEK_DATABASE_URL"]
@@ -79,6 +80,7 @@ app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
 BASIS = os.path.dirname(__file__)
 app.mount("/static", StaticFiles(directory=os.path.join(BASIS, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASIS, "templates"))
+templates.env.filters["schoon"] = tekst.schoon
 
 
 @app.middleware("http")

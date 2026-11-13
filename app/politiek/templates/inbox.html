@@ -59,7 +59,7 @@
     <span class="noot">{{ [r.bronnaam, r.nummer, datum_nl(r.datum) if r.datum else '', r.fracties, r.onderwerp]|select|join(' · ') }}</span>
   </p>
   <h3 style="margin:2px 0">{% if r.document_url %}<a href="{{ r.document_url }}" target="_blank" rel="noopener">{{ r.titel }}</a>{% else %}{{ r.titel }}{% endif %}</h3>
-  {% if r.reden %}<p style="margin:2px 0 4px"><i>{{ r.reden }}</i></p>{% endif %}
+  {% if r.reden %}<p style="margin:2px 0 4px"><i>{{ r.reden|schoon }}</i></p>{% endif %}
   {% if r.context %}<p class="noot" style="margin:2px 0 6px">{{ r.context[:400] }}</p>{% endif %}
   {% if r.negeer_reden %}<p class="noot" style="margin:2px 0 6px">Genegeerd: {{ r.negeer_reden }}</p>{% endif %}
   <div class="rij" style="flex-wrap:wrap;gap:6px">

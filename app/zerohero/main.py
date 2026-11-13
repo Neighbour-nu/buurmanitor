@@ -793,3 +793,9 @@ from .li_titel import MIGRATIES as _LI_MIGRATIES, router as _li_router  # noqa: 
 
 MIGRATIES.extend(_LI_MIGRATIES)
 app.include_router(_li_router)
+
+# ---------- geen <cite>- en andere HTML-code in het nieuws (ook niet als n8n het schrijft) ----------
+from ..kern import tekst as _tekst  # noqa: E402
+
+MIGRATIES.extend(_tekst.sql_migraties("items", ["titel", "samenvatting", "invalshoek"]))
+templates.env.filters["schoon"] = _tekst.schoon

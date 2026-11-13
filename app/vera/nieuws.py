@@ -21,6 +21,7 @@ import urllib.parse
 import urllib.request
 
 from ..kern import claude, config, planner
+from ..kern import tekst as kern_tekst
 
 UA = "Mozilla/5.0 (compatible; Buurmanitor; Vera)"
 GOOGLE = "https://news.google.com/rss/search?hl=nl&gl=NL&ceid=NL:nl&q="
@@ -138,14 +139,9 @@ def lees_feed(inhoud, soort="feed"):
     return uit
 
 
-CITE = re.compile(r"(?:<|&lt;)\s*/?\s*cite\b[^>]*?(?:>|&gt;)", re.I)
-
-
 def zonder_cite(tekst):
     """Bronverwijzingen van Claude (<cite index="...">...</cite>) uit een tekst halen; de tekst ertussen blijft. Pure functie."""
-    if not tekst or "cite" not in tekst.lower():
-        return tekst
-    return re.sub(r"\s{2,}", " ", CITE.sub("", tekst)).replace(" .", ".").replace(" ,", ",").strip()
+    return kern_tekst.schoon(tekst)  # ook andere HTML-code, en &quot; en dergelijke
 
 
 def sleutel(titel):

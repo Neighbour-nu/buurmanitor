@@ -2,6 +2,7 @@
 
 Migraties draaien bij elke start en zijn veilig om opnieuw uit te voeren (IF NOT EXISTS).
 """
+from ..kern import tekst
 
 MIGRATIES = [
     """CREATE TABLE IF NOT EXISTS instellingen (
@@ -225,7 +226,7 @@ MIGRATIES = [
         bestandsnaam text NOT NULL,
         inhoud bytea NOT NULL,
         bijgewerkt timestamptz NOT NULL DEFAULT now())""",
-]
+] + tekst.sql_migraties("stukken", ["titel", "reden"])
 
 # Fractie en steunfractie, met Whaller-namen uit de berichten op Whaller (september en oktober 2026).
 # Rollen en portefeuilles zijn aan te vullen op het scherm Instellingen.

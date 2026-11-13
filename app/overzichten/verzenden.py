@@ -7,7 +7,7 @@ import json
 import os
 import traceback
 
-from ..kern import claude, config, meldingen, planner
+from ..kern import claude, config, meldingen, planner, tekst as kern_tekst
 from . import onderdelen as od, opmaak
 
 LAAT = dt.timedelta(hours=4)  # na de ingestelde tijd nog zo lang versturen (bijvoorbeeld na een herstart), daarna niet meer
@@ -32,9 +32,14 @@ def onderdelen_van(o):
     return [(inst, od.ONDERDELEN[inst["code"]]) for inst in od.aangevuld(o["werkruimte"], o["onderdelen"] or []) if inst.get("aan")]
 
 
+SCHOON = ("titel", "tekst", "bron", "label", "wanneer", "let_op")
+
+
 def _sectie(inst, defn, uitslag):
-    items = list(uitslag.get("items") or [])[:max(1, int(inst.get("max") or defn.max))]
-    return {"code": defn.code, "titel": inst.get("titel") or defn.titel, "items": items, "regel": uitslag.get("regel") or "",
+    # Geen <cite>- of andere HTML-code in de mail, ook niet als die nog in een bron staat.
+    items = [{**i, **{k: kern_tekst.schoon(i[k]) for k in SCHOON if isinstance(i.get(k), str)}}
+             for i in list(uitslag.get("items") or [])[:max(1, int(inst.get("max") or defn.max))]]
+    return {"code": defn.code, "titel": inst.get("titel") or defn.titel, "items": items, "regel": kern_tekst.schoon(uitslag.get("regel") or ""),
             "link": uitslag.get("link"), "alleen_eigen": defn.alleen_eigen}
 
 

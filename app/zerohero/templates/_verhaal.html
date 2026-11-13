@@ -9,9 +9,9 @@
     {% if v.gevoelig %}<span class="badge badge-gevoelig">gevoelig</span>{% endif %}
     <span class="tijd">{{ geleden(v.binnen) }}</span>
   </div>
-  <h3><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.titel }}</a></h3>
-  {% if v.samenvatting %}<p class="sam{{ ' kopalleen' if alleen_kop(v) }}">{{ v.samenvatting }}</p>{% endif %}
-  {% if v.invalshoek %}<p class="hoek">💡 {{ v.invalshoek }}</p>{% endif %}
+  <h3><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.titel|schoon }}</a></h3>
+  {% if v.samenvatting %}<p class="sam{{ ' kopalleen' if alleen_kop(v) }}">{{ v.samenvatting|schoon }}</p>{% endif %}
+  {% if v.invalshoek %}<p class="hoek">💡 {{ v.invalshoek|schoon }}</p>{% endif %}
   <div class="meta">
     <span>{{ v.bronnen|join(', ') }}{% if v.leden|length > 1 %} ({{ v.leden|length }} berichten){% endif %}</span>
     {% if v.keepers %}<span>🧤 {{ v.keepers|join(', ') }}</span>{% endif %}

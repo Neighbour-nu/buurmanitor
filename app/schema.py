@@ -3,6 +3,7 @@
 Politiek (Promonitor) en ZEROHERO (de Doellijn) hebben hun eigen database; die tabellen staan hier niet.
 Migraties draaien bij elke start en zijn veilig om opnieuw uit te voeren.
 """
+from .kern import tekst
 
 def _vera_bronnen(stroom="overig"):
     """De standaardbronnen van Vera één keer klaarzetten (een vlag in instellingen onthoudt dat het gebeurd is)."""
@@ -647,4 +648,4 @@ MIGRATIES = [
         gelukt boolean NOT NULL,
         tekst text NOT NULL DEFAULT '')""",
     "CREATE INDEX IF NOT EXISTS overzicht_verzonden_tijd ON overzicht_verzonden (overzicht_id, tijd DESC)",
-]
+] + tekst.sql_migraties("vera_berichten", ["titel", "samenvatting", "waarom"])

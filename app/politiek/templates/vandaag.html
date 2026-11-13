@@ -20,7 +20,7 @@
       <h3>Belangrijkste nieuws</h3>
       {% if nieuws_top %}<ul class="lijst">{% for r in nieuws_top %}
         <li><span class="label {{ 'rood' if r.score >= 80 }}">{{ r.score }}</span> <a href="{{ r.document_url }}" target="_blank" rel="noopener">{{ r.titel }}</a> <span class="noot">({{ r.bronnaam }})</span>
-          {% if r.reden %}<br><span class="noot"><i>{{ r.reden }}</i></span>{% endif %}</li>{% endfor %}</ul>
+          {% if r.reden %}<br><span class="noot"><i>{{ r.reden|schoon }}</i></span>{% endif %}</li>{% endfor %}</ul>
         <p><a href="/inbox?soort=nieuws">Al het nieuws</a></p>
       {% else %}<p class="noot">Nog geen nieuws met score 60 of hoger van de afgelopen 24 uur. <a href="/inbox?soort=nieuws&drempel=0">Bekijk al het nieuws</a>.</p>{% endif %}
     </div>

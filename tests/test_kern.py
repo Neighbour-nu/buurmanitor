@@ -357,3 +357,28 @@ def test_planner_taak_niet_dubbel_tegelijk():
         assert "x" not in planner.bezig() and gestart == ["x"]
     finally:
         planner.draai = oud
+
+
+def test_geen_html_in_nieuws():
+    from app.kern import tekst  # pylint: disable=import-outside-toplevel
+    ruw = '<cite index="1-2,1-4">Pekka Rinne werd ingehuldigd</cite> <cite index="10-8">Josi prees hem</cite>.'
+    assert tekst.schoon(ruw) == "Pekka Rinne werd ingehuldigd Josi prees hem."
+    assert tekst.schoon("&lt;cite index=&quot;1-5&quot;&gt;Derde Fin&lt;/cite&gt;, zeldzaam") == "Derde Fin, zeldzaam"
+    assert tekst.schoon('Met <b>vet</b>, <a href="x">link</a> en Q&A &amp; meer') == "Met vet, link en Q&A & meer"
+    assert tekst.schoon("Score 3 < 5 en 7 > 2") == "Score 3 < 5 en 7 > 2" and tekst.schoon("Keeper <3") == "Keeper <3"
+    assert tekst.schoon(None) is None and tekst.schoon("") == ""
+    if not DB:
+        return
+    with _db() as c:
+        c.execute("DROP TABLE IF EXISTS proef_items")
+        c.execute("CREATE TABLE proef_items (id serial, titel text, samenvatting text, url text)")
+        c.execute("INSERT INTO proef_items (titel, samenvatting, url) VALUES ('Al <b>oud</b>', 'x', 'https://a?b=1&c=2')")
+        for sql in tekst.sql_migraties("proef_items", ["titel", "samenvatting"]) * 2:  # twee keer: bij elke start
+            c.execute(sql)
+        assert c.execute("SELECT titel FROM proef_items").fetchone()["titel"] == "Al oud"  # wat er al stond
+        c.execute("INSERT INTO proef_items (titel, samenvatting, url) VALUES (%s, %s, 'https://a?b=1&amp;c=2')", ("Kop", ruw))
+        r = c.execute("SELECT * FROM proef_items WHERE titel = 'Kop'").fetchone()
+        assert r["samenvatting"] == tekst.schoon(ruw) and r["url"] == "https://a?b=1&amp;c=2"  # url niet aangeraakt
+        c.execute("UPDATE proef_items SET titel = '<cite index=\"3\">Nieuw</cite>' WHERE id = %s", (r["id"],))
+        assert c.execute("SELECT titel FROM proef_items WHERE id = %s", (r["id"],)).fetchone()["titel"] == "Nieuw"
+        c.execute("DROP TABLE proef_items")
