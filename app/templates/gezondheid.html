@@ -41,11 +41,27 @@
   </section>
 
   <section class="kaart">
+    <h2>Snelheid</h2>
+    {% macro duur(ms) %}{% if ms < 1000 %}{{ ms }} ms{% elif ms < 60000 %}{{ ('%.1f' | format(ms / 1000)) | replace('.', ',') }} s{% else %}{{ (ms // 60000) | int }} min {{ ((ms % 60000) // 1000) | int }} s{% endif %}{% endmacro %}
+    <p class="noot">Databaseverbindingen nu in gebruik (van het maximum). Moeten pagina's vaak wachten, dan staat dat erbij.</p>
+    {% for p in pools %}
+      <p><b>{{ p.naam }}</b>: {{ p.bezet }} van {{ p.max }} in gebruik{% if p.wachtend %} · <span class="label rood">{{ p.wachtend }} wachtend</span>{% endif %}
+        {% if p.gewacht %}<span class="noot"> · sinds de start {{ p.gewacht }} keer gewacht ({{ duur(p.wacht_ms) }}){% if p.te_lang %}, {{ p.te_lang }} keer te lang{% endif %}</span>{% endif %}</p>
+    {% endfor %}
+    <p class="noot">Gemiddeld traagste pagina's sinds de laatste herstart:</p>
+    {% for r in snel.per_pad[:6] %}<p class="noot">{{ r.pad }}: {{ duur(r.gem) }} gemiddeld, hoogste {{ duur(r.max) }} ({{ r.aantal }}×)</p>
+    {% else %}<p class="noot">Nog niets gemeten.</p>{% endfor %}
+    {% if snel.traag %}<p class="noot"><b>Trager dan een seconde</b> (laatste {{ snel.traag | length }}):</p>
+      {% for r in snel.traag[:8] %}<p class="noot">{{ geleden(r.tijd) }} · {{ r.methode }} {{ r.pad }} · {{ duur(r.ms) }}</p>{% endfor %}{% endif %}
+  </section>
+
+  <section class="kaart">
     <h2>Automatische taken</h2>
     {% for naam, regel in geregistreerd.items() %}{% set t = taken.get(naam) %}
       <div class="item {{ 'urgent' if t and t.fout }}"><b>{{ naam }}</b>
-        <span class="noot">{% if regel.elke %}elke {{ (regel.elke.total_seconds() // 60) | int }} minuten{% else %}dagelijks vanaf {{ regel.om.strftime('%H.%M') }}{% endif %}</span><br>
-        <span class="noot">laatst: {{ geleden(t.laatst) if t else 'nooit' }}{% if t and t.resultaat %} · {{ t.resultaat }}{% endif %}{% if t and t.fout %} · fout: {{ t.fout.splitlines()[0] }}{% endif %}</span>
+        <span class="noot">{% if regel.elke %}elke {{ (regel.elke.total_seconds() // 60) | int }} minuten{% else %}dagelijks vanaf {{ regel.om.strftime('%H.%M') }}{% endif %}</span>
+        {% if naam in bezig %}<span class="label blauw">bezig</span>{% endif %}<br>
+        <span class="noot">laatst: {{ geleden(t.laatst) if t else 'nooit' }}{% if t and t.duur_ms is not none %} · duurde {{ duur(t.duur_ms) }}{% endif %}{% if t and t.resultaat %} · {{ t.resultaat }}{% endif %}{% if t and t.fout %} · fout: {{ t.fout.splitlines()[0] }}{% endif %}</span>
         <form method="post" action="/gezondheid/taak/{{ naam }}" class="inline"><button class="knop klein" type="submit">nu uitvoeren</button></form>
       </div>
     {% endfor %}

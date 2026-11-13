@@ -186,7 +186,7 @@ async def postkamer_nieuw(request: Request):
 @router.post("/bram/vernieuwen")
 async def vernieuwen(request: Request):
     controleer_herkomst(request)
-    uitslag = await asyncio.to_thread(planner.draai, db.pool, "post", True)
+    uitslag = await asyncio.to_thread(planner.draai, db.achtergrond, "post", True)
     return _terug("/bram", melding=(uitslag or "Bijgewerkt.")[:300])
 
 

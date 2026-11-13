@@ -37,7 +37,7 @@ PROXY_GEHEIM = os.environ.get("PROXY_GEHEIM", "")
 TOEGESTANE_HOSTS = {HOST.lower()} | {h.strip().lower() for h in os.environ.get("TOEGESTANE_HOSTS", "").split(",") if h.strip()}
 MAX_UPLOAD = 60 * 1024 * 1024  # gelijk aan request_body max_size in Caddy
 
-pool = ConnectionPool(DATABASE_URL, min_size=1, max_size=4, open=False,
+pool = ConnectionPool(DATABASE_URL, min_size=1, max_size=8, timeout=20, open=False,
                       kwargs={"row_factory": dict_row, "autocommit": True})
 
 

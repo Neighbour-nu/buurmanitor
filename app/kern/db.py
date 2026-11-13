@@ -4,8 +4,15 @@ from psycopg_pool import ConnectionPool
 
 from . import config
 
-pool = ConnectionPool(config.DATABASE_URL, min_size=1, max_size=4, open=False,
-                      kwargs={"row_factory": dict_row, "autocommit": True})
+# Twee pools, zodat achtergrondwerk de schermen nooit laat wachten:
+# - pool: voor de schermen (een verbinding is daar meestal maar een paar milliseconden bezet; een gesprek met Claude
+#   houdt er wel een vast zolang het antwoord duurt);
+# - achtergrond: voor de planner (ophalen van mail, agenda, nieuws en socials), waar een taak een verbinding vasthoudt
+#   zolang hij met Gmail, Outlook of Claude bezig is.
+pool = ConnectionPool(config.DATABASE_URL, min_size=2, max_size=12, timeout=20, open=False,
+                      kwargs={"row_factory": dict_row, "autocommit": True}, name="schermen")
+achtergrond = ConnectionPool(config.DATABASE_URL, min_size=1, max_size=8, timeout=60, open=False,
+                             kwargs={"row_factory": dict_row, "autocommit": True}, name="achtergrond")
 
 
 def q(sql, params=None):

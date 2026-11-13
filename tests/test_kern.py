@@ -315,3 +315,32 @@ def test_vernieuw_stand():
     assert main.vernieuw_stand(rijen, nu, ["agenda", "post", "nieuws", "onbekend"]) == {
         "agenda": "klaar", "post": "bezig", "nieuws": "wacht", "onbekend": "wacht"}
 
+
+
+def test_snelheid_meten():
+    from app.kern import snelheid  # pylint: disable=import-outside-toplevel
+    assert snelheid._soort("/bram/bericht/123/map") == "/bram/bericht/#/map"  # pylint: disable=protected-access
+    snelheid.noteer("GET", "/bram/bericht/1", 1500)
+    snelheid.noteer("GET", "/bram/bericht/2", 500)
+    o = snelheid.overzicht()
+    r = next(x for x in o["per_pad"] if x["pad"] == "GET /bram/bericht/#")
+    assert r["aantal"] >= 2 and r["max"] >= 1500 and o["traag"][0]["pad"] == "/bram/bericht/1"
+
+
+def test_planner_taak_niet_dubbel_tegelijk():
+    import threading  # pylint: disable=import-outside-toplevel
+    gestart, los = [], threading.Event()
+    oud = planner.draai
+    planner.draai = lambda pool, naam, forceer=False: gestart.append(naam) or los.wait(5)
+    try:
+        assert planner._in_thread(None, "x") is True  # pylint: disable=protected-access
+        assert planner._in_thread(None, "x") is False  # pylint: disable=protected-access
+        assert "x" in planner.bezig()
+        los.set()
+        for _ in range(50):
+            if "x" not in planner.bezig():
+                break
+            threading.Event().wait(0.02)
+        assert "x" not in planner.bezig() and gestart == ["x"]
+    finally:
+        planner.draai = oud

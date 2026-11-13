@@ -19,7 +19,7 @@ from .clara import sync as clara_sync, web as clara_web  # noqa: F401  (sync reg
 from .taken import noor, web as taken_web
 from .jesse import luisteren as jesse_luisteren, web as jesse_web  # noqa: F401  (luisteren registreert de planner-taak)
 from .vera import nieuws as vera_nieuws, web as vera_web  # noqa: F401  (nieuws registreert de planner-taak)
-from .kern import claude, config, db, gezondheid, meldingen, planner, prefix, web
+from .kern import claude, config, db, gezondheid, meldingen, planner, prefix, snelheid, web
 from .kern.db import q, q1, uitvoeren
 from .kern.web import controleer_herkomst, ctx, templates
 from .schema import MIGRATIES
@@ -42,10 +42,11 @@ def _gezondheid(c):
 @asynccontextmanager
 async def lifespan(_app):
     db.pool.open(wait=True, timeout=30)
+    db.achtergrond.open(wait=True, timeout=30)
     with db.pool.connection() as c:
         db.migreer(c, MIGRATIES)
         planner.opruimen(c)
-    lus = asyncio.create_task(planner.lus(db.pool)) if config.PLANNER_AAN else None
+    lus = asyncio.create_task(planner.lus(db.achtergrond)) if config.PLANNER_AAN else None
     async with AsyncExitStack() as werkruimtes:
         # Gekoppelde apps krijgen hun eigen opstart (database, migraties, planner) niet vanzelf; die starten we hier.
         if politiek:
@@ -55,12 +56,14 @@ async def lifespan(_app):
         yield
     if lus:
         lus.cancel()
+    db.achtergrond.close()
     db.pool.close()
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=os.path.join(web.BASIS, "static")), name="static")
 app.middleware("http")(web.alleen_via_caddy)
+app.middleware("http")(snelheid.meten)  # als laatste toegevoegd, dus buitenom: meet ook de controle hierboven
 app.include_router(clara_web.router)
 app.include_router(bram_web.router)
 app.include_router(taken_web.router)
@@ -147,7 +150,7 @@ def vandaag_vernieuwen(request: Request):
     controleer_herkomst(request)
     gestart = [n for n in VERNIEUW_TAKEN if n in planner.TAKEN]
     for naam in gestart:
-        planner.nu_draaien(db.pool, naam)
+        planner.nu_draaien(db.achtergrond, naam)
     if request.headers.get("x-vandaag") == "1":
         return JSONResponse({"gestart": gestart})
     return RedirectResponse("/", status_code=303)
@@ -435,10 +438,13 @@ def gezondheid_scherm(request: Request):
         per_persona = c.execute("""SELECT persona, count(*) AS aantal, sum(kosten_eur) AS eur FROM claude_gebruik
                                    WHERE tijd >= date_trunc('month', now()) GROUP BY persona ORDER BY 3 DESC""").fetchall()
         taken = {t["naam"]: t for t in c.execute("SELECT * FROM taken").fetchall()}
+    pools = snelheid.pools(schermen=db.pool, achtergrond=db.achtergrond, politiek=getattr(politiek, "pool", None),
+                           zerohero=getattr(zerohero, "pool", None))
     return templates.TemplateResponse("gezondheid.html", ctx(
         request, "gezondheid", geheugen=gezondheid.geheugen(), schijf=gezondheid.schijf(), belasting=gezondheid.belasting(),
         backups=gezondheid.backups(), extern=gezondheid.extern(), gb=gezondheid.gb, grenzen=gezondheid, besteed=besteed, aantal=aantal,
         per_persona=per_persona, plafond=config.MAANDPLAFOND_EUR, taken=taken, geregistreerd=planner.TAKEN,
+        snel=snelheid.overzicht(), pools=pools, bezig=planner.bezig(),
         sleutel_ok=bool(config.ANTHROPIC_API_KEY), telegram_ok=bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID)))
 
 
@@ -447,7 +453,7 @@ def taak_nu(request: Request, naam: str):
     controleer_herkomst(request)
     if naam not in planner.TAKEN:
         raise HTTPException(404)
-    planner.nu_draaien(db.pool, naam)
+    planner.nu_draaien(db.achtergrond, naam)
     return RedirectResponse("/gezondheid", status_code=303)
 
 

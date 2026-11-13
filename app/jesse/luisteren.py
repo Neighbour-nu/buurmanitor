@@ -365,7 +365,7 @@ def selectie(lijst, drempel=40, aantal=10, dubbels=False):
     nul = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
     lijst = [b for b in lijst if b["score"] is None or b["score"] >= drempel or b["stroom"] == "reacties"]
     lijst.sort(key=lambda b: (bool(b.get("gelezen")), b["score"] is None, -(b["score"] or 0), -(b["tijd"] or nul).timestamp()))
-    return (lijst if dubbels else ontdubbel(lijst))[:aantal]
+    return (lijst if dubbels else ontdubbel(lijst, hooguit=aantal))[:aantal]
 
 
 def voor_vandaag(c, per=4, stromen_=("reacties", "keepers", "politiek")):

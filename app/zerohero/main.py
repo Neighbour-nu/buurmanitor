@@ -42,7 +42,7 @@ STATUS_OPEN = ("nieuw", "bewaard", "geselecteerd")
 STATUS_KEUZE = ("nieuw", "bewaard", "geselecteerd", "genegeerd")
 WEGGEFILTERD = ("onleesbaar", "geen_inhoud", "zoeken_mislukt", "geleerd_weg")
 
-pool = ConnectionPool(DATABASE_URL, min_size=1, max_size=4, open=False,
+pool = ConnectionPool(DATABASE_URL, min_size=1, max_size=8, timeout=20, open=False,
                       kwargs={"row_factory": dict_row, "autocommit": True})
 
 MIGRATIES = [

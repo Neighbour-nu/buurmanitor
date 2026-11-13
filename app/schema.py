@@ -38,6 +38,7 @@ MIGRATIES = [
         resultaat text,
         fout text,
         bezig_sinds timestamptz)""",
+    "ALTER TABLE taken ADD COLUMN IF NOT EXISTS duur_ms int",  # hoe lang de taak de laatste keer duurde
     # Meldingen: urgent, belangrijk of normaal. sleutel voorkomt dat dezelfde melding twee keer komt.
     """CREATE TABLE IF NOT EXISTS meldingen (
         id serial PRIMARY KEY,

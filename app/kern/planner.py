@@ -5,10 +5,14 @@
 - Tegen dubbel draaien: per taak een PostgreSQL advisory lock. Draaien er ooit twee processen
   (of tijdens een overstap twee versies), dan voert er maar één de taak uit.
 - Wat een taak deed, staat in de tabel taken en op de pagina Gezondheid.
+- Elke taak draait in een eigen thread, zodat een trage taak (nieuws met Claude, mail ophalen) de andere niet
+  ophoudt; een taak die nog bezig is, start niet nog een keer. De planner gebruikt zijn eigen databasepool
+  (db.achtergrond), zodat de schermen nooit op achtergrondwerk hoeven te wachten.
 """
 import asyncio
 import datetime as dt
 import threading
+import time
 import traceback
 
 from . import config
@@ -52,12 +56,13 @@ def draai(pool, naam, forceer=False):
                 return None
             c.execute("""INSERT INTO taken (naam, bezig_sinds) VALUES (%s, now())
                          ON CONFLICT (naam) DO UPDATE SET bezig_sinds = now()""", (naam,))
+            begin = time.monotonic()
             try:
                 resultaat, fout = str(regel["functie"](c) or "klaar")[:1000], None
             except Exception as e:  # noqa: BLE001
                 resultaat, fout = None, f"{e}\n{traceback.format_exc()[-1500:]}"
-            c.execute("UPDATE taken SET laatst = %s, resultaat = %s, fout = %s, bezig_sinds = NULL WHERE naam = %s",
-                      (nu, resultaat, fout, naam))
+            c.execute("UPDATE taken SET laatst = %s, resultaat = %s, fout = %s, bezig_sinds = NULL, duur_ms = %s WHERE naam = %s",
+                      (nu, resultaat, fout, int((time.monotonic() - begin) * 1000), naam))
             return resultaat if fout is None else f"fout: {fout.splitlines()[0]}"
         finally:
             c.execute("SELECT pg_advisory_unlock(hashtext(%s))", (_slot(naam),))
@@ -69,17 +74,53 @@ def opruimen(c):
               "WHERE bezig_sinds IS NOT NULL")
 
 
+_bezig = set()
+_bezig_slot = threading.Lock()
+
+
+def _in_thread(pool, naam, forceer=False):
+    """Start de taak in een eigen thread, tenzij hij in dit proces al bezig is. Geeft True als hij start."""
+    with _bezig_slot:
+        if naam in _bezig:
+            return False
+        _bezig.add(naam)
+
+    def werk():
+        try:
+            draai(pool, naam, forceer)
+        except Exception:  # noqa: BLE001  (de planner mag nooit stoppen)
+            traceback.print_exc()
+        finally:
+            with _bezig_slot:
+                _bezig.discard(naam)
+    threading.Thread(target=werk, name=f"taak-{naam}", daemon=True).start()
+    return True
+
+
+def aan_de_beurt_lijst(pool, nu=None):
+    """Welke taken nu aan de beurt zijn, met één blik in de tabel taken."""
+    nu = nu or dt.datetime.now(config.TZ)
+    with pool.connection() as c:
+        laatst = {r["naam"]: r["laatst"] for r in c.execute("SELECT naam, laatst FROM taken").fetchall()}
+    return [n for n, regel in TAKEN.items() if aan_de_beurt(regel, nu, laatst.get(n))]
+
+
+def bezig():
+    with _bezig_slot:
+        return set(_bezig)
+
+
 async def lus(pool):
     await asyncio.sleep(15)
     while True:
-        for naam in list(TAKEN):
-            try:
-                await asyncio.to_thread(draai, pool, naam)
-            except Exception:  # noqa: BLE001
-                traceback.print_exc()
+        try:
+            for naam in await asyncio.to_thread(aan_de_beurt_lijst, pool):
+                _in_thread(pool, naam)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
         await asyncio.sleep(INTERVAL_SECONDEN)
 
 
 def nu_draaien(pool, naam):
     """Voor de knop 'Nu uitvoeren': op de achtergrond, zodat de pagina niet wacht."""
-    threading.Thread(target=draai, args=(pool, naam, True), daemon=True).start()
+    _in_thread(pool, naam, True)

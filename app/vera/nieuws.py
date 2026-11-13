@@ -354,23 +354,39 @@ def dubbel(a, b):
     """Gaan twee berichten over hetzelfde? Pure functie.
     Ja bij (bijna) dezelfde kop, bij een kop die voor het grootste deel uit dezelfde woorden bestaat, of (keepersnieuws)
     als ze over dezelfde keeper gaan: in de lijst van de Doellijn of met de achternaam in de kop."""
-    ka, kb = sleutel(a["titel"]), sleutel(b["titel"])
-    if ka == kb or difflib.SequenceMatcher(None, ka, kb).ratio() > 0.85:
+    ka, wa, na, sa = _kenmerken(a)
+    kb, wb, nb, sb = _kenmerken(b)
+    if ka == kb:
         return True
-    wa, wb = woorden(a["titel"]), woorden(b["titel"])
+    vgl = difflib.SequenceMatcher(None, ka[:100], kb[:100], autojunk=False)  # het begin zegt genoeg (socials: lange teksten)
+    if vgl.real_quick_ratio() > 0.85 and vgl.quick_ratio() > 0.85 and vgl.ratio() > 0.85:
+        return True
     if len(wa) >= 3 and len(wb) >= 3 and len(wa & wb) / min(len(wa), len(wb)) >= 0.7:
         return True
-    na, nb = _achternamen(a.get("keepers") or []), _achternamen(b.get("keepers") or [])
     if na & nb:
         return True
-    return bool((na and na & set(kb.split())) or (nb and nb & set(ka.split())))
+    return bool((na and na & sb) or (nb and nb & sa))
 
 
-def ontdubbel(lijst, al=()):
+def _kenmerken(b):
+    """Kop, woorden en achternamen van een bericht, één keer uitgerekend (ontdubbelen vergelijkt elk bericht met
+    alle eerdere)."""
+    k = b.get("_kenmerken")
+    if k is None or k[0] != b.get("titel"):
+        kop = sleutel(b["titel"])
+        k = (b.get("titel"), (kop, woorden(b["titel"]), _achternamen(b.get("keepers") or []), set(kop.split())))
+        b["_kenmerken"] = k
+    return k[1]
+
+
+def ontdubbel(lijst, al=(), hooguit=None):
     """Houd per onderwerp alleen het eerste bericht over (de lijst is al op belang gesorteerd). De bronnen van wat
-    wegvalt, komen bij het bewaarde bericht als 'ook' te staan. Berichten in 'al' tellen als al getoond. Pure functie."""
+    wegvalt, komen bij het bewaarde bericht als 'ook' te staan. Berichten in 'al' tellen als al getoond. Met hooguit
+    stopt het zodra er genoeg zijn (wat daarna komt, wordt toch niet getoond). Pure functie."""
     gezien, uit = list(al), []
     for b in lijst:
+        if hooguit is not None and len(uit) >= hooguit:
+            break
         eerder = next((x for x in gezien if dubbel(x, b)), None)
         if eerder is not None:
             bron = b.get("bron") or ""
@@ -391,7 +407,7 @@ def selectie(lijst, drempel=40, aantal=12, al=(), dubbels=False):
     lijst = [b for b in lijst if b["score"] is None or b["score"] >= drempel]
     nul = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
     lijst.sort(key=lambda b: (b["score"] is None, -(b["score"] or 0), -(b["tijd"] or nul).timestamp()))
-    return (lijst if dubbels else ontdubbel(lijst, al))[:aantal]
+    return (lijst if dubbels else ontdubbel(lijst, al, hooguit=aantal))[:aantal]
 
 
 def uitgelicht(stromen, nu, uren=36, drempel=65):
@@ -414,7 +430,7 @@ def koppen(c, nu, aantal=5):
     stromen, _ = verzamel(c, 2)
     alles = [b for lijst in stromen.values() for b in (lijst or []) if b["score"] is not None and b["score"] >= 60]
     alles.sort(key=lambda b: (-b["score"], -(b["tijd"] or nu).timestamp()))
-    return ontdubbel(alles)[:aantal]
+    return ontdubbel(alles, hooguit=aantal)[:aantal]
 
 
 def koppen_per_soort(stromen, nu, per=3, uren=36, drempel=40):
@@ -433,7 +449,7 @@ def koppen_per_soort(stromen, nu, per=3, uren=36, drempel=40):
         recent = [b for b in lijst if b["tijd"] and b["tijd"] >= grens and (b["score"] is None or b["score"] >= drempel)]
         recent.sort(key=lambda b: (bool(b.get("gelezen")), b["score"] is None, -(b["score"] or 0), -(b["tijd"] or nul).timestamp()))
         al = (uit.get("politiek") or ()) if soort == "landelijk" else ()
-        uit[soort] = ontdubbel(recent, al)[:n]
+        uit[soort] = ontdubbel(recent, al, hooguit=n)[:n]
     return uit
 
 
