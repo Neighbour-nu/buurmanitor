@@ -145,15 +145,29 @@
     <label class="vink"><input type="checkbox" id="metclaude"> Met samenvatting door Claude</label>
   </div>
   <p class="noot">Het voorbeeld laat zien wat er nu klaarstaat; sla eerst op als je iets hebt veranderd.</p>
-  <iframe id="kader" title="Voorbeeld van de mail" src="/overzichten/{{ o.id }}/voorbeeld" loading="lazy"></iframe>
+  <p class="noot" id="kaderstatus" aria-live="polite">Voorbeeld wordt gemaakt…</p>
+  <iframe id="kader" title="Voorbeeld van de mail" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>
 </section>
 </div>
 <script>
 (function () {
   const kader = document.getElementById("kader"), als = document.getElementById("bekijkals"), claude = document.getElementById("metclaude");
-  function laad() { kader.src = "/overzichten/{{ o.id }}/voorbeeld?ontvanger=" + encodeURIComponent(als.value) + (claude.checked ? "&claude=1" : ""); }
+  const status = document.getElementById("kaderstatus");
+  let beurt = 0;
+  // Ophalen en via srcdoc tonen: de server staat niet toe dat pagina's van Buurmanitor in een kader worden geladen.
+  function laad() {
+    const mijn = ++beurt;
+    status.textContent = claude.checked ? "Voorbeeld wordt gemaakt, Claude schrijft de samenvatting…" : "Voorbeeld wordt gemaakt…";
+    status.hidden = false;
+    fetch("/overzichten/{{ o.id }}/voorbeeld?ontvanger=" + encodeURIComponent(als.value) + (claude.checked ? "&claude=1" : ""),
+          { credentials: "same-origin" })
+      .then(r => { if (!r.ok) throw new Error("status " + r.status); return r.text(); })
+      .then(html => { if (mijn !== beurt) return; kader.srcdoc = html; status.hidden = true; })
+      .catch(() => { if (mijn === beurt) status.textContent = "Het voorbeeld kon niet worden gemaakt. Probeer het zo nog eens."; });
+  }
   als.addEventListener("change", laad);
   claude.addEventListener("change", laad);
+  laad();
 })();
 </script>
 {% endblock %}
