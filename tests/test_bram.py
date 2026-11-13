@@ -807,6 +807,13 @@ def test_archiveren_in_map(klant, monkeypatch):
         g1, g2 = bericht(g, "g1", "draadA", "Agenda commissie"), bericht(g, "g2", "draadA", "Re: Agenda commissie")
         g3 = bericht(g, "g3", "draadB", "Iets anders")
         m1, m2 = bericht(m, "m1", "convX", "Release 4.2"), bericht(m, "m2", "convX", "RE: Release 4.2")
+    # De eerste keer haalt Bram de mappen op de achtergrond op (de inbox wacht er niet op); daarna staan ze klaar.
+    klant.get("/bram", headers=KOP)
+    for _ in range(100):
+        if not sync._verversen:  # pylint: disable=protected-access
+            break
+        import time  # pylint: disable=import-outside-toplevel
+        time.sleep(0.02)
     pagina = klant.get("/bram", headers=KOP).text
     assert "Archiveren in map" in pagina and f'value="{g}|Label_7"' in pagina and f'value="{m}|MAP-US"' in pagina and 'label="Upper Spire"' in pagina
     # Gmail: de hele draad in het label en uit de inbox; Upper Spire-bericht overgeslagen (andere mailbox).
@@ -997,3 +1004,23 @@ def test_regels_op_nieuwe_mail(klant, monkeypatch):
     with db.pool.connection() as c:
         assert c.execute("SELECT count(*) AS n FROM post_regels").fetchone()["n"] == 1
         c.execute("TRUNCATE post_koppelingen, post_regels CASCADE")
+
+
+def test_regelscherm_wacht_niet_op_de_mailbox(klant, monkeypatch):
+    """Regel maken vanuit een mail: het scherm wacht nooit op Gmail of Outlook (trage mappenlijst, tokenvernieuwing)."""
+    import time  # pylint: disable=import-outside-toplevel
+    from app.clara import kluis  # pylint: disable=import-outside-toplevel
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(bronnen, "google_toegang", lambda r: time.sleep(3) or ("tok", 3600, None))
+    monkeypatch.setattr(bronnen, "ms_toegang", lambda r, t: time.sleep(3) or ("tok", 3600, None))
+    with db.pool.connection() as c:
+        c.execute("TRUNCATE post_koppelingen CASCADE")
+        g = c.execute("INSERT INTO post_koppelingen (soort, naam, account, geheim) VALUES ('google', 'Neighbour', 'a@b.nl', %s) RETURNING id",
+                      (kluis.sluit("r"),)).fetchone()["id"]
+        c.execute("INSERT INTO post_koppelingen (soort, naam, account, tenant, geheim) VALUES ('microsoft', 'US', 'm@us.nl', 't', %s)", (kluis.sluit("r"),))
+        sync.vergeet_toegang(g)
+    begin = time.monotonic()
+    pagina = klant.get(f"/bram/regels?van=jan@klant.nl&account={g}&naam=Jan", headers=KOP).text
+    assert time.monotonic() - begin < 1.5 and 'value="jan@klant.nl"' in pagina
+    with db.pool.connection() as c:
+        c.execute("TRUNCATE post_koppelingen CASCADE")

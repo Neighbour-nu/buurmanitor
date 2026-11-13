@@ -30,6 +30,14 @@ _toegang = {}
 _labels = {}  # koppeling-id -> (lijst, tot wanneer geldig)
 _mappen = {}  # koppeling-id -> (lijst, tot wanneer geldig)
 _slot = threading.Lock()
+_slot_per_account = {}  # koppeling-id -> Lock: een trage tokenvernieuwing van het ene account houdt de andere niet op
+_verversen = set()  # (soort, koppeling-id) die op de achtergrond worden ververst
+GELDIG = 600  # mappen en labels: zo lang (seconden) vers; daarna eerst de bewaarde lijst, en op de achtergrond verversen
+
+
+def _account_slot(kid):
+    with _slot:
+        return _slot_per_account.setdefault(kid, threading.Lock())
 
 
 def koppelingen(c, alleen_actief=False):
@@ -37,18 +45,21 @@ def koppelingen(c, alleen_actief=False):
 
 
 def toegang(c, k):
-    with _slot:
-        token, verloopt = _toegang.get(k["id"], (None, 0))
+    with _account_slot(k["id"]):
+        with _slot:
+            token, verloopt = _toegang.get(k["id"], (None, 0))
         if token and verloopt > time.monotonic():
             return token
-        refresh = kluis.open_(k["geheim"])
+        geheim = c.execute("SELECT geheim FROM post_koppelingen WHERE id = %s", (k["id"],)).fetchone()  # het nieuwste
+        refresh = kluis.open_(geheim["geheim"] if geheim else k["geheim"])
         if k["soort"] == "google":
             token, duur, nieuw = bronnen.google_toegang(refresh)
         else:
             token, duur, nieuw = bronnen.ms_toegang(refresh, k["tenant"])
         if nieuw and nieuw != refresh:
             c.execute("UPDATE post_koppelingen SET geheim = %s WHERE id = %s", (kluis.sluit(nieuw), k["id"]))
-        _toegang[k["id"]] = (token, time.monotonic() + max(60, int(duur) - 120))
+        with _slot:
+            _toegang[k["id"]] = (token, time.monotonic() + max(60, int(duur) - 120))
         return token
 
 
@@ -276,30 +287,87 @@ def taak_post(c):
 
 # ---------------------------------------------------------------- na een klik van Martijn
 
-def labels(c, k):
-    """De labels (Gmail) of categorieën (Outlook) van een account, tien minuten bewaard."""
-    with _slot:
-        lijst, tot = _labels.get(k["id"], (None, 0))
-    if lijst is not None and tot > time.monotonic():
-        return lijst
+def _bewaard(soort, kid):
+    """De laatst opgehaalde lijst uit de database (blijft bewaard na een herstart): (lijst, leeftijd in seconden)."""
+    from ..kern import db  # pylint: disable=import-outside-toplevel
+    with db.pool.connection() as c:
+        r = c.execute("SELECT waarde, bijgewerkt FROM instellingen WHERE sleutel = %s", (f"bram_{soort}_{kid}",)).fetchone()
+    if not r or not r["waarde"]:
+        return None, None
+    try:
+        lijst = [tuple(x) for x in json.loads(r["waarde"])]
+    except ValueError:
+        return None, None
+    return lijst, (dt.datetime.now(dt.timezone.utc) - r["bijgewerkt"]).total_seconds()
+
+
+def _bewaar(c, soort, kid, lijst):
+    c.execute("""INSERT INTO instellingen (sleutel, waarde) VALUES (%s, %s)
+                 ON CONFLICT (sleutel) DO UPDATE SET waarde = EXCLUDED.waarde, bijgewerkt = now()""",
+              (f"bram_{soort}_{kid}", json.dumps(lijst)))
+
+
+def _haal(c, k, soort):
     tok = toegang(c, k)
-    lijst = bronnen.gmail_labels(tok) if k["soort"] == "google" else bronnen.ms_categorieen(tok)
+    g = k["soort"] == "google"
+    lijst = bronnen.gmail_labels(tok) if g else (bronnen.ms_categorieen(tok) if soort == "labels" else bronnen.ms_mappen(tok))
     with _slot:
-        _labels[k["id"]] = (lijst, time.monotonic() + 600)
+        (_labels if soort == "labels" else _mappen)[k["id"]] = (lijst, time.monotonic() + GELDIG)
+    _bewaar(c, soort, k["id"], lijst)
     return lijst
 
 
-def mappen(c, k, vers=False):
-    """De mappen om in te archiveren (Gmail: je eigen labels; Outlook: je mappen), tien minuten bewaard."""
+def _op_achtergrond(k, soort):
+    """Verversen zonder dat het scherm erop wacht."""
+    sleutel = (soort, k["id"])
     with _slot:
-        lijst, tot = _mappen.get(k["id"], (None, 0))
+        if sleutel in _verversen:
+            return
+        _verversen.add(sleutel)
+
+    def werk():
+        from ..kern import db  # pylint: disable=import-outside-toplevel
+        try:
+            with db.achtergrond.connection() as c:
+                _haal(c, k, soort)
+        except Exception:  # noqa: BLE001  (dan blijft de bewaarde lijst staan)
+            pass
+        finally:
+            with _slot:
+                _verversen.discard(sleutel)
+    threading.Thread(target=werk, name=f"bram-{soort}-{k['id']}", daemon=True).start()
+
+
+def _lijst(c, k, soort, vers=False, wachten=True):
+    """Mappen of labels: uit het geheugen als die vers zijn; anders de bewaarde lijst (en op de achtergrond verversen);
+    alleen als er nog niets bewaard is (of vers=True) wachten op Gmail of Outlook. Met wachten=False nooit wachten."""
+    cache = _labels if soort == "labels" else _mappen
+    with _slot:
+        lijst, tot = cache.get(k["id"], (None, 0))
     if lijst is not None and tot > time.monotonic() and not vers:
         return lijst
-    tok = toegang(c, k)
-    lijst = bronnen.gmail_labels(tok) if k["soort"] == "google" else bronnen.ms_mappen(tok)
-    with _slot:
-        _mappen[k["id"]] = (lijst, time.monotonic() + 600)
-    return lijst
+    if not vers:
+        bewaard, leeftijd = _bewaard(soort, k["id"])
+        if bewaard is not None:
+            with _slot:
+                cache[k["id"]] = (bewaard, time.monotonic() + max(0, GELDIG - leeftijd))
+            if leeftijd > GELDIG:
+                _op_achtergrond(k, soort)
+            return bewaard
+    if not wachten:
+        _op_achtergrond(k, soort)
+        return []
+    return _haal(c, k, soort)
+
+
+def labels(c, k, wachten=True):
+    """De labels (Gmail) of categorieën (Outlook) van een account."""
+    return _lijst(c, k, "labels", wachten=wachten)
+
+
+def mappen(c, k, vers=False, wachten=True):
+    """De mappen om in te archiveren (Gmail: je eigen labels; Outlook: je mappen)."""
+    return _lijst(c, k, "mappen", vers=vers, wachten=wachten)
 
 
 def archiveer_in(c, b, map_id):

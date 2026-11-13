@@ -116,7 +116,7 @@ def postkamer(request: Request, map: str = "alles", account: int = 0, praat: int
         for k in koppelingen:
             if k["actief"] and not k["fout"] and (not account or k["id"] == account):
                 try:
-                    mapkeuze.append((k, sync.mappen(c, k)))
+                    mapkeuze.append((k, sync.mappen(c, k, wachten=False)))
                 except Exception:  # noqa: BLE001  (zonder mappen werkt de lijst gewoon)
                     continue
         recent = sync.recente_mappen(c, account=account)
@@ -639,12 +639,13 @@ async def koppeling_bijwerken(request: Request, kid: int):
 # ---------------------------------------------------------------- regels voor binnenkomende mail
 
 def _mapnamen(c, ks):
-    """Namen van mappen en labels per account, voor de keuzelijst bij het maken van een regel (wat lukt)."""
+    """Namen van mappen en labels per account, voor de keuzelijst bij het maken van een regel. Alleen wat al bekend is:
+    het scherm wacht nooit op Gmail of Outlook (wat nog ontbreekt, wordt op de achtergrond opgehaald)."""
     mappen_, labels_ = set(), set()
     for k in ks:
         try:
-            mappen_ |= {n for _, n in sync.mappen(c, k)}
-            labels_ |= {n for _, n in sync.labels(c, k)}
+            mappen_ |= {n for _, n in sync.mappen(c, k, wachten=False)}
+            labels_ |= {n for _, n in sync.labels(c, k, wachten=False)}
         except Exception:  # noqa: BLE001  (een account dat niet bereikbaar is: dan zonder voorbeelden)
             continue
     return sorted(mappen_, key=str.lower), sorted(labels_, key=str.lower)

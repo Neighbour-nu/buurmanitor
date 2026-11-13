@@ -70,7 +70,7 @@ h2, .sub { font-family: var(--kop); font-weight: 600; text-transform: uppercase;
 .chip.fbim { background: var(--fbim); } .chip.upperspire { background: var(--upperspire); }
 
 /* kaarten en raster */
-.raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 16px; }
+.raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 16px; margin-top: 16px; }
 .gesprek-raster { display: grid; grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr); gap: 16px; }
 @media (max-width: 760px) { .gesprek-raster { grid-template-columns: 1fr; } .kop { padding: 10px 16px; } .wie { margin-left: 0; } }
 .kaart { background: var(--wit); border: 1px solid var(--lijn); border-radius: 6px; padding: 14px 16px; margin-bottom: 12px; }
@@ -431,7 +431,7 @@ details.afspraak.voorbij[open] { opacity: .8; }
 .nschakel a.actief { background: var(--blauwdonker); color: var(--wit); }
 .nschakel a.keepers.actief { background: var(--keepers); } .nschakel a.politiek.actief { background: var(--politiek); } .nschakel a.overig.actief { background: var(--overig); }
 
-.nuitgelicht { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 18px; }
+.nuitgelicht { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 16px; margin-bottom: 18px; }
 .ngroot { background: var(--wit); border: 1px solid var(--lijn); border-top: 5px solid var(--blauw); border-radius: 6px; padding: 14px 18px 12px;
           display: flex; flex-direction: column; gap: 6px; }
 .ngroot.keepers { border-top-color: var(--keepers); } .ngroot.politiek { border-top-color: var(--politiek); } .ngroot.overig { border-top-color: var(--overig); }
@@ -452,7 +452,7 @@ details.afspraak.voorbij[open] { opacity: .8; }
 .nkolom.keepers > h2 { color: var(--keepers); } .nkolom.politiek > h2 { color: var(--politiek); } .nkolom.overig > h2 { color: var(--overig); }
 .nkolom > h2 .aantal { font-size: 14px; color: var(--zacht); font-family: Barlow, sans-serif; }
 .nraster.enkel { grid-template-columns: 1fr; }
-.nraster.enkel .nlijst { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); column-gap: 24px; }
+.nraster.enkel .nlijst { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); column-gap: 24px; }
 .nitem { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid var(--lijn); position: relative; }
 .nlijst > .nitem:last-child { border-bottom: 0; }
 .ninhoud { flex: 1; min-width: 0; }
@@ -554,7 +554,7 @@ tr.uit td { opacity: .55; }
 /* Jesse: socials */
 :root { --linkedin: #0A66C2; --instagram: #C13584; --facebook: #1877F2; --threads: #1A1A1A; --youtube: #D32F2F; }
 .sectiekop { margin: 0; }
-.skanalen { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.skanalen { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr)); gap: 12px; margin-bottom: 18px; }
 .skanaal { display: flex; flex-direction: column; gap: 2px; background: var(--wit); border: 1px solid var(--lijn); border-top: 4px solid var(--blauw);
            border-radius: 6px; padding: 10px 14px; color: var(--inkt); text-decoration: none; }
 .skanaal:hover { border-color: var(--blauw); }
@@ -746,7 +746,7 @@ h2 .kopknoppen { display: inline-flex; gap: 6px; align-items: center; flex-wrap:
 
 /* ---------- CRM: kansen, projecten en relaties ---------- */
 .crmtabs .knoppen { gap: 8px; }
-.raster.tweekolom { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); align-items: start; }
+.raster.tweekolom { grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); align-items: start; }
 .kanskaart { display: flex; flex-direction: column; gap: 2px; background: var(--wit); border: 1px solid var(--lijn); border-left: 4px solid var(--blauw);
   border-radius: 4px; padding: 7px 9px; margin-bottom: 8px; }
 .kanskaart[draggable] { cursor: grab; }
@@ -808,3 +808,8 @@ a.kaart.crmact:hover { border-color: var(--blauw); }
 .ncrm:hover { border-color: var(--blauw); }
 [hidden] { display: none !important; }
 .kanskaart { overflow-wrap: anywhere; }
+
+/* Smal scherm: alles in één kolom, nooit zijwaarts scrollen */
+@media (max-width: 760px) {
+  .clara-raster, .gesprek-raster, .noorgesprek, .sraster { grid-template-columns: minmax(0, 1fr); }
+}
