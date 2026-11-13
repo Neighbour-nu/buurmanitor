@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "crm_macros.html" import tijdlijn, notitievorm %}
+{% block titel %}{{ p.titel }} · CRM · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>{{ p.titel }}</h1>
+    <p class="motto">{{ p.activiteitnaam }} · {{ projectstatus[p.status] }}{% if p.datum %} · {{ datum_lang(p.datum) }}{% if p.datum >= vandaag %} (over {{ (p.datum - vandaag).days }} dagen){% endif %}{% endif %}</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="/taken?project={{ p.id }}">Op het takenbord</a></div>
+</section>
+{% include "crm_tabs.html" %}
+
+<div class="raster tweekolom">
+<section class="kaart" id="taken">
+  <h2>Taken <span class="aantal">{{ p.alle_taken - p.open_taken }}/{{ p.alle_taken }}</span></h2>
+  {% for t in taken %}
+    <div class="projecttaak {{ 'klaar' if t.status == 'afgerond' }} {{ 'te-laat' if t.einddatum and t.einddatum < vandaag and t.status != 'afgerond' }}">
+      <a href="/taken?bewerk={{ t.id }}#formulier">{{ t.titel }}</a>
+      <span class="noot">{{ t.einddatum.strftime('%d-%m-%Y') if t.einddatum else '' }} · {{ t.status }}</span>
+    </div>
+  {% else %}<p class="noot">Nog geen taken.</p>{% endfor %}
+  <form method="post" action="/crm/project/{{ p.id }}/taak" class="veldrij taaktoevoegen">
+    <input type="text" name="titel" placeholder="Nieuwe taak" required aria-label="Nieuwe taak">
+    <input type="date" name="einddatum" aria-label="Deadline">
+    <button class="knop" type="submit">Toevoegen</button>
+  </form>
+  <details class="sjabloondetails">
+    <summary>Sjablonen</summary>
+    {% if sjablonen %}
+    <form method="post" action="/crm/project/{{ p.id }}/sjabloon" class="veldrij">
+      <label>Vaste taken toevoegen uit <select name="sjabloon">{% for s in sjablonen %}<option value="{{ s.id }}">{{ s.naam }} ({{ s.taken|length }})</option>{% endfor %}</select></label>
+      <button class="knop" type="submit">Toevoegen</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/crm/project/{{ p.id }}/sjabloon" class="veldrij">
+      <input type="hidden" name="maak" value="1">
+      <label>Sjabloon maken van de taken hierboven <input type="text" name="naam" value="{{ p.titel }}"></label>
+      <button class="knop" type="submit">Opslaan als sjabloon</button>
+    </form>
+    <p class="noot">De deadlines worden gerekend vanaf de projectdatum{{ '' if p.datum else ' (vul die eerst in)' }}.</p>
+  </details>
+</section>
+
+<section class="kaart">
+  <h2>Gegevens</h2>
+  <form method="post" action="/crm/project/{{ p.id }}">
+    <div class="velden">
+      <label class="breed">Titel <input type="text" name="titel" value="{{ p.titel }}" required></label>
+      <label>Activiteit <select name="activiteit">{% for a in acts %}<option value="{{ a.code }}" {{ 'selected' if a.code == p.activiteit }}>{{ a.naam }}</option>{% endfor %}</select></label>
+      <label>Status <select name="status">{% for code, naam in statussen %}<option value="{{ code }}" {{ 'selected' if code == p.status }}>{{ naam }}</option>{% endfor %}</select></label>
+      <label>Datum <input type="date" name="datum" value="{{ p.datum or '' }}"></label>
+      <label>Start <input type="date" name="start" value="{{ p.start or '' }}"></label>
+      <label>Eind <input type="date" name="eind" value="{{ p.eind or '' }}"></label>
+      <label>Organisatie <input type="text" name="organisatie" value="{{ p.organisatie or '' }}"></label>
+      <label>Contactpersoon <input type="text" name="contact_naam" value="{{ p.contact or '' }}"></label>
+      <label>Mailadres contact <input type="text" name="contact_email" value="{{ p.contact_email or '' }}"></label>
+      <label class="breed">Omschrijving <textarea name="omschrijving" rows="3">{{ p.omschrijving }}</textarea></label>
+    </div>
+    <table class="tabel budget">
+      <tr><th></th><th>Begroot</th><th>Werkelijk</th></tr>
+      <tr><td>Kosten</td><td><input type="text" name="budget_kosten" value="{{ p.budget_kosten if p.budget_kosten is not none else '' }}" inputmode="decimal" aria-label="Begrote kosten"></td>
+        <td><input type="text" name="kosten" value="{{ p.kosten if p.kosten is not none else '' }}" inputmode="decimal" aria-label="Werkelijke kosten"></td></tr>
+      <tr><td>Opbrengst</td><td><input type="text" name="budget_opbrengst" value="{{ p.budget_opbrengst if p.budget_opbrengst is not none else '' }}" inputmode="decimal" aria-label="Begrote opbrengst"></td>
+        <td><input type="text" name="opbrengst" value="{{ p.opbrengst if p.opbrengst is not none else '' }}" inputmode="decimal" aria-label="Werkelijke opbrengst"></td></tr>
+      {% set begroot = (p.budget_opbrengst or 0) - (p.budget_kosten or 0) %}{% set werkelijk = (p.opbrengst or 0) - (p.kosten or 0) %}
+      <tr><td><b>Resultaat</b></td><td>{{ euro_kort(begroot) }}</td><td>{{ euro_kort(werkelijk) }}</td></tr>
+    </table>
+    <div class="knoppenrij"><button class="knop vol" type="submit">Opslaan</button>
+      {% for k in kansen %}<a class="klein" href="/crm/kans/{{ k.id }}">uit kans: {{ k.titel }}</a>{% endfor %}</div>
+  </form>
+  <form method="post" action="/crm/project/{{ p.id }}/weg"><button class="knop klein" type="submit" onclick="return confirm('Dit project verwijderen? De taken blijven op het takenbord.')">Verwijderen</button></form>
+</section>
+</div>
+
+<section class="kaart" id="tijdlijn">
+  <h2>Tijdlijn</h2>
+  {{ notitievorm('/crm/project/' ~ p.id ~ '/notitie') }}
+  {{ tijdlijn(tijd, geleden) }}
+</section>
+{% endblock %}

@@ -743,3 +743,68 @@ h2 .kopknoppen { display: inline-flex; gap: 6px; align-items: center; flex-wrap:
 .veldrij { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
 .veldrij label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--zacht); }
 .bronnentabel { max-width: 640px; }
+
+/* ---------- CRM: kansen, projecten en relaties ---------- */
+.crmtabs .knoppen { gap: 8px; }
+.raster.tweekolom { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); align-items: start; }
+.kanskaart { display: flex; flex-direction: column; gap: 2px; background: var(--wit); border: 1px solid var(--lijn); border-left: 4px solid var(--blauw);
+  border-radius: 4px; padding: 7px 9px; margin-bottom: 8px; }
+.kanskaart[draggable] { cursor: grab; }
+.kanskaart.sleept { opacity: .5; }
+.kanskaart.achter { border-left-color: #C62828; background: #FFF6F6; }
+.kanskaart.gesloten { opacity: .7; }
+.kanstitel { font-weight: 600; text-decoration: none; color: var(--inkt); }
+.kanstitel:hover { text-decoration: underline; color: var(--blauwdonker); }
+.kanswaarde { font-family: var(--kop); font-weight: 600; color: var(--blauwdonker); font-size: 14px; }
+.kansstap { font-size: 13px; color: var(--inkt); }
+.kansstap.rood, .noot.rood { color: #B71C1C; }
+.kolom.gewonnen { background: #E8F5EA; } .kolom.verloren { background: #F1F2F4; }
+.nieuwhier { display: inline-block; margin: 2px 2px 0; }
+.crmoverzicht { margin-top: 0; }
+a.kaart.crmact { text-decoration: none; color: inherit; display: block; }
+a.kaart.crmact:hover { border-color: var(--blauw); }
+.crmgetal { font-family: var(--kop); font-size: 34px; font-weight: 600; color: var(--blauwdonker); margin: 4px 0; line-height: 1.1; }
+.crmgetal .noot { font-family: var(--tekst, inherit); font-size: 14px; font-weight: 400; }
+.stapregel { display: flex; gap: 12px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--lijn); }
+.stapregel .stapdatum { flex: 0 0 52px; font-family: var(--kop); font-weight: 600; color: var(--blauwdonker); }
+.stapregel.achter .stapdatum { color: #B71C1C; }
+.fasebalk { display: flex; flex-wrap: wrap; gap: 6px; }
+.fasebalk .knop.gewonnen.vol { background: #2E7D32; border-color: #2E7D32; }
+.fasebalk .knop.verloren.vol { background: #6B7280; border-color: #6B7280; }
+.tijdregel { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--lijn); }
+.tijdicoon { flex: 0 0 22px; text-align: center; }
+.tijdwat { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tijdtekst { white-space: pre-wrap; margin: 2px 0; }
+.tijdregel.fase .tijdwat b { font-weight: 500; color: var(--zacht); }
+.notitievorm { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.notitievorm textarea { margin: 0; min-height: 60px; }
+.notitievorm .veldrij input[type=text] { flex: 1 1 220px; width: auto; }
+.projectregel { display: flex; gap: 12px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--lijn); text-decoration: none; color: var(--inkt); }
+.projectregel:hover { background: var(--ijs); }
+.projectwat { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.projecttaken { text-align: right; flex: 0 0 auto; }
+.projectstatus { flex: 0 0 82px; font-family: var(--kop); font-weight: 600; font-size: 12px; text-transform: uppercase; text-align: center;
+  border-radius: 3px; padding: 2px 6px; background: var(--ijs); color: var(--blauwdonker); }
+.projectstatus.actief { background: #DFF3E4; color: #1B6B33; } .projectstatus.idee { background: #FFF4D6; color: #8A6100; }
+.projectstatus.afgerond, .projectstatus.gestopt { background: #EEF0F3; color: var(--zacht); }
+.projecttaak { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--lijn); }
+.projecttaak.klaar a { text-decoration: line-through; color: var(--zacht); }
+.projecttaak.te-laat .noot { color: #B71C1C; }
+.taaktoevoegen { margin-top: 10px; } .taaktoevoegen input[type=text] { flex: 1 1 200px; width: auto; }
+.sjabloondetails { margin-top: 12px; } .sjabloondetails summary { cursor: pointer; color: var(--blauwdonker); font-weight: 600; }
+.sjabloondetails .veldrij { margin: 8px 0; }
+.budget { max-width: 460px; margin-top: 8px; } .budget input[type=text] { width: 100%; }
+.wattabs { display: flex; gap: 18px; margin-bottom: 4px; }
+.bronkaart p { margin: 4px 0; }
+.relatietabel td { vertical-align: top; }
+.orgregel { margin: 4px 0; }
+.sjabloonregel { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sjabloonregel form.inline { margin: 0; }
+.crmvoorstel { border: 1px dashed var(--blauw); border-radius: 6px; padding: 8px 10px; margin: 8px 0; background: var(--wit); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.taak .projectlabel { display: inline-block; font-size: 12px; color: var(--blauwdonker); text-decoration: none; }
+.ncrm { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid var(--lijn);
+  border-radius: 50%; background: var(--wit); text-decoration: none; font-size: 12px; opacity: .55; }
+.nitem:hover .ncrm, .ngroot:hover .ncrm, .ncrm:focus-visible { opacity: 1; }
+.ncrm:hover { border-color: var(--blauw); }
+[hidden] { display: none !important; }
+.kanskaart { overflow-wrap: anywhere; }

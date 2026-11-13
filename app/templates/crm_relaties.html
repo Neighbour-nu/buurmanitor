@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block titel %}Relaties · CRM · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Relaties</h1>
+    <p class="motto">Contactpersonen en organisaties, opgebouwd uit je mail ({{ totaal }} contacten). Automatische afzenders tellen niet mee.</p>
+  </div>
+  <div class="knoppen"><form method="post" action="/crm/relaties/bijwerken" class="inline"><button class="knop" type="submit">Nu bijwerken uit de mail</button></form></div>
+</section>
+{% include "crm_tabs.html" %}
+
+<section class="kaart">
+  <form method="get" action="/crm/relaties" class="meldingfilter">
+    <input type="search" name="q" value="{{ q }}" placeholder="Zoek op naam, mailadres of organisatie" aria-label="Zoeken">
+    <select name="activiteit" aria-label="Activiteit"><option value="">Alle activiteiten</option>
+      {% for a in acts %}<option value="{{ a.code }}" {{ 'selected' if a.code == activiteit }}>{{ a.naam }}</option>{% endfor %}</select>
+    <label class="vink"><input type="checkbox" name="verborgen" value="1" {{ 'checked' if verborgen }}> Verborgen</label>
+    <button class="knop" type="submit">Zoeken</button>
+  </form>
+  <table class="tabel relatietabel">
+    <tr><th>Naam</th><th>Organisatie</th><th>Mails</th><th>Laatst</th><th>Kansen</th></tr>
+    {% for p in contacten %}
+    <tr><td><a href="/crm/contact/{{ p.id }}">{{ p.naam or p.email }}</a><br><span class="noot">{{ p.email }}</span></td>
+      <td>{% if p.organisatie_id %}<a href="/crm/organisatie/{{ p.organisatie_id }}">{{ p.organisatie }}</a>{% endif %}</td>
+      <td class="noot">{{ p.mails }}</td><td class="noot">{{ geleden(p.laatste_mail) if p.laatste_mail else '' }}</td>
+      <td>{% if p.kansen %}<span class="label">{{ p.kansen }}</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="5" class="noot">Nog geen contacten. Klik op "Nu bijwerken uit de mail".</td></tr>{% endfor %}
+  </table>
+</section>
+
+<div class="raster tweekolom">
+<section class="kaart">
+  <h2>Organisaties</h2>
+  {% for o in organisaties %}<p class="orgregel"><a href="/crm/organisatie/{{ o.id }}">{{ o.naam }}</a> <span class="noot">{{ o.domein }} · {{ o.contacten }} contact{{ 'en' if o.contacten != 1 }}</span></p>
+  {% else %}<p class="noot">Nog geen organisaties.</p>{% endfor %}
+</section>
+<section class="kaart">
+  <h2>Nieuw contact</h2>
+  <form method="post" action="/crm/contact/0" class="velden">
+    <label>Naam <input type="text" name="naam"></label>
+    <label>Mailadres <input type="text" name="email"></label>
+    <label>Organisatie <input type="text" name="organisatie"></label>
+    <label>Functie <input type="text" name="functie"></label>
+    <div class="knoppenrij breed"><button class="knop vol" type="submit">Toevoegen</button></div>
+  </form>
+</section>
+</div>
+{% endblock %}

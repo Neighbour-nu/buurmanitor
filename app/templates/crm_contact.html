@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "crm_macros.html" import kanskaart %}
+{% block titel %}{{ p.naam or p.email }} · CRM · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>{{ p.naam or p.email }}</h1>
+    <p class="motto">{{ p.functie ~ ' · ' if p.functie }}{{ p.organisatie or '' }}{% if p.email %} · {{ p.email }}{% endif %}</p>
+  </div>
+  <div class="knoppen">{% if p.email %}<a class="knop" href="mailto:{{ p.email }}">Mailen</a>{% endif %}
+    <a class="knop" href="/crm/nieuw?wat=kans&contact_naam={{ p.naam|urlencode }}&contact_email={{ p.email|urlencode }}&organisatie={{ (p.organisatie or '')|urlencode }}{{ '&activiteit=' ~ p.activiteit if p.activiteit }}">+ Kans</a></div>
+</section>
+{% include "crm_tabs.html" %}
+<div class="raster tweekolom">
+<section class="kaart">
+  <h2>Gegevens</h2>
+  <form method="post" action="/crm/contact/{{ p.id }}" class="velden">
+    <label>Naam <input type="text" name="naam" value="{{ p.naam }}"></label>
+    <label>Mailadres <input type="text" name="email" value="{{ p.email }}"></label>
+    <label>Organisatie <input type="text" name="organisatie" value="{{ p.organisatie or '' }}"></label>
+    <label>Functie <input type="text" name="functie" value="{{ p.functie }}"></label>
+    <label>Telefoon <input type="text" name="telefoon" value="{{ p.telefoon }}"></label>
+    <label>Activiteit <select name="activiteit"><option value="">—</option>{% for a in acts %}<option value="{{ a.code }}" {{ 'selected' if a.code == p.activiteit }}>{{ a.naam }}</option>{% endfor %}</select></label>
+    <label class="breed">Notitie <textarea name="notitie" rows="3">{{ p.notitie }}</textarea></label>
+    <label class="vink breed"><input type="checkbox" name="verborgen" value="1" {{ 'checked' if p.verborgen }}> Verbergen (geen echte relatie, bijvoorbeeld een automatische afzender)</label>
+    <div class="knoppenrij breed"><button class="knop vol" type="submit">Opslaan</button></div>
+  </form>
+</section>
+<section class="kaart">
+  <h2>Kansen en projecten</h2>
+  {% for k in kansen %}{{ kanskaart(k, vandaag, euro_kort, model) }}{% endfor %}
+  {% for pr in projecten %}<p><a href="/crm/project/{{ pr.id }}">📁 {{ pr.titel }}</a> <span class="noot">{{ pr.status }}</span></p>{% endfor %}
+  {% if not kansen and not projecten %}<p class="noot">Nog geen.</p>{% endif %}
+  <h2>Laatste mails</h2>
+  {% for m in mails %}<p class="noot"><a href="/bram/bericht/{{ m.id }}">{{ m.onderwerp or '(geen onderwerp)' }}</a> · {{ m.koppeling }} · {{ geleden(m.ontvangen) }}</p>
+  {% else %}<p class="noot">Geen mails in Post.</p>{% endfor %}
+</section>
+</div>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "crm_macros.html" import kanskaart %}
+{% block titel %}Kansen · CRM · Buurmanitor{% endblock %}
+{% block main_klasse %}{{ 'breed' if act }}{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>{{ act.naam if act else 'Kansen' }}</h1>
+    <p class="motto">{% if act %}{{ 'Initiatieven: van idee tot gestart.' if act.soort == 'initiatief' else 'Commerciële kansen per fase. Sleep een kaart naar een andere fase.' }}
+      {% else %}Commerciële kansen en initiatieven per activiteit, met de eerstvolgende stappen.{% endif %}</p>
+  </div>
+</section>
+{% include "crm_tabs.html" %}
+
+<nav class="nfilter" aria-label="Activiteit">
+  <div class="nschakel klein">
+    <a href="/crm" class="{{ 'actief' if not act }}">Overzicht</a>
+    {% for a in acts %}<a href="/crm?activiteit={{ a.code }}" class="{{ 'actief' if act and act.code == a.code }}">{{ a.naam }}</a>{% endfor %}
+  </div>
+  {% if act %}<a class="klein" href="/crm?activiteit={{ act.code }}&gesloten={{ 0 if gesloten else 1 }}">{{ 'Alleen de laatste 30 dagen gesloten' if gesloten else 'Ook ouder gesloten' }}</a>{% endif %}
+</nav>
+
+{% if act %}
+<section class="kanban crmbord" style="grid-template-columns: repeat({{ kolommen|length }}, minmax(180px, 1fr));">
+  {% for k in kolommen %}
+  <section class="kolom {{ k.uitkomst }}" data-fase="{{ k.code }}" aria-label="{{ k.naam }}">
+    <h2><span>{{ k.naam }}</span> <span class="aantal">{{ k.kansen|length }}</span></h2>
+    {% for kans in k.kansen %}{{ kanskaart(kans, vandaag, euro_kort, model, True) }}{% else %}<p class="noot leeg">Leeg</p>{% endfor %}
+    {% if not k.uitkomst %}<a class="klein nieuwhier" href="/crm/nieuw?wat=kans&activiteit={{ act.code }}&fase={{ k.code }}">+ kans</a>{% endif %}
+  </section>
+  {% endfor %}
+</section>
+<form method="post" id="fase-form" hidden><input type="hidden" name="fase" id="fase-veld"><input type="hidden" name="terug" value="/crm?activiteit={{ act.code }}"></form>
+<script>
+(function () {
+  const vorm = document.getElementById("fase-form"), veld = document.getElementById("fase-veld");
+  let gesleept = null;
+  document.querySelectorAll(".kanskaart[draggable]").forEach(k => {
+    k.addEventListener("dragstart", e => { gesleept = k; k.classList.add("sleept"); e.dataTransfer.setData("text/plain", k.dataset.id); });
+    k.addEventListener("dragend", () => { k.classList.remove("sleept"); document.querySelectorAll(".kolom").forEach(c => c.classList.remove("sleep-hier")); });
+  });
+  document.querySelectorAll(".crmbord .kolom").forEach(kol => {
+    kol.addEventListener("dragover", e => { if (gesleept) { e.preventDefault(); kol.classList.add("sleep-hier"); } });
+    kol.addEventListener("dragleave", e => { if (!kol.contains(e.relatedTarget)) kol.classList.remove("sleep-hier"); });
+    kol.addEventListener("drop", e => {
+      e.preventDefault();
+      if (!gesleept || gesleept.closest(".kolom") === kol) return;
+      vorm.action = "/crm/kans/" + gesleept.dataset.id + "/fase";
+      veld.value = kol.dataset.fase;
+      kol.insertBefore(gesleept, kol.querySelector(".nieuwhier"));
+      vorm.submit();
+    });
+  });
+})();
+</script>
+{% else %}
+<div class="raster crmoverzicht">
+  {% for r in per %}
+  <a class="kaart crmact" href="/crm?activiteit={{ r.a.code }}">
+    <h2>{{ r.a.naam }}</h2>
+    <p class="crmgetal">{{ r.aantal }} <span class="noot">{{ 'open initiatief' if r.a.soort == 'initiatief' and r.aantal == 1 else ('open initiatieven' if r.a.soort == 'initiatief' else ('open kans' if r.aantal == 1 else 'open kansen')) }}</span></p>
+    {% if r.a.soort == 'commercieel' and r.waarde %}<p class="noot">{{ euro_kort(r.waarde) }} totaal · {{ euro_kort(r.gewogen) }} gewogen</p>{% endif %}
+    {% if r.achter %}<p class="noot rood">{{ r.achter }} volgende stap{{ 'pen' if r.achter != 1 }} over datum</p>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+<section class="kaart">
+  <h2>Volgende stappen</h2>
+  {% for k in lijst %}
+    <div class="stapregel {{ 'achter' if model.achter(k, vandaag) }}">
+      <span class="stapdatum">{{ k.volgende_datum.strftime('%d-%m') if k.volgende_datum else '—' }}</span>
+      <div><a href="/crm/kans/{{ k.id }}"><b>{{ k.titel }}</b></a> <span class="label">{{ k.activiteitnaam }}</span>
+        <span class="label grijs">{{ model.fase_naam(k.soort, k.fase) }}</span><br>
+        <span class="noot">{{ ('→ ' ~ k.volgende_stap) if k.volgende_stap else 'Geen volgende stap' }}{% if k.organisatie %} · {{ k.organisatie }}{% endif %}</span></div>
+    </div>
+  {% else %}
+    <p class="noot">Nog geen open kansen. Maak er een met <b>+ Kans</b>, of vanuit een mail, nieuwsbericht of socialpost met 💼.</p>
+  {% endfor %}
+</section>
+{% if recent %}
+<section class="kaart">
+  <h2>Recent gesloten</h2>
+  {% for k in recent %}<p class="noot"><a href="/crm/kans/{{ k.id }}">{{ k.titel }}</a> · {{ model.fase_naam(k.soort, k.fase) }} · {{ geleden(k.gesloten) }}</p>{% endfor %}
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

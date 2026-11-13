@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "crm_macros.html" import vormscript %}
+{% block titel %}Projecten · CRM · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Projecten</h1>
+    <p class="motto">Wat doorgaat en uitgevoerd wordt, met de taken op het takenbord. Voor iets wat terugkomt (zoals een uitgave van het
+      keeperscongres) kies je een sjabloon met de vaste taken.</p>
+  </div>
+</section>
+{% include "crm_tabs.html" %}
+<nav class="nfilter" aria-label="Activiteit">
+  <div class="nschakel klein">
+    <a href="/crm/projecten{{ '?alles=1' if alles }}" class="{{ 'actief' if not activiteit }}">Alle</a>
+    {% for a in acts %}<a href="/crm/projecten?activiteit={{ a.code }}{{ '&alles=1' if alles }}" class="{{ 'actief' if activiteit == a.code }}">{{ a.naam }}</a>{% endfor %}
+  </div>
+  <a class="klein" href="/crm/projecten?{{ 'activiteit=' ~ activiteit ~ '&' if activiteit }}alles={{ 0 if alles else 1 }}">{{ 'Zonder afgeronde' if alles else 'Ook afgeronde en gestopte' }}</a>
+</nav>
+
+<section class="kaart">
+  {% for p in lijst %}
+  <a class="projectregel" href="/crm/project/{{ p.id }}">
+    <span class="projectstatus {{ p.status }}">{{ projectstatus[p.status] }}</span>
+    <span class="projectwat"><b>{{ p.titel }}</b><span class="noot">{{ p.activiteitnaam }}{% if p.organisatie %} · {{ p.organisatie }}{% endif %}{% if p.datum %} · {{ p.datum.strftime('%d-%m-%Y') }}{% endif %}</span></span>
+    <span class="noot projecttaken">{% if p.alle_taken %}{{ p.alle_taken - p.open_taken }}/{{ p.alle_taken }} taken klaar{% if p.eerstvolgende %}<br>volgende {{ p.eerstvolgende.strftime('%d-%m') }}{% endif %}{% else %}nog geen taken{% endif %}</span>
+  </a>
+  {% else %}<p class="noot">Nog geen projecten{{ ' bij deze activiteit' if activiteit }}.</p>{% endfor %}
+</section>
+
+<section class="kaart" id="nieuw">
+  <h2>Nieuw project</h2>
+  <form method="post" action="/crm/project/0" class="crmvorm">
+    <input type="hidden" name="wat" value="project">
+    <div class="velden">
+      <label class="breed">Titel <input type="text" name="titel" required maxlength="200" placeholder="bijv. ZEROHERO Keeperscongres 2027"></label>
+      <label>Activiteit <select name="activiteit" class="kies-activiteit" required>{% for a in acts %}<option value="{{ a.code }}" data-soort="{{ a.soort }}" {{ 'selected' if activiteit == a.code }}>{{ a.naam }}</option>{% endfor %}</select></label>
+      <label>Datum (bijv. van het evenement) <input type="date" name="datum"></label>
+      <label>Sjabloon <select name="sjabloon"><option value="">geen</option>{% for s in sjablonen %}<option value="{{ s.id }}">{{ s.naam }}</option>{% endfor %}</select></label>
+      <label>Status <select name="status">{% for code, naam in statussen[:3] %}<option value="{{ code }}" {{ 'selected' if code == 'gepland' }}>{{ naam }}</option>{% endfor %}</select></label>
+    </div>
+    <div class="knoppenrij"><button class="knop vol" type="submit">Project maken</button>
+      {% if not sjablonen %}<span class="noot">Sjablonen maak je bij <a href="/crm/instellingen#sjablonen">Instellingen</a>.</span>{% endif %}</div>
+  </form>
+</section>
+{{ vormscript() }}
+{% endblock %}

@@ -11,6 +11,10 @@
     <button type="submit" title="{{ 'Weer als ongelezen' if b.gelezen else 'Markeer als gelezen' }}" aria-label="{{ 'weer als ongelezen' if b.gelezen else 'markeer als gelezen' }}" aria-pressed="{{ 'true' if b.gelezen else 'false' }}">✓</button>
   </form>
 {%- endmacro %}
+{% macro crmknop(b) -%}
+  <a class="ncrm" href="/crm/nieuw?{{ {'bron': 'social', 'titel': b.titel, 'url': b.url or '', 'tekst': (b.tekst or '')[:500], 'van': (b.platformnaam ~ ' ' ~ (b.auteur or '')), 'stroom': b.stroom}|urlencode }}"
+     title="Kans of project maken" aria-label="Kans of project maken">💼</a>
+{%- endmacro %}
 {% block inhoud %}
 <section class="kopregel">
   <div>
@@ -44,7 +48,7 @@
           <span class="nmeta"><span class="schip {{ b.platform }}">{{ b.platformnaam }}</span> {{ b.auteur }}{% if b.tijd %} · {{ geleden(b.tijd) }}{% endif %}{% if b.interacties %} · {{ b.interacties }} interacties{% endif %}{% if b.toon %} · <span class="jtoon {{ b.toon }}">{{ b.toon }}</span>{% endif %}</span>
           {% if b.waarom %}<p class="nwaarom">{{ b.waarom }}</p>{% endif %}
         </div>
-        <div class="nacties">{{ leesknop(b) }}
+        <div class="nacties">{{ leesknop(b) }}{{ crmknop(b) }}
           <form method="post" action="/jesse/verberg/{{ b.id }}" class="nweg"><input type="hidden" name="terug" value="/jesse?stroom={{ stroom }}&dagen={{ dagen }}">
             <button type="submit" title="Niet interessant: weg" aria-label="verbergen">×</button></form></div>
       </article>

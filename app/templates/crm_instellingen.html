@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block titel %}Instellingen · CRM · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Instellingen CRM</h1>
+    <p class="motto">Activiteiten en sjablonen voor projecten.</p>
+  </div>
+</section>
+{% include "crm_tabs.html" %}
+<section class="kaart" id="activiteiten">
+  <h2>Activiteiten</h2>
+  <p class="noot">Commercieel: fases Signaal, Contact, Voorstel, Onderhandeling, Gewonnen en Verloren, met waarde in euro's.
+    Initiatief: Idee, Verkennen, Partners zoeken, Voorbereiding, Gestart en Gestopt, zonder geld (bijvoorbeeld voor politiek).</p>
+  <form method="post" action="/crm/activiteiten">
+    <table class="tabel">
+      <tr><th>Naam</th><th>Soort</th><th class="midden">Aan</th></tr>
+      {% for a in acts %}
+      <tr><td><input type="text" name="naam_{{ a.code }}" value="{{ a.naam }}" aria-label="Naam"></td>
+        <td><select name="soort_{{ a.code }}" aria-label="Soort"><option value="commercieel" {{ 'selected' if a.soort == 'commercieel' }}>Commercieel</option>
+          <option value="initiatief" {{ 'selected' if a.soort == 'initiatief' }}>Initiatief</option></select></td>
+        <td class="midden"><input type="checkbox" name="actief_{{ a.code }}" value="1" {{ 'checked' if a.actief }} aria-label="{{ a.naam }} aan"></td></tr>
+      {% endfor %}
+      <tr><td><input type="text" name="nieuw_naam" placeholder="Nieuwe activiteit" aria-label="Nieuwe activiteit"></td>
+        <td><select name="nieuw_soort" aria-label="Soort"><option value="commercieel">Commercieel</option><option value="initiatief">Initiatief</option></select></td><td></td></tr>
+    </table>
+    <div class="knoppenrij"><button class="knop vol" type="submit">Opslaan</button></div>
+  </form>
+</section>
+
+<section class="kaart" id="sjablonen">
+  <h2>Sjablonen</h2>
+  <p class="noot">Vaste taken voor een project dat terugkomt. Eén taak per regel, met na een | het aantal dagen voor (-) of na (+) de
+    projectdatum. Bijvoorbeeld: <code>Locatie vastleggen | -180</code>, <code>Sprekers bevestigen | -90</code>, <code>Evaluatie | +7</code>.
+    Zonder getal staat de taak op de projectdatum zelf. Je kunt ook een sjabloon maken van de taken van een bestaand project.</p>
+  {% for s in sjablonen %}
+    <p class="sjabloonregel"><b>{{ s.naam }}</b> <span class="noot">{{ s.taken|length }} taken</span>
+      <a class="knop klein" href="/crm/instellingen?bewerk={{ s.id }}#sjablonen">Bewerken</a>
+      <form method="post" action="/crm/sjablonen/{{ s.id }}/weg" class="inline"><button class="knop klein" type="submit" onclick="return confirm('Sjabloon verwijderen?')">Verwijderen</button></form></p>
+  {% endfor %}
+  <form method="post" action="/crm/sjablonen" class="velden">
+    <input type="hidden" name="id" value="{{ bewerkt.id if bewerkt else 0 }}">
+    <label>Naam <input type="text" name="naam" value="{{ bewerkt.naam if bewerkt else '' }}" placeholder="bijv. Keeperscongres"></label>
+    <label>Activiteit <select name="activiteit"><option value="">—</option>{% for a in acts %}<option value="{{ a.code }}" {{ 'selected' if bewerkt and bewerkt.activiteit == a.code }}>{{ a.naam }}</option>{% endfor %}</select></label>
+    <label class="breed">Taken <textarea name="taken" rows="8" placeholder="Locatie vastleggen | -180&#10;Sprekers benaderen | -150&#10;Ticketverkoop openen | -120">{{ model.sjabloon_tekst(bewerkt.taken) if bewerkt else '' }}</textarea></label>
+    <div class="knoppenrij breed"><button class="knop vol" type="submit">{{ 'Opslaan' if bewerkt else 'Sjabloon maken' }}</button>
+      {% if bewerkt %}<a class="klein" href="/crm/instellingen#sjablonen">annuleren</a>{% endif %}</div>
+  </form>
+</section>
+<p class="noot">Relaties uit de mail: {% if stand and stand.laatst %}laatst bijgewerkt {{ geleden(stand.laatst) }} ({{ stand.resultaat }}){% else %}nog niet bijgewerkt{% endif %}; elk half uur.</p>
+{% endblock %}

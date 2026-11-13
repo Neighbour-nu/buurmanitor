@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "crm_macros.html" import kansvelden, vormscript %}
+{% block titel %}Nieuwe {{ v.wat }} · CRM · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>Nieuwe kans of project</h1>
+    <p class="motto">{% if b %}Vanuit {{ {'mail': 'een mail', 'nieuwsbericht': 'een nieuwsbericht', 'socialpost': 'een socialpost'}.get(b.soort, b.soort) }}. Controleer de gegevens en maak hem aan.
+      {% else %}Een kans is iets wat je nog binnenhaalt of opzet; een project gaat door en voer je uit.{% endif %}</p>
+  </div>
+</section>
+{% include "crm_tabs.html" %}
+
+{% if b %}
+<section class="kaart bronkaart">
+  <p class="noot">{{ {'mail': '✉ Mail', 'nieuwsbericht': '📰 Nieuws', 'socialpost': '💬 Social'}.get(b.soort, b.soort) }}{% if b.van %} van {{ b.van }}{% endif %}</p>
+  <p><b>{% if b.url %}<a href="{{ b.url }}" {% if b.url.startswith('http') %}target="_blank" rel="noopener"{% endif %}>{{ b.titel }}</a>{% else %}{{ b.titel }}{% endif %}</b></p>
+  {% if b.tekst %}<p class="noot">{{ b.tekst|truncate(400) }}</p>{% endif %}
+  {% if sleutel_ok %}
+  <form method="post" action="/crm/nieuw/iris" class="knoppenrij" data-wacht="Iris vult in…">
+    <input type="hidden" name="qs" value="{{ qs }}">
+    <button class="knop" type="submit">✨ Laat Iris invullen</button>
+    {% if request.query_params.get('iris') %}<span class="label groen">ingevuld door Iris: controleer het even</span>{% endif %}
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="kaart">
+  <form method="post" action="/crm/nieuw" class="crmvorm">
+    {% for k in ('bron', 'bron_titel', 'bron_url', 'bericht_id', 'voorstel') %}{% if v[k] %}<input type="hidden" name="{{ k }}" value="{{ v[k] }}">{% endif %}{% endfor %}
+    <div class="wattabs" role="radiogroup" aria-label="Wat maak je">
+      <label class="vink"><input type="radio" name="wat" value="kans" {{ 'checked' if v.wat != 'project' }}> Kans</label>
+      <label class="vink"><input type="radio" name="wat" value="project" {{ 'checked' if v.wat == 'project' }}> Project</label>
+    </div>
+    {{ kansvelden(v, acts, model, nieuw=True) }}
+    <div class="knoppenrij"><button class="knop vol" type="submit">Aanmaken</button></div>
+  </form>
+</section>
+
+{% if b and (open_kansen or open_projecten) %}
+<section class="kaart">
+  <h2>Of koppel aan wat er al is</h2>
+  <form method="post" action="/crm/nieuw" class="veldrij">
+    {% for k in ('bron', 'bron_titel', 'bron_url', 'bericht_id') %}{% if v[k] %}<input type="hidden" name="{{ k }}" value="{{ v[k] }}">{% endif %}{% endfor %}
+    <label>Kans of project <select name="koppel" required><option value="">Kies…</option>
+      {% if open_kansen %}<optgroup label="Kansen">{% for k in open_kansen %}<option value="kans:{{ k.id }}">{{ k.titel }}</option>{% endfor %}</optgroup>{% endif %}
+      {% if open_projecten %}<optgroup label="Projecten">{% for p in open_projecten %}<option value="project:{{ p.id }}">{{ p.titel }}</option>{% endfor %}</optgroup>{% endif %}
+    </select></label>
+    <button class="knop" type="submit">Koppelen</button>
+  </form>
+  <p class="noot">De {{ 'mail' if v.bron == 'mail' else 'bron' }} komt dan op de tijdlijn van die kans of dat project.</p>
+</section>
+{% endif %}
+{{ vormscript() }}
+{% endblock %}

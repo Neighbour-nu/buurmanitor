@@ -294,12 +294,13 @@ def bericht_scherm(request: Request, bid: int, melding: str = "", fout: str = ""
         recent = sync.recente_mappen(c, account=k["id"])
         weergave = mailweergave(volledig, b["van_adres"], bool(beelden), _vertrouwd(c))
         verzoek = vergaderverzoek(c, b, volledig)
+        crm = crm_bij_mail(c, b)
     namen = [x["naam"] for x in (volledig or {}).get("bijlagen") or []]
     factuur = bool(namen) and (bool(regels.FACTUUR.search(b["onderwerp"])) or any(regels.FACTUUR.search(n) for n in namen))
     regel_link = "/bram/regels?" + urlencode({"van": b["van_adres"], "account": k["id"], "naam": b["van_naam"][:60]}
                                             | ({"factuur": "1", "map": "Facturen", "naam": f"Facturen van {b['van_naam']}"[:60]} if factuur else {})) + "#regelvorm"
     return templates.TemplateResponse("bram_bericht.html", ctx(
-        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, weergave=weergave, verzoek=verzoek, regel_link=regel_link, groep_nu=groep(b), groepen=GROEPEN, labels=labels,
+        request, "bram", p=personas.get("bram"), b=b, k=k, volledig=volledig, weergave=weergave, verzoek=verzoek, regel_link=regel_link, crm=crm, groep_nu=groep(b), groepen=GROEPEN, labels=labels,
         label_namen=dict(labels), lees_fout=lees_fout, berichten=berichten, mappen=mappen_, recent=recent,
         voorstellen=voorstellen, klaar=klaar, doelen=clara_web._schrijfdoelen(agendas),  # pylint: disable=protected-access
         eigen=clara_web._reisdoelen(agendas), melding=melding, fout=fout, tz=config.TZ,  # pylint: disable=protected-access
@@ -765,3 +766,15 @@ def regel_probeer(request: Request, rid: int, melding: str = ""):
             passend, onbekend, fout = [], 0, str(e)
     return templates.TemplateResponse("bram_regel_proef.html", ctx(
         request, "bram", r=r, passend=passend, onbekend=onbekend, beschrijf=regels.beschrijf, melding=melding, fout=fout, tz=config.TZ))
+
+
+def crm_bij_mail(c, b):
+    """Kansen en projecten waar deze mail al bij hoort, en de open kansen van de afzender (voor de knop 'koppelen')."""
+    gekoppeld = c.execute("""SELECT DISTINCT coalesce(k.titel, p.titel) AS titel, t.kans_id, t.project_id FROM crm_tijdlijn t
+                             LEFT JOIN crm_kansen k ON k.id = t.kans_id LEFT JOIN crm_projecten p ON p.id = t.project_id
+                             WHERE t.bericht_id = %s""", (b["id"],)).fetchall()
+    afzender = c.execute("""SELECT k.id, k.titel FROM crm_kansen k JOIN crm_contacten ct ON ct.id = k.contact_id
+                            WHERE lower(ct.email) = lower(%s) AND k.gesloten IS NULL ORDER BY k.bijgewerkt DESC LIMIT 5""",
+                         (b["van_adres"] or "-",)).fetchall()
+    al = {g["kans_id"] for g in gekoppeld}
+    return {"gekoppeld": gekoppeld, "afzender": [k for k in afzender if k["id"] not in al]}

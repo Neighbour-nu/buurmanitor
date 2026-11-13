@@ -9,7 +9,15 @@
   <section class="kaart">
     {% for b in berichten %}
       <div class="bericht {{ b.rol }}" {% if loop.last %}id="laatste"{% endif %}><span class="noot">{{ 'Jij' if b.rol == 'user' else 'Iris' }} · {{ geleden(b.tijd) }}</span>
-        <div class="tekst">{{ b.tekst }}</div></div>
+        <div class="tekst">{{ b.tekst }}</div>
+        {% for v in crm_voorstellen.get(b.id, []) %}
+          <div class="crmvoorstel">{{ '💼 Kans' if v.gegevens.wat != 'project' else '📁 Project' }}: <b>{{ v.gegevens.titel }}</b>
+            {% if v.status == 'gemaakt' %}<span class="label groen">aangemaakt</span>
+              {% if v.kans_id %}<a href="/crm/kans/{{ v.kans_id }}">bekijken</a>{% elif v.project_id %}<a href="/crm/project/{{ v.project_id }}">bekijken</a>{% endif %}
+            {% else %}<a class="knop klein vol" href="/crm/nieuw?voorstel={{ v.id }}&wat={{ v.gegevens.wat or 'kans' }}">Bekijken en aanmaken</a>
+              <form method="post" action="/crm/voorstel/{{ v.id }}/weg" class="inline"><button class="knop klein" type="submit">Niet doen</button></form>{% endif %}
+          </div>
+        {% endfor %}</div>
     {% else %}
       <p class="noot">Vraag Iris wat er speelt, wat er op de planning staat, of hoe het met de server gaat.
         Agenda, mail en de andere bronnen komen er in de volgende fases bij.</p>

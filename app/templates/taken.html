@@ -20,6 +20,7 @@
     <a class="knop vol" href="/taken?nieuw=1#formulier">＋ Nieuwe taak</a>
   </div>
 </section>
+{% if project %}<p class="item">📁 Alleen de taken van het project <a href="/crm/project/{{ project.id }}"><b>{{ project.titel }}</b></a>. <a href="/taken">Alle taken tonen</a></p>{% endif %}
 {% if melding %}<p class="item">{{ melding }}</p>{% endif %}
 {% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
 
@@ -81,6 +82,7 @@
     <label>Einddatum <input type="date" name="einddatum" value="{{ formulier.einddatum.isoformat() if formulier.einddatum else '' }}"></label>
     <label>Eindtijd <input type="time" name="eindtijd" value="{{ formulier.eindtijd.strftime('%H:%M') if formulier.eindtijd else '' }}"></label>
     {% if doelen %}<label>Agenda <select name="doel">{% for w, label, d in doelen %}<option value="{{ w }}" {{ 'selected' if formulier.doel == w }}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+    {% if projecten %}<label>Project <select name="project"><option value="">geen</option>{% for p in projecten %}<option value="{{ p.id }}" {{ 'selected' if formulier.project_id == p.id }}>{{ p.titel }}</option>{% endfor %}</select></label>{% endif %}
     <p class="noot breed">Datums zijn niet verplicht. Zonder tijd komt de taak als afspraak voor de hele dag in je agenda (of voor alle
       dagen van start tot en met einde); met een tijd als gewone afspraak, bijvoorbeeld van 9.00 tot 12.00 aan het rapport werken.
       Alleen een einddatum wordt een deadline op die dag. Rond je een taak af, dan gaat wat nog moest komen uit je agenda;
@@ -156,6 +158,7 @@
       </div>
       {% if t.status == 'wachtend' %}<div class="noot wacht">Wacht op: {% if t.wacht_op %}<b>{{ t.wacht_op }}</b>{% else %}<a href="/taken?bewerk={{ t.id }}&wacht=1#formulier">invullen</a>{% endif %}</div>{% endif %}
       {% if t.bericht_id %}<div class="noot">✉ <a href="/bram/bericht/{{ t.bericht_id }}">{{ t.mail_onderwerp or 'mail' }}</a></div>{% endif %}
+      {% if t.project %}<div class="noot">📁 <a href="/crm/project/{{ t.project_id }}">{{ t.project }}</a></div>{% elif t.kans_id %}<div class="noot">💼 <a href="/crm/kans/{{ t.kans_id }}">kans</a></div>{% endif %}
       {% if t.agenda_fout %}<div class="noot urgent">Agenda: {{ t.agenda_fout }}</div>{% endif %}
       <form method="post" action="/taken/{{ t.id }}/status" class="taakverplaats">
         <select name="status" onchange="this.form.submit()" aria-label="Verplaats {{ t.titel }}">

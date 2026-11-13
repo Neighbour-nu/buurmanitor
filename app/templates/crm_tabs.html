@@ -1,0 +1,8 @@
+<nav class="nfilter crmtabs" aria-label="CRM">
+  <div class="nschakel">
+    {% for t, naam, pad in tabs %}<a href="{{ pad }}" class="{{ 'actief' if t == tab }}" {% if t == tab %}aria-current="page"{% endif %}>{{ naam }}</a>{% endfor %}
+  </div>
+  <div class="knoppen"><a class="knop" href="/crm/nieuw?wat=kans">+ Kans</a><a class="knop" href="/crm/nieuw?wat=project">+ Project</a></div>
+</nav>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}

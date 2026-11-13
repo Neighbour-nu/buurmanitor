@@ -35,7 +35,16 @@
         {% if b.van_adres %}{% for g, naam, _ in groepen %}<option value="{{ g }}|altijd">Altijd {{ naam }} voor {{ b.van_adres }}</option>{% endfor %}{% endif %}
       </select><noscript><button class="knop klein">Verplaats</button></noscript>
     </form>
-    <p class="verplaats"><a class="knop klein" href="/taken?nieuw=1&bericht={{ b.id }}#formulier">📋 Taak maken van deze mail</a></p>
+    <p class="verplaats"><a class="knop klein" href="/taken?nieuw=1&bericht={{ b.id }}#formulier">📋 Taak maken van deze mail</a>
+      <a class="knop klein" href="/crm/nieuw?bron=mail&id={{ b.id }}">💼 Kans of project maken</a></p>
+    {% if crm and (crm.gekoppeld or crm.afzender) %}<div class="crmbijmail noot">
+      {% for g in crm.gekoppeld %}Hoort bij <a href="{{ '/crm/kans/' ~ g.kans_id if g.kans_id else '/crm/project/' ~ g.project_id }}">{{ '💼' if g.kans_id else '📁' }} {{ g.titel }}</a>. {% endfor %}
+      {% for k in crm.afzender %}<form method="post" action="/crm/nieuw" class="inline">
+        <input type="hidden" name="bron" value="mail"><input type="hidden" name="bericht_id" value="{{ b.id }}">
+        <input type="hidden" name="bron_titel" value="{{ b.onderwerp }}"><input type="hidden" name="bron_url" value="/bram/bericht/{{ b.id }}">
+        <input type="hidden" name="koppel" value="kans:{{ k.id }}">
+        Open kans van deze afzender: <b>{{ k.titel }}</b> <button class="knop klein" type="submit">Koppel deze mail</button></form>{% endfor %}
+    </div>{% endif %}
     {% if mappen %}<form method="post" action="/bram/bericht/{{ b.id }}/map" class="verplaats">
       <span class="noot">Archiveren in {{ 'Gmail' if k.soort == 'google' else 'Outlook' }}:</span>
       {% for m in recent %}<button class="knop klein" name="map" value="{{ m.map_id }}">📁 {{ m.naam }}</button>{% endfor %}

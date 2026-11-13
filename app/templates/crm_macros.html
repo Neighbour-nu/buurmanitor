@@ -1,0 +1,83 @@
+{% macro kanskaart(k, vandaag, euro_kort, model, sleep=False) %}
+<article class="kanskaart {{ 'achter' if model.achter(k, vandaag) }} {{ 'gesloten' if k.gesloten }}" {% if sleep %}draggable="true" data-id="{{ k.id }}"{% endif %} id="kans-{{ k.id }}">
+  <a class="kanstitel" href="/crm/kans/{{ k.id }}">{{ k.titel }}</a>
+  {% if k.organisatie or k.contact %}<span class="noot">{{ k.organisatie or '' }}{% if k.organisatie and k.contact %} · {% endif %}{{ k.contact or '' }}</span>{% endif %}
+  {% if k.waarde is not none %}<span class="kanswaarde">{{ euro_kort(k.waarde) }}{% if k.kans is not none %} · {{ k.kans }}%{% endif %}</span>{% endif %}
+  {% if k.volgende_stap and not k.gesloten %}<span class="kansstap {{ 'rood' if model.achter(k, vandaag) }}">→ {{ k.volgende_stap }}{% if k.volgende_datum %} · {{ k.volgende_datum.strftime('%d-%m') }}{% endif %}</span>{% endif %}
+  {% if k.project %}<span class="noot">📁 {{ k.project }}</span>{% endif %}
+</article>
+{% endmacro %}
+
+{% macro tijdlijn(tijd, geleden) %}
+{% for t in tijd %}
+<div class="tijdregel {{ t.soort }}">
+  <span class="tijdicoon" aria-hidden="true">{{ {'notitie': '📝', 'mail': '✉', 'nieuws': '📰', 'social': '💬', 'link': '🔗', 'fase': '➜'}[t.soort] }}</span>
+  <div class="tijdwat">
+    {% if t.soort == 'mail' and t.bericht_id %}<a href="/bram/bericht/{{ t.bericht_id }}"><b>{{ t.titel or 'Mail' }}</b></a>
+    {% elif t.url %}<a href="{{ t.url }}" {% if t.url.startswith('http') %}target="_blank" rel="noopener"{% endif %}><b>{{ t.titel or t.url|truncate(60) }}</b></a>
+    {% elif t.titel %}<b>{{ t.titel }}</b>{% endif %}
+    {% if t.tekst %}<div class="tijdtekst">{{ t.tekst }}</div>{% endif %}
+    <span class="noot">{{ geleden(t.tijd) }}</span>
+  </div>
+  <form method="post" action="/crm/tijdlijn/{{ t.id }}/weg" class="inline"><button class="pijl" type="submit" title="Weghalen" aria-label="Weghalen" onclick="return confirm('Weghalen?')">✕</button></form>
+</div>
+{% else %}<p class="noot">Nog niets.</p>{% endfor %}
+{% endmacro %}
+
+{% macro notitievorm(actie) %}
+<form method="post" action="{{ actie }}" class="notitievorm">
+  <textarea name="tekst" rows="2" placeholder="Notitie, of een korte beschrijving bij een link"></textarea>
+  <div class="veldrij"><input type="text" name="url" placeholder="Link (optioneel), bijv. naar een offerte of document">
+    <button class="knop" type="submit">Toevoegen</button></div>
+</form>
+{% endmacro %}
+
+{% macro kansvelden(v, acts, model, nieuw=False) %}
+{# v: dict met velden (bij bewerken de kans zelf). De fases en het geld wisselen mee met de activiteit (zie crmvorm.js hieronder). #}
+<div class="velden">
+  <label class="breed">Titel <input type="text" name="titel" value="{{ v.titel or '' }}" required maxlength="200"></label>
+  <label>Activiteit <select name="activiteit" class="kies-activiteit" required>
+    {% if nieuw and not v.activiteit %}<option value="">Kies…</option>{% endif %}
+    {% for a in acts %}<option value="{{ a.code }}" data-soort="{{ a.soort }}" {{ 'selected' if v.activiteit == a.code }}>{{ a.naam }}</option>{% endfor %}</select></label>
+  <label class="alleen-kans">Fase <select name="fase" class="kies-fase">
+    {% for soort, lijst in model.FASES.items() %}{% for code, naam, uit in lijst %}
+      <option value="{{ code }}" data-soort="{{ soort }}" {{ 'selected' if v.fase == code }}>{{ naam }}</option>{% endfor %}{% endfor %}</select></label>
+  <label>Organisatie <input type="text" name="organisatie" value="{{ v.organisatie or '' }}" list="crm-organisaties" placeholder="bijv. KNVB"></label>
+  <label>Contactpersoon <input type="text" name="contact_naam" value="{{ v.contact_naam or v.contact or '' }}" placeholder="naam"></label>
+  <label>Mailadres contact <input type="text" name="contact_email" value="{{ v.contact_email or '' }}" placeholder="naam@organisatie.nl"></label>
+  <label class="breed">Omschrijving <textarea name="omschrijving" rows="3">{{ v.omschrijving or '' }}</textarea></label>
+  <label class="geld alleen-kans">Waarde (€) <input type="text" name="waarde" value="{{ v.waarde if v.waarde is not none else '' }}" inputmode="decimal" placeholder="bijv. 2500"></label>
+  <label class="geld alleen-kans">Kans (%) <input type="text" name="kans" value="{{ v.kans if v.kans is not none else '' }}" inputmode="numeric" placeholder="leeg: volgens de fase"></label>
+  <label class="alleen-kans">Verwacht rond <input type="date" name="verwacht" value="{{ v.verwacht or '' }}"></label>
+  <label class="alleen-project">Datum (bijv. van het evenement) <input type="date" name="datum" value="{{ v.datum or '' }}"></label>
+  <label class="breed">Volgende stap <input type="text" name="volgende_stap" value="{{ v.volgende_stap or '' }}" placeholder="bijv. Offerte sturen (komt als taak bij Noor)"></label>
+  <label>Wanneer <input type="date" name="volgende_datum" value="{{ v.volgende_datum or '' }}"></label>
+</div>
+{% endmacro %}
+
+{% macro vormscript() %}
+<script>
+// De fases en de geldvelden horen bij de soort activiteit (commercieel of initiatief); kans of project bepaalt de rest.
+(function () {
+  document.querySelectorAll("form.crmvorm").forEach(vorm => {
+    const act = vorm.querySelector(".kies-activiteit"), fase = vorm.querySelector(".kies-fase");
+    function zet() {
+      const optie = act && act.selectedOptions[0], soort = (optie && optie.dataset.soort) || "commercieel";
+      if (fase) {
+        let eerste = null, gekozen = false;
+        Array.from(fase.options).forEach(o => { const past = o.dataset.soort === soort; o.hidden = !past; o.disabled = !past;
+          if (past && !eerste) eerste = o; if (past && o.selected) gekozen = true; });
+        if (!gekozen && eerste) eerste.selected = true;
+      }
+      vorm.querySelectorAll(".geld").forEach(v => { v.hidden = soort === "initiatief"; });
+      const wat = vorm.querySelector("input[name=wat]:checked") || vorm.querySelector("input[name=wat]");
+      const project = wat && wat.value === "project";
+      vorm.querySelectorAll(".alleen-kans").forEach(v => { v.hidden = project || (v.classList.contains("geld") && soort === "initiatief"); });
+      vorm.querySelectorAll(".alleen-project").forEach(v => { v.hidden = !project; });
+    }
+    vorm.addEventListener("change", e => { if (e.target === act || e.target.name === "wat") zet(); });
+    zet();
+  });
+})();
+</script>
+{% endmacro %}

@@ -494,5 +494,112 @@ MIGRATIES = [
     # Takenarchief: afgeronde taken die van het bord af zijn (zelf gearchiveerd, of automatisch na een maand).
     "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS gearchiveerd timestamptz",
     "CREATE INDEX IF NOT EXISTS takenbord_archief ON takenbord (gearchiveerd DESC) WHERE gearchiveerd IS NOT NULL",
+    # ---------- CRM: relaties, kansen en projecten (zie crm/) ----------
+    # Activiteiten: waar een kans of project bij hoort. soort 'commercieel' (fases met waarde in euro's) of 'initiatief'
+    # (politiek: geen geld, eigen fases). code sluit aan bij de domeinen van de mailboxen (zerohero, upperspire, fbim).
+    """CREATE TABLE IF NOT EXISTS crm_activiteiten (
+        code text PRIMARY KEY,
+        naam text NOT NULL,
+        soort text NOT NULL DEFAULT 'commercieel' CHECK (soort IN ('commercieel', 'initiatief')),
+        volgorde int NOT NULL DEFAULT 0,
+        actief boolean NOT NULL DEFAULT true)""",
+    """INSERT INTO crm_activiteiten (code, naam, soort, volgorde) VALUES ('zerohero', 'ZEROHERO', 'commercieel', 1),
+        ('upperspire', 'Upper Spire', 'commercieel', 2), ('fbim', 'IV-professional', 'commercieel', 3), ('politiek', 'Politiek', 'initiatief', 4)
+        ON CONFLICT (code) DO NOTHING""",
+    """CREATE TABLE IF NOT EXISTS crm_organisaties (
+        id serial PRIMARY KEY,
+        naam text NOT NULL,
+        domein text NOT NULL DEFAULT '',
+        website text NOT NULL DEFAULT '',
+        notitie text NOT NULL DEFAULT '',
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    "CREATE UNIQUE INDEX IF NOT EXISTS crm_organisaties_domein ON crm_organisaties (lower(domein)) WHERE domein <> ''",
+    # Contactpersonen. Uit de mail opgebouwd (bron 'mail'): per afzender één contact; verborgen = niet tonen
+    # (bijvoorbeeld een automatische afzender die toch doorkwam).
+    """CREATE TABLE IF NOT EXISTS crm_contacten (
+        id serial PRIMARY KEY,
+        naam text NOT NULL DEFAULT '',
+        email text NOT NULL DEFAULT '',
+        organisatie_id int REFERENCES crm_organisaties(id) ON DELETE SET NULL,
+        functie text NOT NULL DEFAULT '',
+        telefoon text NOT NULL DEFAULT '',
+        notitie text NOT NULL DEFAULT '',
+        activiteit text NOT NULL DEFAULT '',
+        bron text NOT NULL DEFAULT 'handmatig',
+        mails int NOT NULL DEFAULT 0,
+        laatste_mail timestamptz,
+        verborgen boolean NOT NULL DEFAULT false,
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    "CREATE UNIQUE INDEX IF NOT EXISTS crm_contacten_email ON crm_contacten (lower(email)) WHERE email <> ''",
+    """CREATE TABLE IF NOT EXISTS crm_projecten (
+        id serial PRIMARY KEY,
+        titel text NOT NULL,
+        activiteit text NOT NULL REFERENCES crm_activiteiten(code),
+        status text NOT NULL DEFAULT 'gepland' CHECK (status IN ('idee', 'gepland', 'actief', 'afgerond', 'gestopt')),
+        omschrijving text NOT NULL DEFAULT '',
+        datum date,
+        start date,
+        eind date,
+        organisatie_id int REFERENCES crm_organisaties(id) ON DELETE SET NULL,
+        contact_id int REFERENCES crm_contacten(id) ON DELETE SET NULL,
+        budget_kosten numeric(12,2),
+        budget_opbrengst numeric(12,2),
+        kosten numeric(12,2),
+        opbrengst numeric(12,2),
+        aangemaakt timestamptz NOT NULL DEFAULT now(),
+        bijgewerkt timestamptz NOT NULL DEFAULT now())""",
+    """CREATE TABLE IF NOT EXISTS crm_kansen (
+        id serial PRIMARY KEY,
+        titel text NOT NULL,
+        activiteit text NOT NULL REFERENCES crm_activiteiten(code),
+        fase text NOT NULL,
+        omschrijving text NOT NULL DEFAULT '',
+        organisatie_id int REFERENCES crm_organisaties(id) ON DELETE SET NULL,
+        contact_id int REFERENCES crm_contacten(id) ON DELETE SET NULL,
+        waarde numeric(12,2),
+        kans int CHECK (kans BETWEEN 0 AND 100),
+        verwacht date,
+        volgende_stap text NOT NULL DEFAULT '',
+        volgende_datum date,
+        taak_id int REFERENCES takenbord(id) ON DELETE SET NULL,
+        project_id int REFERENCES crm_projecten(id) ON DELETE SET NULL,
+        gesloten timestamptz,
+        aangemaakt timestamptz NOT NULL DEFAULT now(),
+        bijgewerkt timestamptz NOT NULL DEFAULT now())""",
+    "ALTER TABLE crm_projecten ADD COLUMN IF NOT EXISTS kans_id int REFERENCES crm_kansen(id) ON DELETE SET NULL",
+    # De tijdlijn van een kans of project: notities, gekoppelde mails, nieuws- en socialberichten, links en fasewissels.
+    """CREATE TABLE IF NOT EXISTS crm_tijdlijn (
+        id serial PRIMARY KEY,
+        kans_id int REFERENCES crm_kansen(id) ON DELETE CASCADE,
+        project_id int REFERENCES crm_projecten(id) ON DELETE CASCADE,
+        soort text NOT NULL CHECK (soort IN ('notitie', 'mail', 'nieuws', 'social', 'link', 'fase')),
+        titel text NOT NULL DEFAULT '',
+        tekst text NOT NULL DEFAULT '',
+        url text NOT NULL DEFAULT '',
+        bericht_id int REFERENCES post_berichten(id) ON DELETE SET NULL,
+        tijd timestamptz NOT NULL DEFAULT now(),
+        CHECK (kans_id IS NOT NULL OR project_id IS NOT NULL))""",
+    "CREATE INDEX IF NOT EXISTS crm_tijdlijn_kans ON crm_tijdlijn (kans_id, tijd DESC)",
+    "CREATE INDEX IF NOT EXISTS crm_tijdlijn_project ON crm_tijdlijn (project_id, tijd DESC)",
+    # Sjablonen voor terugkerende projecten (zoals een uitgave van het keeperscongres): vaste taken met het aantal dagen
+    # voor (negatief) of na de projectdatum.
+    """CREATE TABLE IF NOT EXISTS crm_sjablonen (
+        id serial PRIMARY KEY,
+        naam text NOT NULL,
+        activiteit text REFERENCES crm_activiteiten(code) ON DELETE SET NULL,
+        taken jsonb NOT NULL DEFAULT '[]',
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
+    "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS project_id int REFERENCES crm_projecten(id) ON DELETE SET NULL",
+    "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS kans_id int REFERENCES crm_kansen(id) ON DELETE SET NULL",
+    # Voorstellen van Iris in het gesprek ("maak een kans van die mail van Jan"): pas na Martijns klik aangemaakt.
+    """CREATE TABLE IF NOT EXISTS crm_voorstellen (
+        id serial PRIMARY KEY,
+        gesprek_id int REFERENCES gesprekken(id) ON DELETE CASCADE,
+        bericht_id int REFERENCES gesprek_berichten(id) ON DELETE CASCADE,
+        gegevens jsonb NOT NULL DEFAULT '{}',
+        status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'gemaakt', 'weg')),
+        kans_id int REFERENCES crm_kansen(id) ON DELETE SET NULL,
+        project_id int REFERENCES crm_projecten(id) ON DELETE SET NULL,
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
 ]
 

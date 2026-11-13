@@ -173,7 +173,8 @@ def uit_formulier(f):
             "prio": prio if prio in PRIO_NAMEN else "middel", "status": status if status in STATUS_NAMEN else "nieuw",
             "wacht_op": str(f.get("wacht_op") or "").strip()[:200],
             "startdatum": _datum(f.get("startdatum")), "starttijd": _tijd(f.get("starttijd")),
-            "einddatum": _datum(f.get("einddatum")), "eindtijd": _tijd(f.get("eindtijd")), "doel": str(f.get("doel") or "")}
+            "einddatum": _datum(f.get("einddatum")), "eindtijd": _tijd(f.get("eindtijd")), "doel": str(f.get("doel") or ""),
+            "project_id": int(f.get("project")) if str(f.get("project") or "").isdigit() else None}
 
 
 def uit_bericht(b):
@@ -189,12 +190,13 @@ def uit_bericht(b):
 
 def nieuw(c, velden, bericht_id=None):
     return c.execute("""INSERT INTO takenbord (titel, beschrijving, prio, status, wacht_op, startdatum, starttijd, einddatum, eindtijd, doel,
-                                           bericht_id, afgerond)
+                                           bericht_id, project_id, afgerond)
                         VALUES (%(titel)s, %(beschrijving)s, %(prio)s, %(status)s, %(wacht_op)s, %(startdatum)s, %(starttijd)s,
                                 %(einddatum)s, %(eindtijd)s, %(doel)s, %(bericht_id)s,
+                                (SELECT id FROM crm_projecten WHERE id = %(project_id)s),
                                 CASE WHEN %(status)s = 'afgerond' THEN now() END) RETURNING id""",
                      {"wacht_op": "", "startdatum": None, "starttijd": None, "einddatum": None, "eindtijd": None, "doel": "",
-                      "status": "nieuw", **velden, "bericht_id": bericht_id}).fetchone()["id"]
+                      "status": "nieuw", "project_id": None, **velden, "bericht_id": bericht_id}).fetchone()["id"]
 
 
 # ---------------------------------------------------------------- schermen
@@ -231,15 +233,17 @@ def _paneel(c, g=None):
 
 @router.get("/taken", response_class=HTMLResponse)
 def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, wacht: int = 0,
-         melding: str = "", fout: str = "", praat: int = 0, g: int | None = None, reeks: str = ""):
+         melding: str = "", fout: str = "", praat: int = 0, g: int | None = None, reeks: str = "", project: int = 0):
     nieuw_ = nieuw_ or int(request.query_params.get("nieuw") or 0)
     vandaag = dt.datetime.now(config.TZ).date()
     with db.pool.connection() as c:
-        taken = c.execute("""SELECT t.*, b.onderwerp AS mail_onderwerp, b.van_naam AS mail_van FROM takenbord t
-                             LEFT JOIN post_berichten b ON b.id = t.bericht_id
-                             WHERE t.gearchiveerd IS NULL
+        taken = c.execute("""SELECT t.*, b.onderwerp AS mail_onderwerp, b.van_naam AS mail_van, p.titel AS project FROM takenbord t
+                             LEFT JOIN post_berichten b ON b.id = t.bericht_id LEFT JOIN crm_projecten p ON p.id = t.project_id
+                             WHERE t.gearchiveerd IS NULL AND (%(p)s = 0 OR t.project_id = %(p)s)
                              ORDER BY CASE t.prio WHEN 'hoog' THEN 0 WHEN 'middel' THEN 1 ELSE 2 END,
-                                      coalesce(t.einddatum, t.startdatum, '9999-12-31'::date), t.aangemaakt""").fetchall()
+                                      coalesce(t.einddatum, t.startdatum, '9999-12-31'::date), t.aangemaakt""", {"p": project}).fetchall()
+        projecten = c.execute("""SELECT id, titel FROM crm_projecten WHERE status NOT IN ('afgerond', 'gestopt') OR id = %s
+                                 ORDER BY titel""", (project,)).fetchall()
         in_archief = c.execute("SELECT count(*) AS n FROM takenbord WHERE gearchiveerd IS NOT NULL").fetchone()["n"]
         doelen = clara_web._reisdoelen(agenda_sync.koppelingen(c, alleen_actief=True))  # pylint: disable=protected-access
         formulier = None
@@ -249,7 +253,8 @@ def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, w
                 raise HTTPException(404)
         elif nieuw_:
             formulier = {"id": 0, "titel": "", "beschrijving": "", "prio": "middel", "status": "nieuw", "wacht_op": "", "startdatum": None,
-                         "starttijd": None, "einddatum": None, "eindtijd": None, "doel": "", "bericht_id": None, "agenda_fout": ""}
+                         "starttijd": None, "einddatum": None, "eindtijd": None, "doel": "", "bericht_id": None, "agenda_fout": "",
+                         "project_id": project or None}
             if bericht:
                 b = c.execute("SELECT * FROM post_berichten WHERE id = %s", (bericht,)).fetchone()
                 if b:
@@ -275,7 +280,8 @@ def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, w
         request, "taken", kolommen=kolommen, formulier=formulier, statussen=STATUSSEN, prios=PRIO, prio_namen=PRIO_NAMEN,
         doelen=doelen, vandaag=vandaag, DAGEN=DAGEN, melding=melding, fout=fout, wacht=wacht, mail=mail, in_archief=in_archief, tz=config.TZ,
         afgerond_dagen=AFGEROND_DAGEN, praat=praat, paneel=paneel, sleutel_ok=bool(config.ANTHROPIC_API_KEY),
-        reeksen=lijst_reeksen, reeksform=reeksform, later=len(later), dagcodes=reeksen.DAGCODES))
+        reeksen=lijst_reeksen, reeksform=reeksform, later=len(later), dagcodes=reeksen.DAGCODES, projecten=projecten,
+        project=next((p for p in projecten if p["id"] == project), None)))
 
 
 @router.post("/taken/nieuw")
@@ -309,7 +315,8 @@ async def taak_opslaan(request: Request, tid: int):
                 raise HTTPException(404)
             c.execute("""UPDATE takenbord SET titel = %(titel)s, beschrijving = %(beschrijving)s, prio = %(prio)s, wacht_op = %(wacht_op)s,
                          startdatum = %(startdatum)s, starttijd = %(starttijd)s, einddatum = %(einddatum)s, eindtijd = %(eindtijd)s,
-                         doel = %(doel)s, afgerond = CASE WHEN %(status)s = 'afgerond' THEN coalesce(afgerond, now()) END,
+                         doel = %(doel)s, project_id = (SELECT id FROM crm_projecten WHERE id = %(project_id)s),
+                         afgerond = CASE WHEN %(status)s = 'afgerond' THEN coalesce(afgerond, now()) END,
                          gearchiveerd = CASE WHEN %(status)s = 'afgerond' THEN gearchiveerd END,
                          status = %(status)s, bijgewerkt = now() WHERE id = %(id)s""", velden | {"id": tid})
             return agenda_bijwerken(c, tid)

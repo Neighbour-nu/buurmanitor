@@ -14,6 +14,10 @@
     <button type="submit" title="{{ 'Weer als ongelezen' if b.gelezen else 'Markeer als gelezen' }}" aria-label="{{ b.titel }}: {{ 'weer als ongelezen' if b.gelezen else 'markeer als gelezen' }}" aria-pressed="{{ 'true' if b.gelezen else 'false' }}">✓</button>
   </form>
 {%- endmacro %}
+{% macro crmknop(b) -%}
+  <a class="ncrm" href="/crm/nieuw?{{ {'bron': 'nieuws', 'titel': b.titel, 'url': b.url or '', 'tekst': (b.samenvatting or '')[:500], 'van': b.bron or '', 'stroom': b.soort}|urlencode }}"
+     title="Kans of project maken" aria-label="{{ b.titel }}: kans of project maken">💼</a>
+{%- endmacro %}
 {% block inhoud %}
 <section class="kopregel">
   <div>
@@ -38,7 +42,7 @@
 <section class="nuitgelicht" aria-label="Uitgelicht">
   {% for b in uitgelicht %}
   <article class="ngroot {{ b.soort }} {{ 'gelezen' if b.gelezen }}" data-soort="{{ b.soort }}">
-    <div class="nkop"><span class="nsoort">{{ soortnamen[b.soort] }}</span><span class="nkoprechts">{{ score(b) }}{{ leesknop(b) }}</span></div>
+    <div class="nkop"><span class="nsoort">{{ soortnamen[b.soort] }}</span><span class="nkoprechts">{{ score(b) }}{{ crmknop(b) }}{{ leesknop(b) }}</span></div>
     <h2><a href="/vera/lees/{{ b.soort }}/{{ b.id }}" target="_blank" rel="noopener" class="nlink">{{ b.titel }}</a></h2>
     {% if b.samenvatting %}<p class="nsam">{{ b.samenvatting }}</p>{% endif %}
     {% if b.waarom %}<p class="nwaarom">{{ b.waarom }}</p>{% endif %}
@@ -70,7 +74,7 @@
               {% if b.samenvatting %}<p class="nsam">{{ b.samenvatting }}</p>{% endif %}
               {% if b.waarom %}<p class="nwaarom">{{ b.waarom }}</p>{% endif %}
             </div>
-            <div class="nacties">{{ leesknop(b) }}
+            <div class="nacties">{{ leesknop(b) }}{{ crmknop(b) }}
             {% if s in eigen %}<form method="post" action="/vera/verberg/{{ b.id }}" class="nweg"><input type="hidden" name="terug" value="/vera?soort={{ soort }}&dagen={{ dagen }}">
               <button type="submit" title="Niet interessant: weg" aria-label="{{ b.titel }} verbergen">×</button></form>{% endif %}</div>
           </article>

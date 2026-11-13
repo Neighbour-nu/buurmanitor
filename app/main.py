@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from . import aankondigen, iris, personas  # noqa: F401  (aankondigen registreert de planner-taak)
 from .bram import sync as bram_sync, web as bram_web  # noqa: F401  (sync registreert de planner-taak 'post')
 from .clara import sync as clara_sync, web as clara_web  # noqa: F401  (sync registreert de planner-taak)
+from .crm import relaties as crm_relaties, web as crm_web  # noqa: F401  (relaties registreert de planner-taak)
 from .taken import noor, web as taken_web
 from .jesse import luisteren as jesse_luisteren, web as jesse_web  # noqa: F401  (luisteren registreert de planner-taak)
 from .vera import nieuws as vera_nieuws, web as vera_web  # noqa: F401  (nieuws registreert de planner-taak)
@@ -69,6 +70,7 @@ app.include_router(bram_web.router)
 app.include_router(taken_web.router)
 app.include_router(vera_web.router)
 app.include_router(jesse_web.router)
+app.include_router(crm_web.router)
 if politiek:
     app.mount("/politiek", prefix.Voorvoegsel(politiek.app, "/politiek"))
 if zerohero:
@@ -185,10 +187,13 @@ def iris_scherm(request: Request, g: int | None = None):
     else:  # g=0 is een nieuw, leeg gesprek
         gesprek = q1("SELECT * FROM gesprekken WHERE id = %s AND persona = 'iris'", (g,)) if g else None
     berichten = q("SELECT * FROM gesprek_berichten WHERE gesprek_id = %s ORDER BY id", (gesprek["id"],)) if gesprek else []
+    crm_voorstellen = {}
+    for v in (q("SELECT * FROM crm_voorstellen WHERE gesprek_id = %s AND status <> 'weg' ORDER BY id", (gesprek["id"],)) if gesprek else []):
+        crm_voorstellen.setdefault(v["bericht_id"], []).append(v)
     eerdere = q("SELECT id, titel, bijgewerkt FROM gesprekken WHERE persona = 'iris' AND NOT gearchiveerd ORDER BY bijgewerkt DESC LIMIT 15")
     archief = q("SELECT id, titel, bijgewerkt FROM gesprekken WHERE persona = 'iris' AND gearchiveerd ORDER BY bijgewerkt DESC LIMIT 30")
     return templates.TemplateResponse("iris.html", ctx(
-        request, "iris", gesprek=gesprek, berichten=berichten, eerdere=eerdere, archief=archief, p=personas.get("iris"),
+        request, "iris", gesprek=gesprek, berichten=berichten, eerdere=eerdere, archief=archief, p=personas.get("iris"), crm_voorstellen=crm_voorstellen,
         sleutel_ok=bool(config.ANTHROPIC_API_KEY)))
 
 

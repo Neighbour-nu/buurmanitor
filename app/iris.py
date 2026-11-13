@@ -1,6 +1,7 @@
 """Iris, de coördinator. In fase 0 kan Iris al praten, maar ziet ze alleen wat de portal zelf weet:
 de gezondheid van de server, de meldingen, de taken en wat er op de planning staat."""
 import datetime as dt
+import json
 
 from . import personas
 from .kern import claude, config, gezondheid, meldingen
@@ -11,6 +12,8 @@ PLANNING = """Stand van de bouw:
   Clara (agenda), Bram (mail uit Gmail en Outlook), Noor (het takenbord en de planning van taken), Vera (nieuws:
   keepers, lokale en landelijke politiek, overig) en Jesse (luistert mee op de socials: reacties op Martijns posts,
   en wat er over keepers en Helmond gezegd wordt).
+- Ook klaar: het CRM (menu CRM): relaties uit de mail, kansen per activiteit (ZEROHERO, Upper Spire, IV-professional,
+  politiek) en projecten met taken op het takenbord. Jij kunt kansen en projecten voorstellen (zie hieronder).
 - Volgende stap: Bram verder (Teams, WhatsApp en Signal).
 Teams, WhatsApp en Signal kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt.
 Voor de agenda is Clara er, voor mail Bram, voor taken Noor (onder Taken), voor nieuws Vera (onder Nieuws), voor
@@ -32,6 +35,9 @@ def context(c):
     delen.append(_taken(c, nu))
     delen.append(_nieuws(c, nu))
     delen.append(_socials(c))
+    crm = _crm(c, nu)
+    if crm:
+        delen.append(crm)
     g, s = gezondheid.geheugen(), gezondheid.schijf()
     if g and s:
         delen.append(f"Server: geheugen {g['procent']} procent in gebruik, schijf {s['procent']} procent vol.")
@@ -68,7 +74,11 @@ def _post(c):
                          WHERE b.status = 'open' AND k.actief ORDER BY b.ontvangen DESC""").fetchall()
     actie = [r for r in rijen if web.groep(r) == "actie"]
     uit = [f"Post (van Bram): {len(rijen)} berichten in de inboxen, {len(actie)} vragen om actie."]
-    uit += [f"- {r['van_naam']}: {r['regel'] or r['onderwerp']} ({r['koppeling']})" for r in actie[:10]]
+    uit += [f"- {r['van_naam']}: {r['regel'] or r['onderwerp']} ({r['koppeling']}, mail #{r['id']})" for r in actie[:10]]
+    overig = [r for r in rijen if web.groep(r) != "actie"][:15]
+    if overig:
+        uit.append("Andere mails in de inbox:")
+        uit += [f"- {r['van_naam']}: {r['onderwerp']} ({r['koppeling']}, mail #{r['id']})" for r in overig]
     return "\n".join(uit)
 
 
@@ -112,13 +122,41 @@ def _socials(c):
     return "Socials (van Jesse, die meeluistert):\n" + ("\n".join(regels) or "- niets bijzonders")
 
 
+def _crm(c, nu):
+    """Wat er in het CRM loopt, kort: open kansen per activiteit, volgende stappen die eraan komen, actieve projecten."""
+    from .crm import model  # pylint: disable=import-outside-toplevel
+    kansen = c.execute("""SELECT k.*, a.naam AS act, a.soort, o.naam AS org FROM crm_kansen k JOIN crm_activiteiten a ON a.code = k.activiteit
+                          LEFT JOIN crm_organisaties o ON o.id = k.organisatie_id WHERE k.gesloten IS NULL
+                          ORDER BY k.volgende_datum NULLS LAST LIMIT 25""").fetchall()
+    projecten = c.execute("""SELECT p.titel, p.datum, p.status, a.naam AS act FROM crm_projecten p JOIN crm_activiteiten a ON a.code = p.activiteit
+                             WHERE p.status IN ('gepland', 'actief') ORDER BY p.datum NULLS LAST LIMIT 12""").fetchall()
+    if not kansen and not projecten:
+        return "CRM: nog geen open kansen of projecten."
+    uit = ["CRM, open kansen (titel, activiteit, fase, organisatie, waarde, volgende stap):"]
+    uit += [f"- {k['titel']} ({k['act']}, {model.fase_naam(k['soort'], k['fase'])}{', ' + k['org'] if k['org'] else ''}"
+            f"{', € ' + str(k['waarde']) if k['waarde'] is not None else ''})"
+            + (f": {k['volgende_stap']}" + (f" op {k['volgende_datum']:%d-%m}" if k['volgende_datum'] else "") if k['volgende_stap'] else "")
+            + (" [over datum]" if model.achter(k, nu.date()) else "") for k in kansen]
+    if projecten:
+        uit.append("Lopende projecten:")
+        uit += [f"- {p['titel']} ({p['act']}, {p['status']}{', ' + p['datum'].strftime('%d-%m-%Y') if p['datum'] else ''})" for p in projecten]
+    return "\n".join(uit)
+
+
 def antwoord(c, gesprek_id):
     berichten = c.execute("SELECT rol, tekst FROM gesprek_berichten WHERE gesprek_id = %s ORDER BY id",
                           (gesprek_id,)).fetchall()
-    systeem = personas.systeemtekst(personas.get("iris")) + "\n\n# Wat je nu weet\n" + context(c)
+    from .crm import voorstel  # pylint: disable=import-outside-toplevel
+    systeem = (personas.systeemtekst(personas.get("iris")) + "\n\n" + voorstel.uitleg_voor_iris(c)
+               + "\n\n# Wat je nu weet\n" + context(c))
     tekst = claude.gesprek(c, "iris", systeem, [{"role": b["rol"], "content": b["tekst"]} for b in berichten if (b["tekst"] or "").strip()][-30:],
                            max_tokens=1500)
     tekst = tekst.replace(" — ", ", ").replace("—", ", ").replace(" – ", ", ")
-    c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s)", (gesprek_id, tekst))
+    tekst, voorstellen = voorstel.uit_antwoord(c, tekst)
+    bid = c.execute("INSERT INTO gesprek_berichten (gesprek_id, rol, tekst) VALUES (%s, 'assistant', %s) RETURNING id",
+                    (gesprek_id, tekst or "Hieronder staat mijn voorstel.")).fetchone()["id"]
+    for v in voorstellen:
+        c.execute("INSERT INTO crm_voorstellen (gesprek_id, bericht_id, gegevens) VALUES (%s, %s, %s)",
+                  (gesprek_id, bid, json.dumps(v, ensure_ascii=False)))
     c.execute("UPDATE gesprekken SET bijgewerkt = now() WHERE id = %s", (gesprek_id,))
     return tekst

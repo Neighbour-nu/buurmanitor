@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "crm_macros.html" import kanskaart %}
+{% block titel %}{{ o.naam }} · CRM · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>{{ o.naam }}</h1>
+    <p class="motto">{{ o.domein }}{% if o.website %} · <a href="{{ o.website }}" target="_blank" rel="noopener">{{ o.website }}</a>{% endif %}</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="/crm/nieuw?wat=kans&organisatie={{ o.naam|urlencode }}">+ Kans</a></div>
+</section>
+{% include "crm_tabs.html" %}
+<div class="raster tweekolom">
+<section class="kaart">
+  <h2>Gegevens</h2>
+  <form method="post" action="/crm/organisatie/{{ o.id }}" class="velden">
+    <label>Naam <input type="text" name="naam" value="{{ o.naam }}"></label>
+    <label>Website <input type="text" name="website" value="{{ o.website }}"></label>
+    <label class="breed">Notitie <textarea name="notitie" rows="3">{{ o.notitie }}</textarea></label>
+    <div class="knoppenrij breed"><button class="knop vol" type="submit">Opslaan</button></div>
+  </form>
+  <h2>Contactpersonen</h2>
+  {% for p in contacten %}<p><a href="/crm/contact/{{ p.id }}">{{ p.naam or p.email }}</a> <span class="noot">{{ p.functie ~ ' · ' if p.functie }}{{ p.mails }} mails</span></p>
+  {% else %}<p class="noot">Nog geen.</p>{% endfor %}
+</section>
+<section class="kaart">
+  <h2>Kansen en projecten</h2>
+  {% for k in kansen %}{{ kanskaart(k, vandaag, euro_kort, model) }}{% endfor %}
+  {% for pr in projecten %}<p><a href="/crm/project/{{ pr.id }}">📁 {{ pr.titel }}</a> <span class="noot">{{ pr.status }}</span></p>{% endfor %}
+  {% if not kansen and not projecten %}<p class="noot">Nog geen.</p>{% endif %}
+</section>
+</div>
+{% endblock %}

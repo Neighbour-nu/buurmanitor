@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "crm_macros.html" import tijdlijn, notitievorm, kansvelden, vormscript %}
+{% block titel %}{{ k.titel }} · CRM · Buurmanitor{% endblock %}
+{% block inhoud %}
+<section class="kopregel">
+  <div>
+    <h1>{{ k.titel }}</h1>
+    <p class="motto">{{ k.activiteitnaam }} · {{ model.fase_naam(k.soort, k.fase) }}{% if k.organisatie %} · {{ k.organisatie }}{% endif %}
+      {% if k.waarde is not none %} · {{ euro_kort(k.waarde) }}{% endif %}</p>
+  </div>
+  <div class="knoppen"><a class="knop" href="/crm?activiteit={{ k.activiteit }}">Naar het bord</a></div>
+</section>
+{% include "crm_tabs.html" %}
+
+<section class="kaart">
+  <h2>Fase</h2>
+  <form method="post" action="/crm/kans/{{ k.id }}/fase" class="fasebalk">
+    {% for code, naam, uit in model.fases(k.soort) %}
+      <button class="knop klein {{ 'vol' if code == k.fase }} {{ uit }}" name="fase" value="{{ code }}" {{ 'aria-current=step' if code == k.fase }}>{{ naam }}</button>
+    {% endfor %}
+  </form>
+  {% if k.project %}<p class="noot">📁 Project: <a href="/crm/project/{{ k.project_id }}">{{ k.project }}</a></p>
+  {% elif model.uitkomst(k.soort, k.fase) == 'gewonnen' %}
+    <form method="post" action="/crm/kans/{{ k.id }}/project" id="project" class="knoppenrij"><button class="knop vol" type="submit">📁 Maak er een project van</button>
+      <span class="noot">Titel, organisatie en contact gaan mee; de waarde wordt de begrote opbrengst.</span></form>
+  {% endif %}
+  {% if k.taak_id and k.taakstatus %}<p class="noot">Volgende stap staat als taak op het <a href="/taken?bewerk={{ k.taak_id }}#formulier">takenbord</a>{% if k.taakstatus == 'afgerond' %} (afgerond){% endif %}.</p>{% endif %}
+</section>
+
+<div class="raster tweekolom">
+<section class="kaart">
+  <h2>Gegevens</h2>
+  <form method="post" action="/crm/kans/{{ k.id }}" class="crmvorm">
+    <input type="hidden" name="wat" value="kans">
+    {{ kansvelden(k, acts, model) }}
+    <div class="knoppenrij"><button class="knop vol" type="submit">Opslaan</button>
+      {% if k.contact_id %}<a class="klein" href="/crm/contact/{{ k.contact_id }}">contact bekijken</a>{% endif %}
+      {% if k.organisatie_id %}<a class="klein" href="/crm/organisatie/{{ k.organisatie_id }}">organisatie bekijken</a>{% endif %}</div>
+  </form>
+  <form method="post" action="/crm/kans/{{ k.id }}/weg"><button class="knop klein" type="submit" onclick="return confirm('Deze kans verwijderen?')">Verwijderen</button></form>
+</section>
+<section class="kaart" id="tijdlijn">
+  <h2>Tijdlijn</h2>
+  {{ notitievorm('/crm/kans/' ~ k.id ~ '/notitie') }}
+  {{ tijdlijn(tijd, geleden) }}
+</section>
+</div>
+{{ vormscript() }}
+{% endblock %}
