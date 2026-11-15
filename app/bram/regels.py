@@ -10,6 +10,10 @@ Voorwaarden (allemaal moeten kloppen; in één veld meerdere woorden met komma's
 - bijlage: met of zonder bijlage             - naam van een bijlage bevat ... (bijvoorbeeld factuur, .pdf)
 - lijkt op een factuur: een bijlage, en 'factuur', 'invoice', 'nota' en dergelijke in onderwerp of bijlagenaam
 Acties: gelezen markeren, een label (Gmail) of categorie (Outlook) zetten, verplaatsen naar een map, archiveren.
+Met de bijlagen: opslaan in een map in Google Drive (met {jaar}, {maand} of {afzender} in het pad, en desgewenst de
+datum en afzender voor de bestandsnaam), en/of doorsturen naar een vast adres (zoals de inbox van je boekhouding).
+Eventueel alleen bijlagen waarvan de naam iets bevat ('.pdf, factuur'). De bijlagen gaan eerst; lukt dat niet, dan
+blijft de mail in de inbox staan en zie je het in het logboek.
 Een map of label staat op naam in de regel, zodat één regel voor Gmail en Outlook tegelijk kan gelden; bestaat de map
 nog niet, dan maakt Bram hem aan als dat in de regel is aangevinkt.
 
@@ -20,12 +24,14 @@ import datetime as dt
 import json
 import re
 
-from ..kern import meldingen
-from . import bronnen
+from ..kern import config, meldingen
+from . import bronnen, drive
 
 VOORWAARDEN = ("van", "aan", "onderwerp", "tekst", "bijlage", "bijlage_naam", "factuur")
 TEKSTVELDEN = ("van", "aan", "onderwerp", "tekst", "bijlage_naam")
 FACTUUR = re.compile(r"factu(u)?r|invoice|\bnota\b|rekening|receipt|kwitantie|betaalbewijs|creditnota|\bbon\b|\binv[-_ ]?\d", re.I)
+EMAIL = re.compile(r"^[^@\s<>,;]+@[^@\s<>,;]+\.[a-z]{2,}$", re.I)
+KLEIN_PLAATJE = 15_000  # zonder filter: kleinere afbeeldingen (logo's in een handtekening) niet opslaan of doorsturen
 PROEF_MAX = 15  # zoveel bijlagenlijsten haalt een proef hooguit op (het scherm wacht erop)
 LOG_BEWAREN = 1000
 
@@ -45,14 +51,29 @@ def uit_formulier(f):
     v = {k: w for k, w in v.items() if w}
     a = {"gelezen": str(f.get("gelezen") or "") == "1", "archiveren": str(f.get("archiveren") or "") == "1",
          "map": str(f.get("map") or "").strip()[:200], "label": str(f.get("label") or "").strip()[:200],
-         "maken": str(f.get("maken") or "") == "1"}
+         "maken": str(f.get("maken") or "") == "1",
+         "drive": int(f.get("drive")) if str(f.get("drive") or "").isdigit() else 0,
+         "drive_map": str(f.get("drive_map") or "").strip()[:400],
+         "bestandsnaam": "datum" if str(f.get("bestandsnaam") or "") == "datum" else "",
+         "bijlage_filter": str(f.get("bijlage_filter") or "").strip()[:200],
+         "doorsturen": ", ".join(termen(f.get("doorsturen")))[:300]}
     if a["map"]:
         a["archiveren"] = False  # verplaatsen haalt hem al uit de inbox
     a = {k: w for k, w in a.items() if w}
     if not v:
         return v, a, "Geef minstens één voorwaarde, anders geldt de regel voor alle mail."
-    if not ({"gelezen", "archiveren", "map", "label"} & set(a)):
+    if a.get("drive") and not a.get("drive_map"):
+        return v, a, "Geef de map in Google Drive waar de bijlagen in moeten (bijvoorbeeld Administratie/Facturen/{jaar})."
+    if a.get("drive_map") and not a.get("drive"):
+        return v, a, "Kies het Google-account met de Drive waarin de bijlagen moeten."
+    adressen = termen(a.get("doorsturen"))
+    if any(not EMAIL.match(x) for x in adressen) or len(adressen) > 3:
+        return v, a, "Doorsturen kan naar hooguit drie geldige mailadressen, met komma's ertussen."
+    if not ({"gelezen", "archiveren", "map", "label", "drive", "doorsturen"} & set(a)):
         return v, a, "Kies minstens één actie."
+    if not ({"drive", "doorsturen"} & set(a)):
+        for k in ("bestandsnaam", "bijlage_filter"):
+            a.pop(k, None)
     return v, a, ""
 
 
@@ -78,12 +99,21 @@ def beschrijf(v, a):
         dan.append(f'naar map "{a["map"]}"' + (" (maken als hij er niet is)" if a.get("maken") else ""))
     elif a.get("archiveren"):
         dan.append("archiveren")
+    welke = f'bijlagen met "{a["bijlage_filter"]}"' if a.get("bijlage_filter") else "bijlagen"
+    if a.get("drive"):
+        dan.append(f'{welke} opslaan in Drive: {a.get("drive_map")}' + (" (met datum en afzender)" if a.get("bestandsnaam") == "datum" else ""))
+    if a.get("doorsturen"):
+        dan.append(f'{welke if not a.get("drive") else "bijlagen"} doorsturen naar {a["doorsturen"]}')
     return " en ".join(als), ", ".join(dan)
 
 
 def actieve(c, koppeling_id=None):
     return c.execute("""SELECT * FROM post_regels WHERE actief AND (koppeling_id IS NULL OR %s::int IS NULL OR koppeling_id = %s)
                         ORDER BY volgorde, id""", (koppeling_id, koppeling_id)).fetchall()
+
+
+def heeft_bijlage_acties(a):
+    return bool((a or {}).get("drive") or (a or {}).get("doorsturen"))
 
 
 def heeft_bijlagen_nodig(regel):
@@ -161,12 +191,14 @@ class RegelFout(Exception):
 
 
 def uitvoeren(c, k, b, regel):
-    """Doe wat de regel zegt met mail b, in Gmail of Outlook. Geeft een korte uitslag. b is een rij of dict met id,
-    extern_id en labels."""
+    """Doe wat de regel zegt met mail b, in Gmail of Outlook. Geeft (korte uitslag, uit de inbox, link naar Drive).
+    b is een rij of dict met id, extern_id en labels."""
     from . import sync  # pylint: disable=import-outside-toplevel
     a = regel["acties"] or {}
     g = k["soort"] == "google"
     tok = sync.toegang(c, k)
+    # Eerst de bijlagen: lukt dat niet, dan blijft de mail staan waar hij staat (en kun je het later opnieuw proberen).
+    bijlagen_gedaan, link = bijlagen_verwerken(c, k, tok, b, regel) if heeft_bijlage_acties(a) else ("", "")
     map_id = label_id = None
     if a.get("map"):
         map_id = zoek_naam(sync.mappen(c, k), a["map"]) or zoek_naam(sync.mappen(c, k, vers=True), a["map"])
@@ -183,7 +215,7 @@ def uitvoeren(c, k, b, regel):
                 sync.vergeet_mappen(k["id"])
         else:
             label_id = a["label"]  # een categorie in Outlook is gewoon een naam
-    gedaan = []
+    gedaan = [bijlagen_gedaan] if bijlagen_gedaan else []
     nieuw_id = None
     if g:
         erbij = [x for x in (label_id, map_id) if x]
@@ -210,13 +242,89 @@ def uitvoeren(c, k, b, regel):
     c.execute("""UPDATE post_berichten SET gelezen = gelezen OR %s, status = CASE WHEN %s THEN 'weg' ELSE status END,
                     extern_id = coalesce(nullif(%s, ''), extern_id) WHERE id = %s""",
               (bool(a.get("gelezen")), weg, nieuw_id or "", b["id"]))
-    return ", ".join(gedaan), weg
+    return ", ".join(gedaan), weg, link
 
 
-def _log(c, regel, k, b, wat="", fout=""):
-    c.execute("""INSERT INTO post_regel_log (regel_id, koppeling_id, van, onderwerp, wat, fout) VALUES (%s, %s, %s, %s, %s, %s)""",
-              (regel["id"], k["id"], (b.get("van_naam") or b.get("van_adres") or "")[:200], (b.get("onderwerp") or "")[:300],
-               wat[:300], fout[:500]))
+def bestandsnaam(naam, b, stijl):
+    """De naam in Drive: zoals hij was, of met datum en afzender ervoor ('2026-11-15 KPN factuur.pdf'). Pure functie."""
+    if stijl != "datum":
+        return drive.schone_naam(naam)
+    ontvangen = b.get("ontvangen") if isinstance(b.get("ontvangen"), dt.datetime) else dt.datetime.now(config.TZ)
+    return drive.schone_naam(f"{ontvangen.astimezone(config.TZ):%Y-%m-%d} {afzender(b)} {naam}")
+
+
+def afzender(b):
+    """Een korte naam voor de afzender: de naam, anders het domein ('leverancier' uit een adres bij mail.leverancier.nl). Pure functie."""
+    naam = (b.get("van_naam") or "").strip().strip('"')
+    if naam and "@" not in naam:
+        return drive.schone_naam(naam, 40)
+    domein = (b.get("van_adres") or "").rsplit("@", 1)[-1].split(".")
+    return drive.schone_naam(domein[-2] if len(domein) >= 2 else (b.get("van_adres") or "onbekend"), 40)
+
+
+def kies_bijlagen(bijlagen, filter_tekst):
+    """Welke bijlagen de regel meeneemt: met een filter alleen namen die iets ervan bevatten; zonder filter alles behalve
+    kleine plaatjes (logo's in een handtekening). Pure functie."""
+    lijst = termen(filter_tekst)
+    if lijst:
+        return [x for x in bijlagen if _bevat(x["naam"], lijst)]
+    return [x for x in bijlagen if not ((x["soort"] or "").startswith("image/") and 0 < x["grootte"] < KLEIN_PLAATJE)]
+
+
+def bijlagen_verwerken(c, k, tok, b, regel):
+    """Opslaan in Drive en/of doorsturen. Geeft (wat er gebeurde, link naar de map in Drive)."""
+    from . import sync  # pylint: disable=import-outside-toplevel
+    a = regel["acties"] or {}
+    alle = bronnen.gmail_bijlagen_data(tok, b["extern_id"]) if k["soort"] == "google" else bronnen.ms_bijlagen_data(tok, b["extern_id"])
+    gekozen = kies_bijlagen(alle, a.get("bijlage_filter"))
+    te_groot = [x["naam"] for x in gekozen if x["data"] is None]
+    gekozen = [x for x in gekozen if x["data"] is not None]
+    if not gekozen:
+        return ("geen bijlagen om te verwerken" if not te_groot else f"bijlage te groot: {', '.join(te_groot)}"), ""
+    gedaan, link = [], ""
+    if a.get("drive"):
+        dk = c.execute("SELECT * FROM post_koppelingen WHERE id = %s", (a["drive"],)).fetchone()
+        if not dk or dk["soort"] != "google":
+            raise RegelFout("Het Google-account voor Drive uit deze regel is niet meer gekoppeld.")
+        if not dk["drive"]:
+            raise RegelFout(f"{dk['naam']} heeft nog geen toestemming voor Google Drive. Klik bij Post > Instellingen op 'Google Drive toestaan'.")
+        dtok = tok if dk["id"] == k["id"] else sync.toegang(c, dk)
+        ontvangen = b.get("ontvangen") if isinstance(b.get("ontvangen"), dt.datetime) else dt.datetime.now(config.TZ)
+        pad = drive.invullen(a["drive_map"], {"jaar": f"{ontvangen.astimezone(config.TZ):%Y}", "maand": f"{ontvangen.astimezone(config.TZ):%m}",
+                                              "afzender": afzender(b), "account": k["naam"]})
+        mid = drive.map_id(dtok, dk["id"], pad)
+        nieuw = al = 0
+        for x in gekozen:
+            naam = bestandsnaam(x["naam"], b, a.get("bestandsnaam"))
+            if drive.bestaat(dtok, mid, naam):
+                al += 1
+                continue
+            drive.uploaden(dtok, mid, naam, x["soort"], x["data"])
+            nieuw += 1
+        gedaan.append(f"{nieuw} {'bijlage' if nieuw == 1 else 'bijlagen'} in Drive ({pad})" + (f", {al} stond(en) er al" if al else ""))
+        link = drive.map_link(mid)
+    if a.get("doorsturen"):
+        al = c.execute("""SELECT 1 FROM post_regel_log WHERE regel_id = %s AND bericht_id = %s AND fout = '' AND wat LIKE '%%doorgestuurd%%'""",
+                       (regel["id"], b["id"])).fetchone()
+        if al:
+            gedaan.append("al eerder doorgestuurd")
+        else:
+            ruw = bronnen.doorstuur_mime(k["account"] or k["naam"], termen(a["doorsturen"]), b, gekozen, regel["naam"])
+            if k["soort"] == "google":
+                bronnen.gmail_stuur_mime(tok, ruw)
+            else:
+                bronnen.ms_stuur_mime(tok, ruw)
+            gedaan.append(f"{len(gekozen)} {'bijlage' if len(gekozen) == 1 else 'bijlagen'} doorgestuurd naar {a['doorsturen']}")
+    if te_groot:
+        gedaan.append(f"overgeslagen (te groot): {', '.join(te_groot)}")
+    return ", ".join(gedaan), link
+
+
+def _log(c, regel, k, b, wat="", fout="", link=""):
+    c.execute("""INSERT INTO post_regel_log (regel_id, koppeling_id, bericht_id, van, onderwerp, wat, fout, link)
+                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+              (regel["id"], k["id"], b.get("id"), (b.get("van_naam") or b.get("van_adres") or "")[:200], (b.get("onderwerp") or "")[:300],
+               wat[:300], fout[:500], link[:300]))
     if not fout:
         c.execute("UPDATE post_regels SET aantal = aantal + 1, laatst = now() WHERE id = %s", (regel["id"],))
 
@@ -250,8 +358,8 @@ def toepassen(c, k, berichten, regels=None, nu=None):
             over.append(b)
             continue
         try:
-            wat, weg = uitvoeren(c, k, b, regel)
-            _log(c, regel, k, b, wat)
+            wat, weg, link = uitvoeren(c, k, b, regel)
+            _log(c, regel, k, b, wat, link=link)
             aantal += 1
             if not weg:
                 over.append(b)
@@ -299,8 +407,8 @@ def nu_toepassen(c, regel, ids):
         if not k or past(regel["voorwaarden"] or {}, b) is False:
             continue
         try:
-            wat, _ = uitvoeren(c, k, b, regel)
-            _log(c, regel, k, b, wat)
+            wat, _, link = uitvoeren(c, k, b, regel)
+            _log(c, regel, k, b, wat, link=link)
             gelukt += 1
         except (bronnen.BronFout, RegelFout) as e:
             _log(c, regel, k, b, fout=str(e))

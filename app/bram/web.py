@@ -579,7 +579,7 @@ async def koppel_start(request: Request, soort: str):
     f = await request.form()
     domein = str(f.get("domein", "prive"))
     opties = {"voor": "bram", "domein": domein if domein in dict(DOMEINEN) else "prive",
-              "naam": str(f.get("naam", "")).strip()[:80], "claude": f.get("claude") == "1"}
+              "naam": str(f.get("naam", "")).strip()[:80], "claude": f.get("claude") == "1", "drive": f.get("drive") == "1"}
     if not kluis.actief():
         return _terug("/bram/instellingen", fout="Er is nog geen kluissleutel. Draai op de server: bash ~/buurmanitor/app/deploy/clara.sh")
     if soort == "google" and not (config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET):
@@ -588,7 +588,9 @@ async def koppel_start(request: Request, soort: str):
         return _terug("/bram/instellingen", fout="De Microsoft-app is nog niet ingesteld (clara.sh).")
     with db.pool.connection() as c:
         staat = _nieuwe_staat(c, soort, opties)
-    return RedirectResponse(bronnen.google_url(staat) if soort == "google" else bronnen.ms_url(staat), status_code=303)
+    if soort == "google":
+        return RedirectResponse(bronnen.google_url(staat, drive=opties["drive"], account=str(f.get("account", ""))[:200]), status_code=303)
+    return RedirectResponse(bronnen.ms_url(staat), status_code=303)
 
 
 async def koppeling_klaar(soort, code, opties):
@@ -601,16 +603,16 @@ async def koppeling_klaar(soort, code, opties):
         bestaand = c.execute("SELECT * FROM post_koppelingen WHERE soort = %s AND lower(account) = lower(%s) AND account <> ''",
                              (soort, gegevens["account"])).fetchone()
         if bestaand:
-            c.execute("UPDATE post_koppelingen SET geheim = %s, tenant = %s, fout = NULL, actief = true WHERE id = %s",
-                      (kluis.sluit(gegevens["refresh"]), gegevens.get("tenant", ""), bestaand["id"]))
+            c.execute("UPDATE post_koppelingen SET geheim = %s, tenant = %s, fout = NULL, actief = true, drive = %s WHERE id = %s",
+                      (kluis.sluit(gegevens["refresh"]), gegevens.get("tenant", ""), bool(gegevens.get("drive")), bestaand["id"]))
             sync.vergeet_toegang(bestaand["id"])
             kid = bestaand["id"]
         else:
-            kid = c.execute("""INSERT INTO post_koppelingen (soort, naam, account, tenant, domein, geheim, claude)
-                               VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            kid = c.execute("""INSERT INTO post_koppelingen (soort, naam, account, tenant, domein, geheim, claude, drive)
+                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                             (soort, opties.get("naam") or gegevens["account"] or soort.capitalize(), gegevens["account"],
                              gegevens.get("tenant", ""), opties.get("domein", "prive"), kluis.sluit(gegevens["refresh"]),
-                             bool(opties.get("claude")))).fetchone()["id"]
+                             bool(opties.get("claude")), bool(gegevens.get("drive")))).fetchone()["id"]
 
     def eerste_keer():  # op de achtergrond: bij een volle mailbox duurt dat even, en daar hoef je niet op te wachten
         try:
@@ -619,6 +621,12 @@ async def koppeling_klaar(soort, code, opties):
         except Exception:  # noqa: BLE001  (de planner probeert het over vijf minuten opnieuw en toont dan de fout)
             pass
     threading.Thread(target=eerste_keer, name="bram-eerste-keer", daemon=True).start()
+    if opties.get("drive"):
+        if not gegevens.get("drive"):
+            return _terug("/bram/instellingen", fout=f"{gegevens['account']} is opnieuw gekoppeld, maar zonder toegang tot Google Drive. "
+                                                     "Probeer het nog eens en vink bij Google de toegang tot Drive aan.")
+        return _terug("/bram/regels#regelvorm", melding=f"Google Drive van {gegevens['account']} is gekoppeld. Je kunt nu bij een "
+                                                        "regel kiezen om de bijlagen daarin op te slaan.")
     return _terug("/bram/instellingen", melding=f"{gegevens['account'] or soort} {'opnieuw gekoppeld' if bestaand else 'gekoppeld'}. "
                                                 "De mail wordt nu op de achtergrond opgehaald; over een minuut staat hij in Bram.")
 
@@ -674,10 +682,13 @@ def regels_scherm(request: Request, bewerk: int = 0, melding: str = "", fout: st
         v = {k: qp.get(k, "") for k in regels.TEKSTVELDEN} | {"bijlage": qp.get("bijlage", ""), "factuur": qp.get("factuur") == "1"}
         vooraf = qp.get("vooraf") == "1"  # teruggestuurd na een fout: vinkjes zoals ze stonden
         a = {"gelezen": qp.get("gelezen") == "1" if vooraf else True, "map": qp.get("map", ""), "label": qp.get("label", ""),
-             "archiveren": qp.get("archiveren") == "1", "maken": qp.get("maken") == "1" if vooraf else True}
+             "archiveren": qp.get("archiveren") == "1", "maken": qp.get("maken") == "1" if vooraf else True,
+             "drive": int(qp.get("drive")) if str(qp.get("drive", "")).isdigit() else 0, "drive_map": qp.get("drive_map", ""),
+             "bestandsnaam": qp.get("bestandsnaam", ""), "bijlage_filter": qp.get("bijlage_filter", ""), "doorsturen": qp.get("doorsturen", "")}
         vorm = {"id": 0, "naam": qp.get("naam", ""), "koppeling_id": int(qp.get("account") or 0) or None, "voorwaarden": v, "acties": a}
     return templates.TemplateResponse("bram_regels.html", ctx(
         request, "bram", lijst=lijst, log=log, ks=ks, vorm=vorm, beschrijf=regels.beschrijf, mapnamen=mapnamen,
+        google=[k for k in ks if k["soort"] == "google"],
         labelnamen=labelnamen, melding=melding, fout=fout, tz=config.TZ))
 
 
@@ -694,16 +705,20 @@ async def regel_opslaan(request: Request):
         account = None
     if fout:
         terug = {k: str(f.get(k) or "") for k in (*regels.TEKSTVELDEN, "bijlage", "factuur", "gelezen", "archiveren", "map", "label",
-                                                  "maken", "naam", "account")}
+                                                  "maken", "naam", "account", "drive", "drive_map", "bestandsnaam",
+                                                  "bijlage_filter", "doorsturen")}
         return _terug("/bram/regels?" + urlencode({k: w for k, w in terug.items() if w} | {"vooraf": "1"}) + "#regelvorm",
                       fout=fout)
     if not naam:
-        naam = (f"Naar {a['map']}" if a.get("map") else "Regel") + (f" ({regels.beschrijf(v, {})[0]})" if v else "")
+        naam = (f"Naar {a['map']}" if a.get("map") else "Bijlagen naar Drive" if a.get("drive") else "Regel") + (
+            f" ({regels.beschrijf(v, {})[0]})" if v else "")
         naam = naam[:120]
 
     def doe():
         with db.pool.connection() as c:
             if account and not c.execute("SELECT 1 FROM post_koppelingen WHERE id = %s", (account,)).fetchone():
+                raise HTTPException(400)
+            if a.get("drive") and not c.execute("SELECT 1 FROM post_koppelingen WHERE id = %s AND soort = 'google'", (a["drive"],)).fetchone():
                 raise HTTPException(400)
             if rid:
                 r = c.execute("""UPDATE post_regels SET naam = %s, koppeling_id = %s, voorwaarden = %s, acties = %s

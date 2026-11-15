@@ -28,6 +28,16 @@
       <button class="knop" name="actie" value="weg" onclick="return confirm('{{ k.naam }} ontkoppelen? Je mail zelf blijft staan.')">Ontkoppelen</button>
     </p>
   </form>
+  {% if k.soort == 'google' %}
+  <form method="post" action="/bram/koppel/google" class="knoppenrij drive">
+    <input type="hidden" name="drive" value="1"><input type="hidden" name="naam" value="{{ k.naam }}">
+    <input type="hidden" name="domein" value="{{ k.domein }}"><input type="hidden" name="account" value="{{ k.account }}">
+    {% if k.claude %}<input type="hidden" name="claude" value="1">{% endif %}
+    {% if k.drive %}<span class="label groen">Google Drive</span> <span class="noot">Regels mogen bijlagen in de Drive van dit account opslaan.</span>
+    {% else %}<button class="knop" type="submit">Google Drive toestaan</button>
+      <span class="noot">Voor regels die bijlagen in Drive opslaan. Google vraagt je dan om toegang tot je Drive; je mail blijft gewoon gekoppeld.</span>{% endif %}
+  </form>
+  {% endif %}
 </section>
 {% else %}
 <p class="item belangrijk">Nog geen mailaccounts. Koppel er hieronder een.</p>
@@ -37,7 +47,8 @@
   <section class="kaart">
     <h2>Gmail</h2>
     <p class="noot">Voor neighbour.nu en zerohero.one. Bram vraagt toegang om mail te lezen, labels te zetten, als gelezen
-      te markeren en te archiveren. Versturen en definitief verwijderen kan hij niet. Dit staat los van de toegang die
+      te markeren, te archiveren en (na jouw klik of via een regel die je zelf maakt) te versturen. Definitief verwijderen kan hij niet.
+      Toegang tot Google Drive vraagt hij pas als je daar per account om vraagt. Dit staat los van de toegang die
       Clara tot je agenda heeft.</p>
     {% if google_ok %}
     <form method="post" action="/bram/koppel/google" class="velden">

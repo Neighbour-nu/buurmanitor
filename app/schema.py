@@ -345,6 +345,12 @@ MIGRATIES = [
     "CREATE INDEX IF NOT EXISTS post_regel_log_tijd ON post_regel_log (tijd DESC)",
     # De namen van de bijlagen (NULL: niet bekend), voor regels als 'met een factuur in de bijlage'.
     "ALTER TABLE post_berichten ADD COLUMN IF NOT EXISTS bijlagen jsonb",
+    # Regels met bijlagen: opslaan in Google Drive (drive: dit Google-account gaf daar toestemming voor) en het logboek
+    # per bericht (niet twee keer doorsturen) met een link naar de map in Drive.
+    "ALTER TABLE post_koppelingen ADD COLUMN IF NOT EXISTS drive boolean NOT NULL DEFAULT false",
+    "ALTER TABLE post_regel_log ADD COLUMN IF NOT EXISTS bericht_id int",
+    "ALTER TABLE post_regel_log ADD COLUMN IF NOT EXISTS link text NOT NULL DEFAULT ''",
+    "CREATE INDEX IF NOT EXISTS post_regel_log_bericht ON post_regel_log (regel_id, bericht_id)",
     # ---------- Taken: kanbanbord ----------
     # Een taak met eventueel een start- en einddatum; dan staat hij ook als afspraak in de agenda (agenda_*: welke).
     """CREATE TABLE IF NOT EXISTS takenbord (

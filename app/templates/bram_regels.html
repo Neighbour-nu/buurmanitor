@@ -80,6 +80,31 @@
       <p class="noot">In Gmail is een map een label: de mail krijgt het label en gaat uit de inbox. Een map zoek Bram op naam op in elke
         mailbox, dus "Facturen" vindt ook "Administratie/Facturen" als die naam maar één keer voorkomt.</p>
     </fieldset>
+    <fieldset id="bijlagen">
+      <legend>Met de bijlagen</legend>
+      <p class="noot">Dit gebeurt eerst. Lukt het niet (Drive vol, geen toegang), dan blijft de mail in de inbox staan en zie je het in het logboek.
+        Een bestand dat al in de map staat, slaat Bram niet nog eens op.</p>
+      <div class="velden">
+        <label>opslaan in Google Drive van <select name="drive"><option value="">niet opslaan</option>
+          {% for k in google %}<option value="{{ k.id }}" {{ 'selected' if a.drive == k.id }}>{{ k.naam }}{% if k.account and k.account != k.naam %} ({{ k.account }}){% endif %}{% if not k.drive %} (nog geen toegang tot Drive){% endif %}</option>{% endfor %}</select></label>
+        <label class="breed">in de map <input type="text" name="drive_map" value="{{ a.drive_map }}"
+          placeholder="bijv. Administratie/Facturen/{jaar}, of plak de link van een map in Drive"></label>
+        <label>bestandsnaam <select name="bestandsnaam"><option value="">zoals de bijlage heet</option>
+          <option value="datum" {{ 'selected' if a.bestandsnaam == 'datum' }}>met datum en afzender ervoor (2026-11-15 Afzender factuur.pdf)</option></select></label>
+        <label>alleen bijlagen waarvan de naam bevat <input type="text" name="bijlage_filter" value="{{ a.bijlage_filter }}"
+          placeholder="bijv. .pdf, factuur (leeg: alle bijlagen)"></label>
+        <label class="breed">doorsturen naar <input type="text" name="doorsturen" value="{{ a.doorsturen }}"
+          placeholder="bijv. het inboxadres van je boekhouding (hooguit drie adressen, met komma's)"></label>
+      </div>
+      <p class="noot">In de map kun je <code>{jaar}</code>, <code>{maand}</code> en <code>{afzender}</code> gebruiken; mappen die er nog niet
+        zijn, maakt Bram aan. Een link naar een map werkt ook voor een gedeelde drive, eventueel met een pad erachter
+        (<code>…/folders/ID/{jaar}</code>). Zonder filter laat Bram kleine plaatjes (logo's in een handtekening) weg.
+        Doorsturen gaat vanaf de mailbox waar de mail binnenkwam, met de bijlagen en een korte regel over de oorspronkelijke mail.</p>
+      {% if google and not (google|selectattr('drive')|list) %}
+      <p class="item">Geen van je Gmail-accounts heeft nog toegang tot Google Drive. Geef die toegang bij
+        <a href="/bram/instellingen">Post-instellingen</a> (knop "Google Drive toestaan").</p>
+      {% elif not google %}<p class="noot">Opslaan in Google Drive kan met een gekoppeld Gmail-account (Post-instellingen).</p>{% endif %}
+    </fieldset>
     <p class="knoppenrij"><button class="knop vol" type="submit">{{ 'Opslaan' if vorm.id else 'Regel maken' }}</button>
       {% if vorm.id %}<a class="knop" href="/bram/regels#regelvorm">Annuleren</a>{% endif %}</p>
   </form>
@@ -90,7 +115,8 @@
   {% for l in log %}
     <p class="logregel {{ 'urgent' if l.fout }}"><span class="noot">{{ geleden(l.tijd) }} · {{ l.koppeling or '' }} · {{ l.regel or 'verwijderde regel' }}</span><br>
       <b>{{ l.onderwerp }}</b> <span class="noot">van {{ l.van }}</span><br>
-      {% if l.fout %}<span class="rood">Niet gelukt: {{ l.fout }}</span>{% else %}{{ l.wat }}{% endif %}</p>
+      {% if l.fout %}<span class="rood">Niet gelukt: {{ l.fout }}</span>{% else %}{{ l.wat }}{% endif %}
+      {% if l.link %} · <a href="{{ l.link }}" target="_blank" rel="noopener">Open de map in Drive</a>{% endif %}</p>
   {% else %}<p class="noot">Nog niets gedaan.</p>{% endfor %}
 </section>
 {% endblock %}

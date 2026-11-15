@@ -33,10 +33,18 @@ MAX_BERICHTEN = 100
 
 # ---------------------------------------------------------------- koppelen
 
-def google_url(staat):
-    return "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode({
-        "client_id": config.GOOGLE_CLIENT_ID, "redirect_uri": terugadres("google"), "response_type": "code",
-        "scope": GOOGLE_SCOPES, "access_type": "offline", "prompt": "consent select_account", "state": staat})
+DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
+
+
+def google_url(staat, drive=False, account=""):
+    """Met drive: ook toegang tot Google Drive (voor regels die bijlagen opslaan). include_granted_scopes: een eerder
+    gegeven toestemming voor Drive blijft gelden als je het account later gewoon opnieuw koppelt."""
+    velden = {"client_id": config.GOOGLE_CLIENT_ID, "redirect_uri": terugadres("google"), "response_type": "code",
+              "scope": GOOGLE_SCOPES + (f" {DRIVE_SCOPE}" if drive else ""), "access_type": "offline",
+              "prompt": "consent select_account", "state": staat, "include_granted_scopes": "true"}
+    if account:
+        velden["login_hint"] = account
+    return "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(velden)
 
 
 def google_code(code):
@@ -47,7 +55,8 @@ def google_code(code):
         raise BronFout("Google gaf geen blijvende toegang terug. Probeer het opnieuw; kies dan het account en sta alles toe.")
     if "gmail.modify" not in (j.get("scope") or "gmail.modify"):
         raise BronFout("Google gaf geen toegang tot Gmail. Koppel opnieuw en vink de toegang tot Gmail aan.")
-    return {"refresh": j["refresh_token"], "account": _id_token_gegevens(j.get("id_token", "")).get("email", "")}
+    return {"refresh": j["refresh_token"], "account": _id_token_gegevens(j.get("id_token", "")).get("email", ""),
+            "drive": DRIVE_SCOPE in (j.get("scope") or "").split()}
 
 
 def google_toegang(refresh):
@@ -591,3 +600,84 @@ def gmail_stuur(toegang, account, aan, onderwerp, tekst):
 def ms_stuur(toegang, aan, onderwerp, tekst):
     _graph(toegang, "/me/sendMail", body={"message": {"subject": onderwerp, "body": {"contentType": "Text", "content": tekst},
                                                       "toRecipients": [{"emailAddress": {"address": aan}}]}, "saveToSentItems": True}, methode="POST")
+
+
+# ---------------------------------------------------------------- bijlagen voor regels (opslaan, doorsturen)
+
+BIJLAGE_REGEL_MAX = 25 * 1024 * 1024  # grotere bijlagen slaat een regel over (Gmail en Outlook sturen ze meestal als link)
+
+
+def _echte_bijlage(naam, soort, inline):
+    """Een bijlage om op te slaan: geen afbeelding die in de tekst van de mail staat. Pure functie."""
+    return bool(naam) and not (inline and (soort or "").startswith("image/"))
+
+
+def gmail_bijlagen_data(toegang, mid):
+    """De echte bijlagen van een Gmail-bericht met hun inhoud: [{naam, soort, grootte, data}]."""
+    m = _gmail(toegang, f"/messages/{mid}?format=full")
+    uit = []
+
+    def loop(d):
+        koppen = {h["name"].lower(): h["value"] for h in d.get("headers") or []}
+        body = d.get("body") or {}
+        inline = koppen.get("content-disposition", "").lower().startswith("inline")
+        if d.get("filename") and _echte_bijlage(d["filename"], d.get("mimeType"), inline):
+            grootte = int(body.get("size") or 0)
+            item = {"naam": d["filename"][:200], "soort": d.get("mimeType") or "application/octet-stream", "grootte": grootte, "data": None}
+            if grootte <= BIJLAGE_REGEL_MAX:
+                ruw = body.get("data") or (_gmail(toegang, f"/messages/{mid}/attachments/{body['attachmentId']}").get("data")
+                                           if body.get("attachmentId") else "")
+                item["data"] = base64.urlsafe_b64decode((ruw or "") + "=" * (-len(ruw or "") % 4))
+            uit.append(item)
+        for p in d.get("parts") or []:
+            loop(p)
+    loop(m.get("payload") or {})
+    return uit
+
+
+def ms_bijlagen_data(toegang, mid):
+    """De echte bijlagen (bestanden, geen ingesloten afbeeldingen of doorgestuurde mails) van een Outlook-bericht."""
+    q = urllib.parse.quote(mid)
+    uit = []
+    for a in _graph(toegang, f"/me/messages/{q}/attachments?$select=id,name,contentType,size,isInline").get("value", []):
+        if "fileAttachment" not in a.get("@odata.type", "fileAttachment") or not _echte_bijlage(a.get("name"), a.get("contentType"), a.get("isInline")):
+            continue
+        item = {"naam": a["name"][:200], "soort": a.get("contentType") or "application/octet-stream", "grootte": int(a.get("size") or 0), "data": None}
+        if item["grootte"] <= BIJLAGE_REGEL_MAX:
+            j = _graph(toegang, f"/me/messages/{q}/attachments/{urllib.parse.quote(a['id'])}")
+            item["data"] = base64.b64decode(j.get("contentBytes") or "")
+        uit.append(item)
+    return uit
+
+
+def doorstuur_mime(account, aan, b, bijlagen, regelnaam):
+    """Een mail met de bijlagen, voor bijvoorbeeld het inboxadres van je boekhouding. Geeft de MIME-bytes. Pure functie."""
+    from email.message import EmailMessage  # pylint: disable=import-outside-toplevel
+    m = EmailMessage()
+    m["From"], m["To"] = account, ", ".join(aan)
+    onderwerp = (b.get("onderwerp") or "").strip()
+    m["Subject"] = onderwerp if onderwerp.lower().startswith(("fwd:", "fw:", "doorst:")) else f"Fwd: {onderwerp}"
+    ontvangen = b.get("ontvangen")
+    m.set_content("\n".join([
+        f"Doorgestuurd door de regel '{regelnaam}' in Buurmanitor.", "",
+        f"Van: {b.get('van_naam') or ''} <{b.get('van_adres') or ''}>".replace(" <>", ""),
+        f"Datum: {ontvangen:%d-%m-%Y %H.%M}" if isinstance(ontvangen, dt.datetime) else "",
+        f"Onderwerp: {onderwerp}", "", "Bijlagen: " + ", ".join(x["naam"] for x in bijlagen)]))
+    for x in bijlagen:
+        hoofd, _, sub = (x["soort"] or "application/octet-stream").partition("/")
+        m.add_attachment(x["data"], maintype=hoofd or "application", subtype=sub or "octet-stream", filename=x["naam"])
+    return m.as_bytes()
+
+
+def gmail_stuur_mime(toegang, ruw):
+    return _gmail(toegang, "/messages/send", body={"raw": base64.urlsafe_b64encode(ruw).decode()}).get("id", "")
+
+
+MS_MIME_MAX = 3_500_000  # Microsoft Graph neemt een mail met bijlagen in één keer aan tot ongeveer 4 MB
+
+
+def ms_stuur_mime(toegang, ruw):
+    data = base64.b64encode(ruw)
+    if len(data) > MS_MIME_MAX:
+        raise BronFout("De bijlagen zijn te groot om via Outlook door te sturen (hooguit ongeveer 3 MB samen).")
+    _graph(toegang, "/me/sendMail", koppen={"Content-Type": "text/plain"}, data=data, methode="POST")
