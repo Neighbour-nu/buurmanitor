@@ -683,6 +683,7 @@ def regels_scherm(request: Request, bewerk: int = 0, melding: str = "", fout: st
         vooraf = qp.get("vooraf") == "1"  # teruggestuurd na een fout: vinkjes zoals ze stonden
         a = {"gelezen": qp.get("gelezen") == "1" if vooraf else True, "map": qp.get("map", ""), "label": qp.get("label", ""),
              "archiveren": qp.get("archiveren") == "1", "maken": qp.get("maken") == "1" if vooraf else True,
+             "verwijderen": qp.get("verwijderen") == "1",
              "drive": int(qp.get("drive")) if str(qp.get("drive", "")).isdigit() else 0, "drive_map": qp.get("drive_map", ""),
              "bestandsnaam": qp.get("bestandsnaam", ""), "bijlage_filter": qp.get("bijlage_filter", ""), "doorsturen": qp.get("doorsturen", "")}
         vorm = {"id": 0, "naam": qp.get("naam", ""), "koppeling_id": int(qp.get("account") or 0) or None, "voorwaarden": v, "acties": a}
@@ -706,7 +707,7 @@ async def regel_opslaan(request: Request):
     if fout:
         terug = {k: str(f.get(k) or "") for k in (*regels.TEKSTVELDEN, "bijlage", "factuur", "gelezen", "archiveren", "map", "label",
                                                   "maken", "naam", "account", "drive", "drive_map", "bestandsnaam",
-                                                  "bijlage_filter", "doorsturen")}
+                                                  "bijlage_filter", "doorsturen", "verwijderen")}
         return _terug("/bram/regels?" + urlencode({k: w for k, w in terug.items() if w} | {"vooraf": "1"}) + "#regelvorm",
                       fout=fout)
     if not naam:

@@ -9,7 +9,8 @@ Voorwaarden (allemaal moeten kloppen; in één veld meerdere woorden met komma's
 - onderwerp bevat ...                        - tekst: onderwerp of begin van de mail bevat ...
 - bijlage: met of zonder bijlage             - naam van een bijlage bevat ... (bijvoorbeeld factuur, .pdf)
 - lijkt op een factuur: een bijlage, en 'factuur', 'invoice', 'nota' en dergelijke in onderwerp of bijlagenaam
-Acties: gelezen markeren, een label (Gmail) of categorie (Outlook) zetten, verplaatsen naar een map, archiveren.
+Acties: gelezen markeren, een label (Gmail) of categorie (Outlook) zetten, verplaatsen naar een map, archiveren, of
+verwijderen (naar de prullenbak of Verwijderde items: nog 30 dagen terug te halen, nooit definitief).
 Met de bijlagen: opslaan in een map in Google Drive (met {jaar}, {maand} of {afzender} in het pad, en desgewenst de
 datum en afzender voor de bestandsnaam), en/of doorsturen naar een vast adres (zoals de inbox van je boekhouding).
 Eventueel alleen bijlagen waarvan de naam iets bevat ('.pdf, factuur'). De bijlagen gaan eerst; lukt dat niet, dan
@@ -51,12 +52,14 @@ def uit_formulier(f):
     v = {k: w for k, w in v.items() if w}
     a = {"gelezen": str(f.get("gelezen") or "") == "1", "archiveren": str(f.get("archiveren") or "") == "1",
          "map": str(f.get("map") or "").strip()[:200], "label": str(f.get("label") or "").strip()[:200],
-         "maken": str(f.get("maken") or "") == "1",
+         "maken": str(f.get("maken") or "") == "1", "verwijderen": str(f.get("verwijderen") or "") == "1",
          "drive": int(f.get("drive")) if str(f.get("drive") or "").isdigit() else 0,
          "drive_map": str(f.get("drive_map") or "").strip()[:400],
          "bestandsnaam": "datum" if str(f.get("bestandsnaam") or "") == "datum" else "",
          "bijlage_filter": str(f.get("bijlage_filter") or "").strip()[:200],
          "doorsturen": ", ".join(termen(f.get("doorsturen")))[:300]}
+    if a["verwijderen"]:  # naar de prullenbak: verplaatsen, archiveren en een label hebben dan geen zin meer
+        a.update(map="", archiveren=False, label="", maken=False)
     if a["map"]:
         a["archiveren"] = False  # verplaatsen haalt hem al uit de inbox
     a = {k: w for k, w in a.items() if w}
@@ -69,7 +72,7 @@ def uit_formulier(f):
     adressen = termen(a.get("doorsturen"))
     if any(not EMAIL.match(x) for x in adressen) or len(adressen) > 3:
         return v, a, "Doorsturen kan naar hooguit drie geldige mailadressen, met komma's ertussen."
-    if not ({"gelezen", "archiveren", "map", "label", "drive", "doorsturen"} & set(a)):
+    if not ({"gelezen", "archiveren", "map", "label", "drive", "doorsturen", "verwijderen"} & set(a)):
         return v, a, "Kies minstens één actie."
     if not ({"drive", "doorsturen"} & set(a)):
         for k in ("bestandsnaam", "bijlage_filter"):
@@ -104,6 +107,8 @@ def beschrijf(v, a):
         dan.append(f'{welke} opslaan in Drive: {a.get("drive_map")}' + (" (met datum en afzender)" if a.get("bestandsnaam") == "datum" else ""))
     if a.get("doorsturen"):
         dan.append(f'{welke if not a.get("drive") else "bijlagen"} doorsturen naar {a["doorsturen"]}')
+    if a.get("verwijderen"):
+        dan.append("verwijderen (naar de prullenbak)")
     return " en ".join(als), ", ".join(dan)
 
 
@@ -220,7 +225,10 @@ def uitvoeren(c, k, b, regel):
     if g:
         erbij = [x for x in (label_id, map_id) if x]
         eraf = (["UNREAD"] if a.get("gelezen") else []) + (["INBOX"] if map_id or a.get("archiveren") else [])
-        bronnen.gmail_wijzig(tok, b["extern_id"], erbij=erbij, eraf=eraf)
+        if erbij or eraf:
+            bronnen.gmail_wijzig(tok, b["extern_id"], erbij=erbij, eraf=eraf)
+        if a.get("verwijderen"):
+            bronnen.gmail_verwijder(tok, b["extern_id"])
     else:
         if a.get("gelezen"):
             bronnen.ms_gelezen(tok, b["extern_id"])
@@ -230,6 +238,8 @@ def uitvoeren(c, k, b, regel):
             nieuw_id = bronnen.ms_verplaats(tok, b["extern_id"], map_id)
         elif a.get("archiveren"):
             nieuw_id = bronnen.ms_archiveer(tok, b["extern_id"])
+        if a.get("verwijderen"):
+            nieuw_id = bronnen.ms_verwijder(tok, b["extern_id"])
     if a.get("gelezen"):
         gedaan.append("gelezen")
     if a.get("label"):
@@ -238,7 +248,9 @@ def uitvoeren(c, k, b, regel):
         gedaan.append(f"naar {a['map']}")
     elif a.get("archiveren"):
         gedaan.append("gearchiveerd")
-    weg = bool(map_id or a.get("archiveren"))
+    if a.get("verwijderen"):
+        gedaan.append("naar de prullenbak")
+    weg = bool(map_id or a.get("archiveren") or a.get("verwijderen"))
     c.execute("""UPDATE post_berichten SET gelezen = gelezen OR %s, status = CASE WHEN %s THEN 'weg' ELSE status END,
                     extern_id = coalesce(nullif(%s, ''), extern_id) WHERE id = %s""",
               (bool(a.get("gelezen")), weg, nieuw_id or "", b["id"]))

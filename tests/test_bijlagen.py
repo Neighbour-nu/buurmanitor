@@ -73,6 +73,13 @@ def test_formulier_en_beschrijving():
     assert "bijlage_filter" not in a
 
 
+def test_verwijderen():
+    v, a, fout = regels.uit_formulier({"van": "nieuwsbrief", "verwijderen": "1", "map": "Facturen", "archiveren": "1", "label": "X"})
+    assert not fout and a == {"verwijderen": True}  # verplaatsen en een label hebben dan geen zin meer
+    assert regels.beschrijf(v, a)[1] == "verwijderen (naar de prullenbak)"
+    assert not regels.uit_formulier({"van": "x", "verwijderen": "1"})[2]  # verwijderen alleen is genoeg als actie
+
+
 def test_doorstuurmail():
     ruw = bronnen.doorstuur_mime("ik@voorbeeld.nl", ["inbox@boekhouding.example"], MAIL,
                                  [{"naam": "Factuur.pdf", "soort": "application/pdf", "data": PDF}], "Facturen")
@@ -271,3 +278,28 @@ def test_drive_toestaan_bij_koppelen(klant, opzet, monkeypatch):  # pylint: disa
     assert t.headers["location"].startswith("/bram/regels") and "Google+Drive" in t.headers["location"]
     with _db() as c:
         assert c.execute("SELECT drive FROM post_koppelingen WHERE id = %s", (p["id"],)).fetchone()["drive"] is True
+
+
+def test_eerst_opslaan_dan_verwijderen(klant, opzet, monkeypatch):  # pylint: disable=redefined-outer-name
+    g, nep = opzet["g"], opzet["nep"]
+    weg = []
+    monkeypatch.setattr(bronnen, "gmail_verwijder", lambda tok, mid: weg.append(mid))
+    r = klant.post("/bram/regels", headers=FORM, follow_redirects=False, data={
+        "naam": "Bonnen", "van": "energie", "gelezen": "1", "verwijderen": "1", "drive": str(g["id"]), "drive_map": "Bonnen"})
+    assert "/probeer" in r.headers["location"]
+    assert "verwijderen (naar de prullenbak)" in klant.get("/bram/regels", headers=KOP).text
+    with _db() as c:
+        b = _bericht(c, g, "m3")
+        over, aantal = regels.toepassen(c, g, [b])
+        rij = c.execute("SELECT status, gelezen FROM post_berichten WHERE id = %s", (b["id"],)).fetchone()
+        wat = c.execute("SELECT wat FROM post_regel_log ORDER BY id DESC LIMIT 1").fetchone()["wat"]
+    assert aantal == 1 and over == [] and weg == ["m3"] and nep.bestanden() == ["Bonnen/Factuur 118.pdf"]
+    assert opzet["gewijzigd"] == [("m3", [], ["UNREAD"])] and rij == {"status": "weg", "gelezen": True}
+    assert wat.endswith("gelezen, naar de prullenbak")
+    # Lukt het opslaan niet, dan wordt de mail ook niet verwijderd.
+    monkeypatch.setattr(drive, "uploaden", lambda *x: (_ for _ in ()).throw(bronnen.BronFout("Google Drive is vol.")))
+    monkeypatch.setattr(bronnen, "gmail_bijlagen_data", lambda tok, mid: [{"naam": "Nieuw.pdf", "soort": "application/pdf", "grootte": 9, "data": PDF}])
+    with _db() as c:
+        b2 = _bericht(c, g, "m4")
+        over, aantal = regels.toepassen(c, g, [b2])
+    assert aantal == 0 and weg == ["m3"] and [x["id"] for x in over] == [b2["id"]]

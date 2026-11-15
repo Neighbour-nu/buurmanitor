@@ -74,6 +74,9 @@
         <label class="vink"><input type="checkbox" name="maken" value="1" {{ 'checked' if a.maken }}> map (of label) maken als hij er nog niet is</label>
         <label>label (Gmail) of categorie (Outlook) <input type="text" name="label" value="{{ a.label }}" list="labelnamen" placeholder="leeg: geen label"></label>
         <label class="vink breed"><input type="checkbox" name="archiveren" value="1" {{ 'checked' if a.archiveren }}> archiveren (uit de inbox, als je geen map kiest)</label>
+        <label class="vink breed"><input type="checkbox" name="verwijderen" value="1" {{ 'checked' if a.verwijderen }}
+          onchange="if (this.checked && !confirm('Mails die aan deze regel voldoen gaan dan vanzelf naar de prullenbak (Gmail) of Verwijderde items (Outlook). Daar kun je ze nog 30 dagen terughalen. Doorgaan?')) this.checked = false">
+          verwijderen <span class="noot">(naar de prullenbak of Verwijderde items, 30 dagen terug te halen; de bijlagen worden eerst opgeslagen of doorgestuurd)</span></label>
       </div>
       <datalist id="mapnamen">{% for n in mapnamen %}<option value="{{ n }}">{% endfor %}</datalist>
       <datalist id="labelnamen">{% for n in labelnamen %}<option value="{{ n }}">{% endfor %}</datalist>
