@@ -844,3 +844,13 @@ form.ontvanger.uitgezet { opacity: .6; }
 .schuifbaar { overflow-x: auto; }
 .schuifbaar .tabel td, .schuifbaar .tabel th { white-space: nowrap; }
 .schuifbaar .tabel td.noot { white-space: normal; min-width: 180px; }
+
+/* Takenbord: volgorde binnen een kolom */
+.kolom .kaarten { min-height: 40px; }
+/* De streep neemt geen ruimte in (3 - 7 + 4 = 0): de kaarten verspringen niet onder de muis. */
+.kolom .plek { height: 0; border-top: 3px solid var(--blauw); border-radius: 2px; margin: -7px 0 4px; pointer-events: none; }
+.kolom .kaarten:has(.taak) .leeg { display: none; }
+.taakverplaats { display: flex; gap: 6px; align-items: center; }
+.taakverplaats .bovenaan { border: 1px solid var(--lijn); background: var(--wit); border-radius: 4px; padding: 1px 7px; cursor: pointer;
+  color: var(--zacht); font-size: 14px; line-height: 1.4; }
+.taakverplaats .bovenaan:hover, .taakverplaats .bovenaan:focus-visible { color: var(--blauw); border-color: var(--blauw); }

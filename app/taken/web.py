@@ -10,7 +10,7 @@ import threading
 import json
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from urllib.parse import urlencode
 
 from ..clara import bronnen as agenda_bronnen, kluis, sync as agenda_sync, web as clara_web
@@ -210,6 +210,19 @@ def uit_bericht(b):
             "bericht_id": b["id"]}
 
 
+# De volgorde in een kolom: wat je zelf hebt gesleept, in jouw volgorde. Een nieuwe taak (nog zonder plek) met hoge
+# prioriteit komt daarboven, andere nieuwe taken eronder; daarbinnen op prioriteit en datum.
+VOLGORDE = """CASE WHEN t.volgorde IS NOT NULL THEN 1 WHEN t.prio = 'hoog' THEN 0 ELSE 2 END, t.volgorde,
+              CASE t.prio WHEN 'hoog' THEN 0 WHEN 'middel' THEN 1 ELSE 2 END,
+              coalesce(t.einddatum, t.startdatum, '9999-12-31'::date), t.aangemaakt, t.id"""
+
+
+def zet_volgorde(c, status, ids):
+    """Deze taken van deze kolom krijgen de plekken 1, 2, 3 ... in deze volgorde."""
+    c.execute("""UPDATE takenbord t SET volgorde = v.plek FROM unnest(%s::int[]) WITH ORDINALITY AS v(id, plek)
+                 WHERE t.id = v.id AND t.status = %s""", (list(ids), status))
+
+
 def nieuw(c, velden, bericht_id=None):
     return c.execute("""INSERT INTO takenbord (titel, beschrijving, prio, status, wacht_op, startdatum, starttijd, einddatum, eindtijd, doel,
                                            bericht_id, project_id, afgerond)
@@ -262,8 +275,7 @@ def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, w
         taken = c.execute("""SELECT t.*, b.onderwerp AS mail_onderwerp, b.van_naam AS mail_van, p.titel AS project FROM takenbord t
                              LEFT JOIN post_berichten b ON b.id = t.bericht_id LEFT JOIN crm_projecten p ON p.id = t.project_id
                              WHERE t.gearchiveerd IS NULL AND (%(p)s = 0 OR t.project_id = %(p)s)
-                             ORDER BY CASE t.prio WHEN 'hoog' THEN 0 WHEN 'middel' THEN 1 ELSE 2 END,
-                                      coalesce(t.einddatum, t.startdatum, '9999-12-31'::date), t.aangemaakt""", {"p": project}).fetchall()
+                             ORDER BY """ + VOLGORDE, {"p": project}).fetchall()
         projecten = c.execute("""SELECT id, titel FROM crm_projecten WHERE status NOT IN ('afgerond', 'gestopt') OR id = %s
                                  ORDER BY titel""", (project,)).fetchall()
         in_archief = c.execute("SELECT count(*) AS n FROM takenbord WHERE gearchiveerd IS NOT NULL").fetchone()["n"]
@@ -365,18 +377,74 @@ async def taak_status(request: Request, tid: int):
 
     def doe():
         with db.pool.connection() as c:
-            t = c.execute("""UPDATE takenbord SET status = %s, bijgewerkt = now(),
-                             afgerond = CASE WHEN %s = 'afgerond' THEN coalesce(afgerond, now()) END,
-                             gearchiveerd = CASE WHEN %s = 'afgerond' THEN gearchiveerd END
-                             WHERE id = %s RETURNING *""", (status, status, status, tid)).fetchone()
+            return _naar_kolom(c, tid, status)
+    t = await asyncio.to_thread(doe)
+    return _na_verplaatsen(f, t, status)
+
+
+def _naar_kolom(c, tid, status):
+    """Naar een andere kolom. In de nieuwe kolom heeft de taak nog geen eigen plek (tot je hem daar versleept)."""
+    t = c.execute("""UPDATE takenbord SET bijgewerkt = now(), volgorde = CASE WHEN status = %s THEN volgorde END, status = %s,
+                     afgerond = CASE WHEN %s = 'afgerond' THEN coalesce(afgerond, now()) END,
+                     gearchiveerd = CASE WHEN %s = 'afgerond' THEN gearchiveerd END
+                     WHERE id = %s RETURNING *""", (status, status, status, status, tid)).fetchone()
+    if not t:
+        raise HTTPException(404)
+    agenda_bijwerken(c, tid)
+    return t
+
+
+def _na_verplaatsen(f, t, status):
+    if status == "wachtend" and not t["wacht_op"]:
+        return _terug(f"/taken?bewerk={t['id']}&wacht=1#formulier", melding=f"'{t['titel']}' staat bij Wachtend op. Op wie wacht je?")
+    return _terug(_terug_adres(f, f"/taken#taak-{t['id']}"), melding=f"'{t['titel']}' staat nu bij {STATUS_NAMEN[status]}.")
+
+
+@router.post("/taken/volgorde")
+async def taak_volgorde(request: Request):
+    """Slepen op het bord: id is de gesleepte taak, status de kolom waar hij nu staat en ids de kaarten van die kolom in de
+    nieuwe volgorde. Binnen een kolom (via fetch) geen nieuwe pagina; naar een andere kolom wel, met een melding."""
+    controleer_herkomst(request)
+    f = await request.form()
+    status = str(f.get("status", ""))
+    if status not in STATUS_NAMEN or not str(f.get("id", "")).isdigit():
+        raise HTTPException(400)
+    tid = int(f["id"])
+    ids = [int(x) for x in f.getlist("ids") if str(x).isdigit()][:500]
+
+    def doe():
+        with db.pool.connection() as c:
+            t = c.execute("SELECT * FROM takenbord WHERE id = %s", (tid,)).fetchone()
             if not t:
                 raise HTTPException(404)
-            agenda_bijwerken(c, tid)
+            ander = t["status"] != status
+            if ander:
+                t = _naar_kolom(c, tid, status)
+            if status != "afgerond":
+                zet_volgorde(c, status, ids or [tid])
+            return t, ander
+    t, ander = await asyncio.to_thread(doe)
+    if not ander and request.headers.get("x-stil") == "1":
+        return Response(status_code=204)
+    return _na_verplaatsen(f, t, status)
+
+
+@router.post("/taken/{tid:int}/bovenaan")
+async def taak_bovenaan(request: Request, tid: int):
+    """Bovenaan in de eigen kolom (voor de telefoon en het toetsenbord, waar slepen lastig is)."""
+    controleer_herkomst(request)
+
+    def doe():
+        with db.pool.connection() as c:
+            t = c.execute("SELECT * FROM takenbord WHERE id = %s", (tid,)).fetchone()
+            if not t:
+                raise HTTPException(404)
+            rij = [r["id"] for r in c.execute("SELECT t.id FROM takenbord t WHERE t.status = %s AND t.gearchiveerd IS NULL ORDER BY " + VOLGORDE,
+                                              (t["status"],)).fetchall()]
+            zet_volgorde(c, t["status"], [tid] + [x for x in rij if x != tid])
             return t
     t = await asyncio.to_thread(doe)
-    if status == "wachtend" and not t["wacht_op"]:
-        return _terug(f"/taken?bewerk={tid}&wacht=1#formulier", melding=f"'{t['titel']}' staat bij Wachtend op. Op wie wacht je?")
-    return _terug(_terug_adres(f, f"/taken#taak-{tid}"), melding=f"'{t['titel']}' staat nu bij {STATUS_NAMEN[status]}.")
+    return _terug(f"/taken#kolom-{t['status']}", melding=f"'{t['titel']}' staat nu bovenaan bij {STATUS_NAMEN[t['status']]}.")
 
 
 @router.post("/taken/{tid:int}/weg")

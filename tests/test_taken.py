@@ -439,3 +439,41 @@ def test_reeks_maken_wijzigen_stoppen(klant, monkeypatch):
         assert c.execute("SELECT reeks_id FROM takenbord WHERE id = %s", (vid,)).fetchone()["reeks_id"] is None
         c.execute("DELETE FROM takenbord")
         c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (k,))
+
+
+def test_volgorde_in_een_kolom(klant, monkeypatch):
+    """Slepen binnen een kolom, naar een andere kolom, en de knop Bovenaan."""
+    from app.kern import db  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(web, "agenda_bijwerken", lambda c, tid: "")
+    with db.pool.connection() as c:
+        c.execute("DELETE FROM takenbord")
+        ids = {t: c.execute("INSERT INTO takenbord (titel, status, prio) VALUES (%s, %s, %s) RETURNING id", (t, s, p)).fetchone()["id"]
+               for t, s, p in (("Alfa", "gepland", "hoog"), ("Bravo", "gepland", "middel"), ("Charlie", "gepland", "laag"),
+                               ("Delta", "actief", "middel"))}
+
+    def kolom(status):
+        deel = klant.get("/taken", headers=KOP).text.split(f'id="kolom-{status}"')[1].split("</section>")[0]
+        return sorted((t for t in ("Alfa", "Bravo", "Charlie", "Delta", "Echo") if f">{t}</a>" in deel), key=lambda t: deel.index(f">{t}</a>"))
+    assert kolom("gepland") == ["Alfa", "Bravo", "Charlie"]  # nog geen eigen volgorde: op prioriteit
+    # Binnen de kolom: Charlie bovenaan gesleept (zoals het bord dat via fetch doet: geen nieuwe pagina).
+    r = klant.post("/taken/volgorde", headers=FORM | {"X-Stil": "1"},
+                   data={"id": ids["Charlie"], "status": "gepland", "ids": [ids["Charlie"], ids["Alfa"], ids["Bravo"]]})
+    assert r.status_code == 204 and kolom("gepland") == ["Charlie", "Alfa", "Bravo"]
+    # Naar een andere kolom, tussen in: Bravo boven Delta bij Actief.
+    r = klant.post("/taken/volgorde", headers=FORM, follow_redirects=False,
+                   data={"id": ids["Bravo"], "status": "actief", "ids": [ids["Bravo"], ids["Delta"]]})
+    assert "staat+nu+bij+Actief" in r.headers["location"] and kolom("actief") == ["Bravo", "Delta"] and kolom("gepland") == ["Charlie", "Alfa"]
+    # Een nieuwe taak met hoge prioriteit komt boven de eigen volgorde, een gewone eronder.
+    with db.pool.connection() as c:
+        c.execute("INSERT INTO takenbord (titel, status, prio) VALUES ('Echo', 'gepland', 'hoog')")
+    assert kolom("gepland") == ["Echo", "Charlie", "Alfa"]
+    # Bovenaan (voor de telefoon): Alfa boven alles, en daarna heeft de hele kolom een vaste plek.
+    r = klant.post(f"/taken/{ids['Alfa']}/bovenaan", headers=FORM, follow_redirects=False)
+    assert "bovenaan+bij+Gepland" in r.headers["location"] and kolom("gepland") == ["Alfa", "Echo", "Charlie"]
+    assert 'formaction="/taken/' in klant.get("/taken", headers=KOP).text
+    # Via de keuzelijst naar een andere kolom: daar nog geen eigen plek.
+    klant.post(f"/taken/{ids['Charlie']}/status", headers=FORM, data={"status": "actief"})
+    with db.pool.connection() as c:
+        assert c.execute("SELECT volgorde FROM takenbord WHERE id = %s", (ids["Charlie"],)).fetchone()["volgorde"] is None
+    assert klant.post("/taken/volgorde", headers=FORM, data={"id": "x", "status": "gepland"}).status_code == 400
+    assert klant.post("/taken/volgorde", headers=FORM, data={"id": "999999", "status": "gepland"}).status_code == 404

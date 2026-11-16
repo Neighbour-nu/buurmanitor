@@ -130,7 +130,7 @@
 {% endif %}
 
 {% if later %}<p class="noot reekslater">🔁 {{ later }} {{ 'taken' if later != 1 else 'taak' }} uit herhalende taken {{ 'staan' if later != 1 else 'staat' }} later gepland. Die staan al wel in je agenda en komen een week vooraf op het bord.</p>{% endif %}
-<form method="post" id="verplaats-form" hidden><input type="hidden" name="status" id="verplaats-status"></form>
+<form method="post" action="/taken/volgorde" id="verplaats-form" hidden></form>
 <div class="kanban" id="kanban">
   {% for s, naam, lijst in kolommen %}
   <section class="kolom {{ s }}" data-status="{{ s }}" aria-label="{{ naam }}" id="kolom-{{ s }}">
@@ -138,6 +138,7 @@
     {% if s == 'afgerond' %}
     {% if lijst %}<form method="post" action="/taken/archiveren" class="archiefalles">
       <button class="knop klein" type="submit" onclick="return confirm('Alle {{ lijst | length }} afgeronde taken naar het archief?')">📦 Alles archiveren</button></form>{% endif %}
+    <div class="kaarten">
     {% for t in lijst %}
     <article class="taak klaar" id="taak-{{ t.id }}" draggable="true" data-id="{{ t.id }}" title="{{ 'Afgerond ' ~ t.afgerond.astimezone(tz).strftime('%d-%m') if t.afgerond }}">
       <a class="taaktitel" href="/taken?bewerk={{ t.id }}#formulier">{{ t.titel }}</a>
@@ -145,8 +146,10 @@
         <button class="archiefknop" type="submit" title="Naar het archief" aria-label="{{ t.titel }} naar het archief">📦</button></form>
     </article>
     {% else %}<p class="noot leeg">Leeg</p>{% endfor %}
+    </div>
     <p class="noot">Na {{ afgerond_dagen }} dagen gaan afgeronde taken vanzelf naar het <a href="/taken/archief">archief</a>.</p>
     {% else %}
+    <div class="kaarten">
     {% for t in lijst %}
     {% set te_laat = t.einddatum and t.einddatum < vandaag and t.status != 'afgerond' %}
     <article class="taak prio-{{ t.prio }} {{ 'te-laat' if te_laat }}" id="taak-{{ t.id }}" draggable="true" data-id="{{ t.id }}">
@@ -164,9 +167,12 @@
         <select name="status" onchange="this.form.submit()" aria-label="Verplaats {{ t.titel }}">
           {% for w, n in statussen %}<option value="{{ w }}" {{ 'selected' if t.status == w }}>{{ n }}</option>{% endfor %}
         </select><noscript><button class="knop klein">Verplaats</button></noscript>
+        {% if not loop.first %}<button class="bovenaan" type="submit" formaction="/taken/{{ t.id }}/bovenaan" title="Bovenaan in deze kolom"
+          aria-label="{{ t.titel }} bovenaan in {{ naam }}">⤒</button>{% endif %}
       </form>
     </article>
     {% else %}<p class="noot leeg">Leeg</p>{% endfor %}
+    </div>
     {% endif %}
   </section>
   {% endfor %}
@@ -191,23 +197,64 @@
 <p class="archieflink"><a href="/taken/archief">📦 Takenarchief</a> <span class="noot">{{ in_archief }} {{ 'taak' if in_archief == 1 else 'taken' }}</span></p>
 
 <script>
-// Slepen tussen de kolommen. Zonder JavaScript werkt de keuzelijst op elke kaart.
+// Slepen: naar een andere kolom, en binnen een kolom naar een andere plek. Een blauwe streep laat zien waar de kaart komt.
+// Zonder JavaScript werken de keuzelijst en de knop ⤒ (bovenaan) op elke kaart.
 (function () {
-  const vorm = document.getElementById("verplaats-form"), veld = document.getElementById("verplaats-status");
-  let gesleept = null;
+  const vorm = document.getElementById("verplaats-form");
+  const streep = document.createElement("div");
+  streep.className = "plek";
+  let gesleept = null, vanKolom = null;
+  const kaartenVan = kol => kol.querySelector(".kaarten");
+  const volgorde = kol => [...kaartenVan(kol).querySelectorAll(".taak")].map(x => x.dataset.id);
+  // De kaart waar de gesleepte vóór moet: de eerste waarvan het midden onder de muis ligt.
+  function voor(kol, y) {
+    for (const k of kaartenVan(kol).querySelectorAll(".taak")) {
+      if (k === gesleept) continue;
+      const r = k.getBoundingClientRect();
+      if (y < r.top + r.height / 2) return k;
+    }
+    return null;
+  }
+  function veld(naam, waarde) { const i = document.createElement("input"); i.type = "hidden"; i.name = naam; i.value = waarde; return i; }
+  function opruimen() { streep.remove(); document.querySelectorAll(".kolom").forEach(c => c.classList.remove("sleep-hier")); }
   document.querySelectorAll(".taak[draggable]").forEach(k => {
-    k.addEventListener("dragstart", e => { gesleept = k; k.classList.add("sleept"); e.dataTransfer.setData("text/plain", k.dataset.id); e.dataTransfer.effectAllowed = "move"; });
-    k.addEventListener("dragend", () => { k.classList.remove("sleept"); document.querySelectorAll(".kolom").forEach(c => c.classList.remove("sleep-hier")); });
+    k.addEventListener("dragstart", e => {
+      gesleept = k; vanKolom = k.closest(".kolom");
+      e.dataTransfer.setData("text/plain", k.dataset.id); e.dataTransfer.effectAllowed = "move";
+      requestAnimationFrame(() => k.classList.add("sleept"));
+    });
+    k.addEventListener("dragend", () => { k.classList.remove("sleept"); opruimen(); gesleept = null; });
   });
   document.querySelectorAll(".kolom").forEach(kol => {
-    kol.addEventListener("dragover", e => { if (gesleept) { e.preventDefault(); kol.classList.add("sleep-hier"); } });
-    kol.addEventListener("dragleave", e => { if (!kol.contains(e.relatedTarget)) kol.classList.remove("sleep-hier"); });
+    const lijst = kaartenVan(kol);
+    kol.addEventListener("dragover", e => {
+      if (!gesleept) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      kol.classList.add("sleep-hier");
+      if (kol.dataset.status === "afgerond") { streep.remove(); return; }  // afgerond staat op datum: daar geen eigen volgorde
+      const na = voor(kol, e.clientY);
+      const plek = na || lijst.querySelector(".leeg");
+      if (streep.parentNode !== lijst || streep.nextSibling !== plek) lijst.insertBefore(streep, plek);
+    });
+    kol.addEventListener("dragleave", e => { if (!kol.contains(e.relatedTarget)) { kol.classList.remove("sleep-hier"); if (streep.parentNode === lijst) streep.remove(); } });
     kol.addEventListener("drop", e => {
       e.preventDefault();
-      if (!gesleept || gesleept.closest(".kolom") === kol) return;
-      vorm.action = "/taken/" + gesleept.dataset.id + "/status";
-      veld.value = kol.dataset.status;
-      kol.appendChild(gesleept);
+      if (!gesleept) return;
+      const vooraf = volgorde(kol).join(",");
+      if (kol.dataset.status === "afgerond") lijst.insertBefore(gesleept, lijst.firstChild);
+      else if (streep.parentNode === lijst) lijst.insertBefore(gesleept, streep);
+      opruimen();
+      const ids = volgorde(kol);
+      if (kol === vanKolom) {
+        if (ids.join(",") === vooraf) return;  // op dezelfde plek losgelaten
+        const data = new URLSearchParams({ id: gesleept.dataset.id, status: kol.dataset.status });
+        ids.forEach(i => data.append("ids", i));
+        fetch("/taken/volgorde", { method: "POST", body: data, credentials: "same-origin", headers: { "X-Stil": "1" } })
+          .then(r => { if (!r.ok) location.reload(); }).catch(() => location.reload());
+        return;
+      }
+      vorm.replaceChildren(veld("id", gesleept.dataset.id), veld("status", kol.dataset.status), ...ids.map(i => veld("ids", i)));
       vorm.submit();
     });
   });

@@ -598,6 +598,8 @@ MIGRATIES = [
         aangemaakt timestamptz NOT NULL DEFAULT now())""",
     "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS project_id int REFERENCES crm_projecten(id) ON DELETE SET NULL",
     "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS kans_id int REFERENCES crm_kansen(id) ON DELETE SET NULL",
+    # Eigen volgorde binnen een kolom (slepen op het bord). Leeg: automatisch op prioriteit en datum.
+    "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS volgorde int",
     # Voorstellen van Iris in het gesprek ("maak een kans van die mail van Jan"): pas na Martijns klik aangemaakt.
     """CREATE TABLE IF NOT EXISTS crm_voorstellen (
         id serial PRIMARY KEY,
