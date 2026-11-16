@@ -73,32 +73,16 @@ def _afspraak_gepland(t, tz):
             "eind": dt.datetime.combine(e + dt.timedelta(days=1), dt.time(0), tzinfo=tz), "heledag": True}
 
 
-def afspraak(t, tz=config.TZ, nu=None):
+def afspraak(t, tz=config.TZ):
     """De afspraak die bij een taak hoort, of None als er geen (meer) is. Pure functie.
     Met een tijd: een gewone afspraak (bijvoorbeeld 9.00-12.00 aan het rapport werken). Zonder tijd: een afspraak voor
     de hele dag, of voor alle dagen van start tot en met einde. Alleen een einddatum: een deadline op die dag.
 
-    Is de taak afgerond, dan telt het moment van afronden (t['afgerond'], anders nu):
-    - de afspraak was nog niet begonnen: hij gaat uit de agenda (de tijd komt vrij);
-    - de afspraak liep nog: hij stopt op het moment van afronden (of aan het eind van die dag, bij een hele dag);
-    - de afspraak was al voorbij: hij blijft staan als geschiedenis, met een vinkje."""
-    if not t.get("startdatum") and not t.get("einddatum"):
+    Is de taak afgerond, dan hoort er geen afspraak meer bij: die gaat uit de agenda. Zet je de taak terug (bijvoorbeeld
+    naar Actief), dan komt de afspraak terug."""
+    if t.get("status") == "afgerond" or (not t.get("startdatum") and not t.get("einddatum")):
         return None
-    a = _afspraak_gepland(t, tz)
-    if t.get("status") != "afgerond":
-        return a
-    klaar = t.get("afgerond") or nu or dt.datetime.now(tz)
-    klaar = klaar.astimezone(tz)
-    if klaar <= a["start"]:
-        return None
-    a = dict(a, titel="✓ " + t["titel"])
-    if klaar < a["eind"]:
-        if a["heledag"]:
-            a["eind"] = dt.datetime.combine(klaar.date() + dt.timedelta(days=1), dt.time(0), tzinfo=tz)
-        else:
-            minuut = klaar.replace(second=0, microsecond=0)
-            a["eind"] = max(a["start"] + dt.timedelta(minutes=15), minuut + dt.timedelta(minutes=(5 - minuut.minute % 5) % 5))
-    return a
+    return _afspraak_gepland(t, tz)
 
 
 def _spec(a, doel):
@@ -173,10 +157,10 @@ def agenda_op_achtergrond(tids, weg=None):
 
 @planner.taak("takenagenda", elke=dt.timedelta(hours=6))
 def taak_takenagenda(c):
-    """Afgeronde taken met een afspraak die nog in de toekomst staat: de agenda gelijktrekken (ook voor taken die
-    afgerond werden voordat dit zo werkte)."""
+    """De agenda gelijktrekken met de taken: afspraken van taken die de afgelopen 30 dagen zijn afgerond eruit (ook als dat
+    bij het afronden niet lukte), en open taken zonder afspraak er alsnog in. Oudere afgeronde taken blijven met rust."""
     rijen = c.execute("""SELECT id, agenda_spec FROM takenbord WHERE (status = 'afgerond' AND agenda_extern <> ''
-                           AND coalesce(einddatum, startdatum) >= (afgerond AT TIME ZONE 'Europe/Amsterdam')::date)
+                           AND coalesce(afgerond, bijgewerkt) > now() - interval '30 days')
                          OR (status <> 'afgerond' AND agenda_extern = '' AND agenda_fout = '' AND gearchiveerd IS NULL
                            AND coalesce(einddatum, startdatum) >= current_date)""").fetchall()
     gedaan = 0

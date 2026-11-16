@@ -43,20 +43,14 @@ def test_afspraak_bij_een_taak():
     assert a["eind"] - a["start"] == dt.timedelta(hours=1)
     a = web.afspraak(t(einddatum=D, eindtijd=dt.time(17)))
     assert a["start"].hour == 16 and a["eind"].hour == 17
-    # Afgerond: wat nog moest komen gaat uit de agenda, wat liep stopt, wat voorbij was blijft staan met een vinkje.
+    # Afgerond: de afspraak gaat altijd uit de agenda, ook als hij al bezig of voorbij was.
     af = lambda tijd, **kw: web.afspraak(t(status="afgerond", afgerond=tijd, **kw))  # noqa: E731
     week = dict(startdatum=D, einddatum=D + dt.timedelta(days=4))  # ma 9 t/m vr 13 november
-    assert af(dt.datetime(2026, 11, 6, 15, tzinfo=TZ), **week) is None  # eerder af dan begonnen: weg
-    a = af(dt.datetime(2026, 11, 10, 15, tzinfo=TZ), **week)  # dinsdag af: stopt na dinsdag
-    assert a["titel"] == "✓ Rapport" and a["start"].date() == D and a["eind"] == dt.datetime(2026, 11, 11, tzinfo=TZ) and a["heledag"]
-    a = af(dt.datetime(2026, 11, 20, 9, tzinfo=TZ), **week)  # pas later afgevinkt: blijft heel staan, met vinkje
-    assert a["titel"] == "✓ Rapport" and a["eind"] == dt.datetime(2026, 11, 14, tzinfo=TZ)
-    blok = dict(startdatum=D, starttijd=dt.time(9), eindtijd=dt.time(12))
-    a = af(dt.datetime(2026, 11, 9, 10, 37, tzinfo=TZ), **blok)  # om 10.37 klaar: blok tot 10.40
-    assert a["eind"] == dt.datetime(2026, 11, 9, 10, 40, tzinfo=TZ)
-    assert af(dt.datetime(2026, 11, 9, 8, 0, tzinfo=TZ), **blok) is None
-    assert af(dt.datetime(2026, 11, 3, 8, 0, tzinfo=TZ), einddatum=D) is None  # deadline nog niet bereikt: weg
-    assert af(dt.datetime(2026, 11, 9, 16, 0, tzinfo=TZ), einddatum=D)["titel"] == "✓ Rapport"  # op de dag zelf af: blijft
+    assert af(dt.datetime(2026, 11, 6, 15, tzinfo=TZ), **week) is None  # eerder af dan begonnen
+    assert af(dt.datetime(2026, 11, 10, 15, tzinfo=TZ), **week) is None  # halverwege af
+    assert af(dt.datetime(2026, 11, 20, 9, tzinfo=TZ), **week) is None  # pas later afgevinkt
+    assert af(dt.datetime(2026, 11, 9, 10, 37, tzinfo=TZ), startdatum=D, starttijd=dt.time(9), eindtijd=dt.time(12)) is None
+    assert af(None, einddatum=D) is None
     a = web.afspraak(t(startdatum=D + dt.timedelta(days=2), einddatum=D))  # omgedraaid: toch de goede volgorde
     assert a["start"].date() == D
 
