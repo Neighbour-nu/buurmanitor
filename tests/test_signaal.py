@@ -243,7 +243,7 @@ def test_meelezen_uit_wist(schoon, container):
         cid = c.execute("SELECT id FROM signal_chats").fetchone()["id"]
     r = schoon.post(f"/bram/signal/chat/{cid}", headers=FORM, data={"meelezen": "1", "voorstellen": "1", "domein": "politiek",
                                                                       "eigen_naam": "Fractie PRO"}, follow_redirects=True)
-    assert "leest vanaf nu mee in Fractie PRO" in r.text
+    assert "Bram en Iris lezen vanaf nu mee in Fractie PRO" in r.text
     with _db() as c:
         container["inbox"] = [env(dataMessage=dm("bericht-na-aanzetten", ts=T0 + 5, groupInfo={"groupId": "grp1"}))]
         verwerken.taak_signal(c)
@@ -258,6 +258,62 @@ def test_meelezen_uit_wist(schoon, container):
         assert c.execute("SELECT count(*) AS n FROM signal_berichten").fetchone()["n"] == 0
         assert c.execute("SELECT count(*) AS n FROM signal_voorstellen WHERE status = 'open'").fetchone()["n"] == 0
     assert schoon.post("/bram/signal/chat/999999", headers=FORM, data={}).status_code == 404
+
+
+def test_archief_zoeken_en_taak_uit_bericht(schoon, container, monkeypatch):
+    """Archief: wel bewaren, niet naar Claude. Meelezen uit met archief aan: berichten blijven. Zoeken en een taak uit een bericht."""
+    gevraagd = []
+    monkeypatch.setattr(verwerken.claude, "gesprek", lambda *a, **kw: gevraagd.append(a) or '{"voorstellen": []}')
+    with _db() as c:
+        container["inbox"] = [env(dataMessage=dm("start", groupInfo={"groupId": "grp1"}))]
+        verwerken.taak_signal(c)
+        cid = c.execute("SELECT id FROM signal_chats").fetchone()["id"]
+    r = schoon.post(f"/bram/signal/chat/{cid}", headers=FORM, data={"archief": "1", "voorstellen": "1", "domein": "prive"}, follow_redirects=True)
+    assert "komen vanaf nu in het archief" in r.text
+    nu = dt.datetime.now(config.TZ)
+    with _db() as c:
+        container["inbox"] = [env(dataMessage=dm("Kun jij de zaal reserveren voor de jaarvergadering?\nGraag voor vrijdag.", ts=T0 + 7,
+                                                 groupInfo={"groupId": "grp1"}))]
+        verwerken.taak_signal(c)
+        assert c.execute("SELECT count(*) AS n FROM signal_berichten").fetchone()["n"] == 1
+        assert verwerken.analyseren(c, nu + dt.timedelta(hours=1)) == 0 and not gevraagd  # archief gaat niet naar Claude
+        assert verwerken.samenvatting(c, nu - dt.timedelta(days=3650)) == ""  # en Iris ziet het ook niet
+        bid = c.execute("SELECT id FROM signal_berichten").fetchone()["id"]
+
+    r = schoon.get("/bram/signal/zoek?q=jaarvergadering", headers=KOP)
+    assert "1 berichten gevonden" in r.text and "zaal reserveren" in r.text and f"signal={bid}" in r.text
+    assert "0 berichten gevonden" in schoon.get("/bram/signal/zoek?q=onvindbaarwoord", headers=KOP).text
+    assert "zaal reserveren" in schoon.get(f"/bram/signal/chat/{cid}", headers=KOP).text
+
+    r = schoon.get(f"/taken?nieuw=1&signal={bid}", headers=KOP)
+    assert 'value="Kun jij de zaal reserveren voor de jaarvergadering?"' in r.text and "Uit Signal (Fractie), van Anna" in r.text
+
+    # meelezen aan en weer uit, archief blijft aan: berichten blijven bewaard
+    schoon.post(f"/bram/signal/chat/{cid}", headers=FORM, data={"meelezen": "1", "archief": "1", "domein": "prive"})
+    r = schoon.post(f"/bram/signal/chat/{cid}", headers=FORM, data={"archief": "1", "domein": "prive"}, follow_redirects=True)
+    assert "blijven in het archief" in r.text
+    with _db() as c:
+        assert c.execute("SELECT count(*) AS n FROM signal_berichten").fetchone()["n"] == 1
+    # alles uit: gewist
+    r = schoon.post(f"/bram/signal/chat/{cid}", headers=FORM, data={"domein": "prive"}, follow_redirects=True)
+    assert "De 1 bewaarde berichten zijn gewist" in r.text
+
+
+def test_samenvatting_voor_iris(schoon, container):
+    nu = dt.datetime.now(config.TZ)
+    with _db() as c:
+        container["inbox"] = [env(dataMessage=dm("x", groupInfo={"groupId": "grp1"}))]
+        verwerken.taak_signal(c)
+        cid = c.execute("SELECT id FROM signal_chats").fetchone()["id"]
+        c.execute("UPDATE signal_chats SET meelezen = true, domein = 'politiek' WHERE id = %s", (cid,))
+        for i in range(5):
+            c.execute("INSERT INTO signal_berichten (chat_id, ts, van, van_mij, tekst, tijd) VALUES (%s, %s, 'Anna', false, %s, %s)",
+                      (cid, T0 + 30 + i, f"bericht {i}", nu - dt.timedelta(hours=30 - i * 10)))
+        c.execute("INSERT INTO signal_voorstellen (chat_id, soort, titel) VALUES (%s, 'taak', 'Notulen sturen')", (cid,))
+        t = verwerken.samenvatting(c, nu - dt.timedelta(hours=24), per_chat=2)
+    assert f"Signal-chat #{cid}: Fractie (groep, politiek), 4 berichten, de laatste 2 hieronder" in t
+    assert "bericht 4" in t and "bericht 3" in t and "bericht 2" not in t and "bericht 0" not in t
+    assert "- taak: Notulen sturen" in t
 
 
 def test_voorstel_uitvoeren(schoon, container, monkeypatch):

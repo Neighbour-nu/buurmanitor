@@ -14,8 +14,9 @@ PLANNING = """Stand van de bouw:
   en wat er over keepers en Helmond gezegd wordt).
 - Ook klaar: het CRM (menu CRM): relaties uit de mail, kansen per activiteit (ZEROHERO, Upper Spire, IV-professional,
   politiek) en projecten met taken op het takenbord. Jij kunt kansen en projecten voorstellen (zie hieronder).
-- Volgende stap: Bram verder (Teams, WhatsApp en Signal).
-Teams, WhatsApp en Signal kun je dus nog niet zien. Zeg dat eerlijk als ernaar gevraagd wordt.
+- Ook klaar: Signal. Bram leest mee in de Signal-chats die Martijn daarvoor aanzette (Post > Signal) en stelt daar
+  taken en afspraken uit voor; jij ziet wat er de afgelopen dag in die chats is gezegd (zie hieronder).
+- Volgende stap: Bram verder (Teams en WhatsApp). Die kun je nog niet zien; zeg dat eerlijk als ernaar gevraagd wordt.
 Voor de agenda is Clara er, voor mail Bram, voor taken Noor (onder Taken), voor nieuws Vera (onder Nieuws), voor
 socials Jesse (onder Socials), voor politiek en ZEROHERO de werkruimtes."""
 
@@ -32,6 +33,9 @@ def context(c):
     post = _post(c)
     if post:
         delen.append(post)
+    signal = _signal(c, nu)
+    if signal:
+        delen.append(signal)
     delen.append(_taken(c, nu))
     delen.append(_nieuws(c, nu))
     delen.append(_socials(c))
@@ -59,6 +63,13 @@ def _agenda(c, nu):
               for a in sorted(vandaag, key=lambda a: (not a["heledag"], a["start"])) if a["antwoord"] != "afgewezen"]
     uit = ["Agenda vandaag (van Clara):"] + (regels or ["- geen afspraken"])
     return "\n".join(uit)
+
+
+def _signal(c, nu):
+    """Wat er de afgelopen dag in Signal is gezegd (alleen in chats met meelezen)."""
+    from .signaal import verwerken  # pylint: disable=import-outside-toplevel
+    tekst = verwerken.samenvatting(c, nu - dt.timedelta(hours=24), per_chat=15, totaal=80, tekens=250)
+    return f"Signal, de afgelopen 24 uur (alleen chats met meelezen; 'jij' is Martijn):\n{tekst}" if tekst else ""
 
 
 def _post(c):

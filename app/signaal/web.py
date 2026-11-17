@@ -22,8 +22,7 @@ def _terug(pad, **params):
                             status_code=303)
 
 
-def chatnaam(ch):
-    return ch.get("eigen_naam") or ch.get("naam") or ch.get("sleutel", "").split(":", 1)[-1][:12] or "onbekend"
+chatnaam = verwerken.chatnaam
 
 
 @router.get("/bram/signal", response_class=HTMLResponse)
@@ -37,7 +36,7 @@ def scherm(request: Request, melding: str = "", fout: str = "", alle: int = 0):
             except bron.SignalFout as e:
                 bereikbaar, fout = False, fout or str(e)
         chats = c.execute("""SELECT ch.*, (SELECT count(*) FROM signal_berichten b WHERE b.chat_id = ch.id) AS bewaard
-                             FROM signal_chats ch ORDER BY ch.meelezen DESC, ch.laatst DESC NULLS LAST LIMIT %s""",
+                             FROM signal_chats ch ORDER BY (ch.meelezen OR ch.archief) DESC, ch.laatst DESC NULLS LAST LIMIT %s""",
                           (500 if alle else 60,)).fetchall()
         totaal = c.execute("SELECT count(*) AS n FROM signal_chats").fetchone()["n"]
         voorstellen = c.execute("""SELECT v.*, ch.naam, ch.eigen_naam, ch.sleutel, ch.domein FROM signal_voorstellen v
@@ -106,35 +105,67 @@ async def chat_opslaan(request: Request, cid: int):
         ch = c.execute("SELECT * FROM signal_chats WHERE id = %s", (cid,)).fetchone()
         if not ch:
             raise HTTPException(404)
-        meelezen = bool(f.get("meelezen"))
+        meelezen, archief = bool(f.get("meelezen")), bool(f.get("archief"))
         domein = str(f.get("domein") or ch["domein"])
-        c.execute("""UPDATE signal_chats SET meelezen = %s, voorstellen = %s, domein = %s, eigen_naam = %s,
+        # Meelezen aangezet: Bram begint bij de berichten van nu, niet bij wat er al in het archief stond.
+        c.execute("""UPDATE signal_chats SET meelezen = %s, archief = %s, voorstellen = %s, domein = %s, eigen_naam = %s,
                      geanalyseerd_tot = CASE WHEN %s AND NOT meelezen THEN (SELECT coalesce(max(id), 0) FROM signal_berichten) ELSE geanalyseerd_tot END
                      WHERE id = %s""",
-                  (meelezen, bool(f.get("voorstellen")), domein if domein in dict(DOMEINEN) else "prive", str(f.get("eigen_naam") or "").strip()[:80],
-                   meelezen, cid))
-        gewist = 0
-        if ch["meelezen"] and not meelezen:  # uitgezet: wat er van deze chat bewaard was, gaat weg
-            gewist = c.execute("DELETE FROM signal_berichten WHERE chat_id = %s", (cid,)).rowcount
+                  (meelezen, archief, bool(f.get("voorstellen")), domein if domein in dict(DOMEINEN) else "prive",
+                   str(f.get("eigen_naam") or "").strip()[:80], meelezen, cid))
+        gewist = None
+        if ch["meelezen"] and not meelezen:  # Bram leest niet meer mee: zijn open voorstellen vervallen
             c.execute("DELETE FROM signal_voorstellen WHERE chat_id = %s AND status = 'open'", (cid,))
+        if (ch["meelezen"] or ch["archief"]) and not (meelezen or archief):  # niets meer bewaren: wat er was, gaat weg
+            gewist = c.execute("DELETE FROM signal_berichten WHERE chat_id = %s", (cid,)).rowcount
     naam = chatnaam(ch | {"eigen_naam": str(f.get("eigen_naam") or "").strip()})
+    delen = []
     if meelezen and not ch["meelezen"]:
-        melding = f"Bram leest vanaf nu mee in {naam} (alleen nieuwe berichten)."
-    elif gewist or (ch["meelezen"] and not meelezen):
-        melding = f"Bram leest niet meer mee in {naam}; de {gewist} bewaarde berichten zijn gewist."
-    else:
-        melding = "Opgeslagen."
+        delen.append(f"Bram en Iris lezen vanaf nu mee in {naam} (alleen nieuwe berichten).")
+    elif ch["meelezen"] and not meelezen:
+        delen.append(f"Bram en Iris lezen niet meer mee in {naam}.")
+    if archief and not ch["archief"] and not meelezen:
+        delen.append(f"Nieuwe berichten uit {naam} komen vanaf nu in het archief (alleen op de server).")
+    if gewist is not None:
+        delen.append(f"De {gewist} bewaarde berichten zijn gewist.")
+    elif ch["meelezen"] and not meelezen and archief:
+        delen.append("De bewaarde berichten blijven in het archief.")
+    melding = " ".join(delen) or "Opgeslagen."
     return _terug(f"/bram/signal#chat-{cid}", melding=melding)
 
 
+PER_PAGINA = 300
+
+
 @router.get("/bram/signal/chat/{cid:int}", response_class=HTMLResponse)
-def chat_scherm(request: Request, cid: int):
+def chat_scherm(request: Request, cid: int, voor: int = 0):
+    """Het archief van één chat, nieuwste onderaan; 'voor' bladert terug naar oudere berichten."""
     with db.pool.connection() as c:
         ch = c.execute("SELECT * FROM signal_chats WHERE id = %s", (cid,)).fetchone()
         if not ch:
             raise HTTPException(404)
-        berichten = c.execute("SELECT * FROM signal_berichten WHERE chat_id = %s ORDER BY id DESC LIMIT 300", (cid,)).fetchall()[::-1]
-    return templates.TemplateResponse("bram_signal_chat.html", ctx(request, "bram", ch=ch, berichten=berichten, chatnaam=chatnaam, tz=config.TZ))
+        berichten = c.execute("""SELECT * FROM signal_berichten WHERE chat_id = %s AND (%s = 0 OR id < %s) ORDER BY id DESC LIMIT %s""",
+                              (cid, voor, voor, PER_PAGINA + 1)).fetchall()
+        totaal = c.execute("SELECT count(*) AS n FROM signal_berichten WHERE chat_id = %s", (cid,)).fetchone()["n"]
+    ouder = berichten[PER_PAGINA - 1]["id"] if len(berichten) > PER_PAGINA else 0
+    return templates.TemplateResponse("bram_signal_chat.html", ctx(
+        request, "bram", ch=ch, berichten=berichten[:PER_PAGINA][::-1], ouder=ouder, voor=voor, totaal=totaal, chatnaam=chatnaam, tz=config.TZ))
+
+
+@router.get("/bram/signal/zoek", response_class=HTMLResponse)
+def zoeken(request: Request, q: str = ""):
+    """Zoeken in alles wat er van Signal bewaard is (chats met meelezen of archief)."""
+    q = q.strip()[:200]
+    resultaten = []
+    if q:
+        with db.pool.connection() as c:
+            resultaten = c.execute("""SELECT b.*, ch.naam, ch.eigen_naam, ch.sleutel, ch.soort FROM signal_berichten b
+                                      JOIN signal_chats ch ON ch.id = b.chat_id
+                                      WHERE to_tsvector('dutch', b.tekst) @@ websearch_to_tsquery('dutch', %s)
+                                         OR b.tekst ILIKE %s OR b.van ILIKE %s
+                                      ORDER BY b.tijd DESC LIMIT 200""",
+                                   (q, "%" + q.replace("%", r"\%").replace("_", r"\_") + "%", q)).fetchall()
+    return templates.TemplateResponse("bram_signal_zoek.html", ctx(request, "bram", q=q, resultaten=resultaten, chatnaam=chatnaam, tz=config.TZ))
 
 
 @router.post("/bram/signal/voorstel/{vid:int}")

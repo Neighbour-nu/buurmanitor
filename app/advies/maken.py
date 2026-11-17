@@ -21,6 +21,7 @@ from ..overzichten import onderdelen as od, opmaak
 
 BRONNEN = {
     "post": "Mail (Bram): mails die om actie vragen",
+    "signal": "Signal (Bram): berichten uit de chats waar je meelezen aanzette",
     "agenda": "Agenda (Clara): afspraken van vandaag en morgen",
     "taken": "Taken (Noor): te laat, deadlines, wachten op anderen",
     "crm": "CRM: kansen en projecten die aandacht vragen",
@@ -32,7 +33,7 @@ BRONNEN = {
 }
 LENGTES = {"kort": ("kort", 5), "normaal": ("normaal", 8), "uitgebreid": ("uitgebreid", 12)}
 SOORTEN = {"belangrijk": "⭐", "risico": "⚠️", "deadline": "⏰", "advies": "💡"}
-LINK = re.compile(r"^/(bram/bericht/\d+|taken(\?bewerk=\d+(#formulier)?)?|crm/(kans|project)/\d+|clara(\?[\w=&-]*)?|crm|bram|vera|jesse|"
+LINK = re.compile(r"^/(bram/bericht/\d+|bram/signal(/chat/\d+)?|taken(\?bewerk=\d+(#formulier)?)?|crm/(kans|project)/\d+|clara(\?[\w=&-]*)?|crm|bram|vera|jesse|"
                   r"politiek/[\w/?=&-]*|zerohero/[\w/?=&-]*)$")
 STANDAARD = [
     {"naam": "Ochtendadvies", "tijd": dt.time(7, 0),
@@ -45,6 +46,8 @@ STANDAARD = [
                  "en praktisch; geen nieuw werk verzinnen voor vanavond."},
 ]
 _LAAT = dt.timedelta(hours=4)
+TAKEN_MAX = {"kort": 3, "normaal": 5, "uitgebreid": 6}  # zoveel taken stelt Iris hooguit voor per advies
+SIGNAL_TERUG = dt.timedelta(hours=24)  # zo ver kijkt Iris terug in Signal
 
 
 def dag(d):
@@ -57,7 +60,11 @@ def dag(d):
 def standaard_maken(c):
     """De eerste keer: een ochtend- en een avondadvies, aan, met mail naar het vaste adres (als dat er is)."""
     if c.execute("SELECT 1 FROM iris_adviessoorten").fetchone():
+        if not c.execute("SELECT 1 FROM instellingen WHERE sleutel = 'iris_bron_signal'").fetchone():  # eenmalig: Signal erbij
+            c.execute("""UPDATE iris_adviessoorten SET bronnen = bronnen || '["signal"]'::jsonb WHERE NOT bronnen ? 'signal'""")
+            c.execute("INSERT INTO instellingen (sleutel, waarde) VALUES ('iris_bron_signal', '1') ON CONFLICT DO NOTHING")
         return
+    c.execute("INSERT INTO instellingen (sleutel, waarde) VALUES ('iris_bron_signal', '1') ON CONFLICT DO NOTHING")
     adres = os.environ.get("POLITIEK_MAIL_AAN", "").strip()
     for s in STANDAARD:
         c.execute("""INSERT INTO iris_adviessoorten (naam, tijd, opdracht, bronnen, mail, mail_aan)
@@ -147,15 +154,19 @@ def _post(c, nu, horizon):
     oud = [r for r in c.execute("""SELECT b.* FROM post_berichten b JOIN post_koppelingen k ON k.id = b.koppeling_id
                                    WHERE b.status = 'open' AND k.actief AND b.ontvangen < now() - interval '3 days'
                                    ORDER BY b.ontvangen LIMIT 200""").fetchall() if bram_web.groep(r) == "actie"][:8]
-    signal = c.execute("""SELECT v.soort, v.titel, v.datum, coalesce(nullif(ch.eigen_naam, ''), ch.naam) AS chat FROM signal_voorstellen v
-                          JOIN signal_chats ch ON ch.id = v.chat_id WHERE v.status = 'open' ORDER BY v.datum NULLS LAST LIMIT 10""").fetchall()
-    if signal:
-        tekst += "\nOpen voorstellen uit Signal (nog niet uitgevoerd):\n" + "\n".join(
-            f"- {v['soort']}: {v['titel']}" + (f" op {dag(v['datum'])}" if v["datum"] else "") + f" (chat {v['chat']})" for v in signal)
     if oud:
         tekst += "\nVraagt om actie en staat al meer dan drie dagen open:\n" + "\n".join(
             f"- mail #{r['id']}: {r['van_naam']}: {r['onderwerp']} ({(nu - r['ontvangen']).days} dagen)" for r in oud)
     return tekst
+
+
+def _signal(c, nu, horizon):
+    from ..signaal import verwerken as signaal  # pylint: disable=import-outside-toplevel
+    if not c.execute("SELECT 1 FROM signal_chats WHERE meelezen LIMIT 1").fetchone():
+        return "Signal: nog geen chats waarin Bram meeleest."
+    tekst = signaal.samenvatting(c, nu - SIGNAL_TERUG)
+    return (f"Signal, de afgelopen 24 uur (alleen chats waar Martijn meelezen aanzette; 'jij' is Martijn zelf):\n{tekst}" if tekst
+            else "Signal: geen nieuwe berichten in de afgelopen 24 uur.")
 
 
 def _crm(c, nu, horizon):
@@ -227,7 +238,7 @@ def _meldingen(c, nu, horizon):
 
 
 VERZAMELAARS = {
-    "post": _post, "agenda": _agenda, "taken": _taken, "crm": _crm,
+    "post": _post, "signal": _signal, "agenda": _agenda, "taken": _taken, "crm": _crm,
     "politiek": lambda c, nu, h: _werkruimte(c, nu, h, ("deadlines", "woordvoering", "antwoorden", "vergaderingen"), "Promonitor"),
     "zerohero": lambda c, nu, h: _werkruimte(c, nu, h, ("concepten", "kaartverkoop", "zh_kansen"), "ZEROHERO"),
     "nieuws": _nieuws, "socials": _socials, "meldingen": _meldingen,
@@ -283,8 +294,16 @@ def systeem(c, s):
              '{"samenvatting": "twee of drie zinnen: de kern van vandaag", "punten": [{"soort": "belangrijk|risico|deadline|advies", '
              '"titel": "korte kop", "tekst": "een tot drie zinnen: wat er speelt, waarom het telt, en wat Martijn kan doen", '
              '"bron": "mail|agenda|taken|crm|politiek|zerohero|nieuws|socials|server", "link": "optioneel: /bram/bericht/ID, '
-             '/taken?bewerk=ID, /crm/kans/ID, /crm/project/ID of /clara"}]}\n'
-             f"Hooguit {hooguit} punten, het belangrijkste eerst. Gebruik de ID's uit de gegevens (mail #12, taak #7, kans #3) voor de link."]
+             '/taken?bewerk=ID, /crm/kans/ID, /crm/project/ID, /bram/signal/chat/ID of /clara"}], '
+             '"taken": [{"titel": "concreet, begint met een werkwoord", "toelichting": "een zin: waarom, en uit welke mail, chat of '
+             'afspraak", "prio": "hoog|middel|laag", "deadline": "JJJJ-MM-DD of null", "link": "optioneel, zoals bij de punten"}]}\n'
+             f"Hooguit {hooguit} punten, het belangrijkste eerst. Gebruik de ID's uit de gegevens (mail #12, taak #7, kans #3, "
+             f"Signal-chat #5) voor de link.\n"
+             f"Stel in 'taken' hooguit {TAKEN_MAX.get(s['lengte'], 3)} taken voor die Martijn zelf moet doen en die nog niet op het "
+             "takenbord staan: iets wat hij toezegde of wat iemand hem vroeg (in een mail of Signal-bericht), voorbereiding voor een "
+             "afspraak of vergadering, of een vervolgstap op een kans. Alleen wat echt uit de gegevens volgt. Niet: wat al bij "
+             "'Al op het takenbord' of bij de open voorstellen van Bram staat, of wat Martijn eerder niet nodig vond. Niets te "
+             "doen: een lege lijst."]
     les = lessen_tekst(c)
     if les:
         delen.append(les)
@@ -315,7 +334,31 @@ def schoon_advies(j):
         link = str(p.get("link") or "").strip()
         punten.append({"soort": p.get("soort") if p.get("soort") in SOORTEN else "advies", "titel": t(p.get("titel"), 140),
                        "tekst": t(p.get("tekst"), 700), "bron": t(p.get("bron"), 30), "link": link if LINK.match(link) else ""})
-    return {"samenvatting": t(j.get("samenvatting"), 900), "punten": punten}
+    taken = []
+    for x in (j.get("taken") or [])[:8]:
+        if not isinstance(x, dict) or not str(x.get("titel") or "").strip():
+            continue
+        link = str(x.get("link") or "").strip()
+        try:
+            deadline = dt.date.fromisoformat(str(x.get("deadline"))).isoformat() if x.get("deadline") else ""
+        except ValueError:
+            deadline = ""
+        taken.append({"titel": t(x.get("titel"), 160), "toelichting": t(x.get("toelichting"), 400),
+                      "prio": x.get("prio") if x.get("prio") in ("hoog", "middel", "laag") else "middel", "deadline": deadline,
+                      "link": link if LINK.match(link) else "", "status": "open"})
+    return {"samenvatting": t(j.get("samenvatting"), 900), "punten": punten, "taken": taken}
+
+
+def _bord_en_eerder(c):
+    """Wat al op het takenbord staat en welke voorgestelde taken Martijn eerder niet nodig vond: die stelt Iris niet nog eens voor."""
+    bord = c.execute("""SELECT titel FROM takenbord WHERE status <> 'afgerond' AND gearchiveerd IS NULL
+                        ORDER BY bijgewerkt DESC LIMIT 80""").fetchall()
+    weg = [x["titel"] for a in c.execute("SELECT taken FROM iris_adviezen WHERE tijd > now() - interval '30 days' ORDER BY tijd DESC").fetchall()
+           for x in (a["taken"] or []) if x.get("status") == "weg"][:20]
+    tekst = "# Al op het takenbord (niet nog eens voorstellen)\n" + ("\n".join(f"- {r['titel']}" for r in bord) or "- niets")
+    if weg:
+        tekst += "\n\n# Taken die Martijn eerder niet nodig vond (niet nog eens voorstellen)\n" + "\n".join(f"- {w}" for w in weg)
+    return tekst
 
 
 def maak(c, s, nu=None):
@@ -324,15 +367,16 @@ def maak(c, s, nu=None):
     gegevens = verzamel(c, s, nu)
     vraag = (f"Het is {od.DAGEN_KORT[nu.weekday()]} {opmaak.datum_tekst(nu.date())}, {nu:%H.%M} uur.\n\n"
              + (f"# Achtergrond (van Martijn)\n{achtergrond(c)}\n\n" if achtergrond(c).strip() else "")
-             + f"# Opdracht\n{s['opdracht']}\n\n# Gegevens\n{gegevens}")
+             + f"# Opdracht\n{s['opdracht']}\n\n# Gegevens\n{gegevens}\n\n{_bord_en_eerder(c)}")
     antwoord = claude.gesprek(c, "iris", systeem(c, s), [{"role": "user", "content": vraag}], max_tokens=2500, timeout=180)
     try:
         advies = schoon_advies(_json(antwoord))
     except (ValueError, json.JSONDecodeError):
-        advies = {"samenvatting": opmaak.e(antwoord)[:900] if antwoord else "Iris gaf geen bruikbaar antwoord.", "punten": []}
-    return c.execute("""INSERT INTO iris_adviezen (soort_id, naam, samenvatting, punten, context_tekens)
-                        VALUES (%s, %s, %s, %s, %s) RETURNING *""",
-                     (s["id"], s["naam"], advies["samenvatting"], json.dumps(advies["punten"], ensure_ascii=False), len(vraag))).fetchone()
+        advies = {"samenvatting": opmaak.e(antwoord)[:900] if antwoord else "Iris gaf geen bruikbaar antwoord.", "punten": [], "taken": []}
+    return c.execute("""INSERT INTO iris_adviezen (soort_id, naam, samenvatting, punten, taken, context_tekens)
+                        VALUES (%s, %s, %s, %s, %s, %s) RETURNING *""",
+                     (s["id"], s["naam"], advies["samenvatting"], json.dumps(advies["punten"], ensure_ascii=False),
+                      json.dumps(advies["taken"], ensure_ascii=False), len(vraag))).fetchone()
 
 
 # ---------------------------------------------------------------- versturen
@@ -354,6 +398,13 @@ def mail_html(a, s, basis=None):
         link = f' <a href="{e(basis + p["link"])}" style="color:#1E4E9C">openen</a>' if p.get("link") else ""
         d.append(f'<tr><td style="padding:8px 24px"><b>{SOORTEN.get(p["soort"], "")} {e(p["titel"])}</b>'
                  f'<div style="color:#333">{e(p["tekst"])}{link}</div></td></tr>')
+    if a.get("taken"):
+        d.append(f'<tr><td style="padding:12px 24px 4px"><b style="color:#1E4E9C">Voorgestelde taken</b> '
+                 f'<a href="{e(basis)}/iris/advies/{a["id"]}#taken" style="color:#1E4E9C">op het takenbord zetten</a></td></tr>')
+        for x in a["taken"]:
+            d.append(f'<tr><td style="padding:4px 24px">✓ <b>{e(x["titel"])}</b>'
+                     + (f' <span style="color:#5C5C5C">(deadline {e(dt.date.fromisoformat(x["deadline"]).strftime("%d-%m"))})</span>' if x.get("deadline") else "")
+                     + (f'<div style="color:#333">{e(x["toelichting"])}</div>' if x.get("toelichting") else "") + '</td></tr>')
     d.append(f'<tr><td style="padding:16px 24px 20px;color:#5C5C5C;font-size:12px;border-top:1px solid #E5E5E5">'
              f'Klopt dit, of mist er iets? <a href="{e(basis)}/iris/advies/{a["id"]}" style="color:#5C5C5C">Geef Iris feedback</a>; '
              f'daar leert ze van. Instellen: <a href="{e(basis)}/iris/instellingen" style="color:#5C5C5C">Iris-instellingen</a>.</td></tr>')
@@ -365,6 +416,9 @@ def platte_tekst(a):
     regels = [f"{a['naam']} van Iris", "", a["samenvatting"] or "", ""]
     for p in a["punten"] or []:
         regels += [f"{SOORTEN.get(p['soort'], '')} {p['titel']}", p["tekst"], ""]
+    if a.get("taken"):
+        regels += ["Voorgestelde taken:"] + [f"- {x['titel']}" + (f" (deadline {x['deadline']})" if x.get("deadline") else "") for x in a["taken"]]
+        regels += [f"Op het takenbord zetten: {od.PORTAAL}/iris/advies/{a['id']}#taken", ""]
     regels.append(f"Feedback geven: {od.PORTAAL}/iris/advies/{a['id']}")
     return "\n".join(regels)
 
@@ -385,6 +439,8 @@ def versturen(c, a, s):
             gedaan.append(f"mail mislukt ({str(e)[:80]})")
     if s["telegram"]:
         tekst = f"{a['naam']} van Iris\n\n{a['samenvatting']}\n\n" + "\n".join(f"{SOORTEN.get(p['soort'], '')} {p['titel']}" for p in a["punten"] or [])
+        if a.get("taken"):
+            tekst += "\n\nVoorgestelde taken:\n" + "\n".join(f"- {x['titel']}" for x in a["taken"])
         gedaan.append("Telegram verstuurd" if meldingen.telegram(tekst[:3500]) else "Telegram mislukt of niet ingesteld")
     return gedaan
 
@@ -392,7 +448,8 @@ def versturen(c, a, s):
 def maak_en_verstuur(c, s, nu=None):
     a = maak(c, s, nu)
     gedaan = versturen(c, a, s)
-    uitslag = f"{len(a['punten'] or [])} punten" + (f", {', '.join(gedaan)}" if gedaan else "")
+    uitslag = f"{len(a['punten'] or [])} punten" + (f", {len(a['taken'])} taakvoorstellen" if a.get("taken") else "") \
+        + (f", {', '.join(gedaan)}" if gedaan else "")
     c.execute("UPDATE iris_adviessoorten SET uitslag = %s WHERE id = %s", (uitslag, s["id"]))
     return a, uitslag
 

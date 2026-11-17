@@ -255,7 +255,7 @@ def _paneel(c, g=None):
 
 @router.get("/taken", response_class=HTMLResponse)
 def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, wacht: int = 0,
-         melding: str = "", fout: str = "", praat: int = 0, g: int | None = None, reeks: str = "", project: int = 0):
+         melding: str = "", fout: str = "", praat: int = 0, g: int | None = None, reeks: str = "", project: int = 0, signal: int = 0):
     nieuw_ = nieuw_ or int(request.query_params.get("nieuw") or 0)
     vandaag = dt.datetime.now(config.TZ).date()
     with db.pool.connection() as c:
@@ -283,6 +283,12 @@ def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, w
                     formulier, melding = al, "Van deze mail is al een taak gemaakt; die staat hieronder open."
                 elif b:
                     formulier |= uit_bericht(b)
+            elif signal:  # een taak uit een Signal-bericht (vanuit de chat onder Post > Signal)
+                from ..signaal import verwerken as signaal  # pylint: disable=import-outside-toplevel
+                b = c.execute("SELECT * FROM signal_berichten WHERE id = %s", (signal,)).fetchone()
+                ch = c.execute("SELECT * FROM signal_chats WHERE id = %s", (b["chat_id"],)).fetchone() if b else None
+                if b and ch:
+                    formulier |= signaal.taak_uit_bericht(b, ch)
         mail = c.execute("SELECT id, onderwerp, van_naam FROM post_berichten WHERE id = %s", (formulier["bericht_id"],)).fetchone() \
             if formulier and formulier.get("bericht_id") else None
         paneel = _paneel(c, g) if praat else None

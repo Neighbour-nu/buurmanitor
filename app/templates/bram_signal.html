@@ -74,16 +74,21 @@
 </section>
 
 <section class="kaart" id="chats">
-  <h2>Chats <span class="noot">({{ totaal }})</span></h2>
-  <p class="noot">Hier komen de chats bij zodra er een bericht in langskomt. Van een chat zonder meelezen onthoudt Bram alleen de naam en
-    hoeveel berichten er waren, niet wat erin staat. Zet je meelezen uit, dan wist hij wat hij van die chat bewaarde.
-    Laat gevoelige gesprekken (familie, zorg, vertrouwelijk raadswerk) liever uit.</p>
+  <div class="adlkop"><h2>Chats <span class="noot">({{ totaal }})</span></h2>
+    <form method="get" action="/bram/signal/zoek" class="inline zoekveld"><input type="search" name="q" placeholder="Zoek in het archief" aria-label="Zoek in het Signal-archief">
+      <button class="knop klein" type="submit">Zoeken</button></form></div>
+  <p class="noot">Hier komen de chats bij zodra er een bericht in langskomt. <b>Meelezen</b>: Bram en Iris lezen mee (het gaat naar Claude)
+    en de berichten komen in het archief. <b>Archief</b>: alleen bewaren op je eigen server, zonder dat Claude het ziet. Met geen
+    van beide onthoudt Buurmanitor alleen de naam en hoeveel berichten er waren. Zet je beide uit, dan wordt wat er bewaard was gewist.
+    Signal geeft alleen berichten van na de koppeling; oudere berichten komen niet mee.</p>
   {% for ch in chats %}
-  <form method="post" action="/bram/signal/chat/{{ ch.id }}" class="velden signchat{{ ' aan' if ch.meelezen }}" id="chat-{{ ch.id }}">
-    <span class="chatnaam">{{ '👥' if ch.soort == 'groep' else '👤' }} <b>{% if ch.meelezen %}<a href="/bram/signal/chat/{{ ch.id }}">{{ chatnaam(ch) }}</a>{% else %}{{ chatnaam(ch) }}{% endif %}</b>
-      <span class="noot">{{ ch.aantal }} berichten{% if ch.laatst %}, laatst {{ geleden(ch.laatst) }}{% endif %}{% if ch.meelezen %}, {{ ch.bewaard }} bewaard{% endif %}</span></span>
+  <form method="post" action="/bram/signal/chat/{{ ch.id }}" class="velden signchat{{ ' aan' if ch.meelezen or ch.archief }}" id="chat-{{ ch.id }}"
+    onsubmit="const m = this.meelezen.checked || this.archief.checked; return m || {{ 'true' if not ch.bewaard else 'false' }} || confirm('Meelezen en archief allebei uit? Dan worden de {{ ch.bewaard }} bewaarde berichten van deze chat gewist.')">
+    <span class="chatnaam">{{ '👥' if ch.soort == 'groep' else '👤' }} <b>{% if ch.meelezen or ch.archief or ch.bewaard %}<a href="/bram/signal/chat/{{ ch.id }}">{{ chatnaam(ch) }}</a>{% else %}{{ chatnaam(ch) }}{% endif %}</b>
+      <span class="noot">{{ ch.aantal }} berichten{% if ch.laatst %}, laatst {{ geleden(ch.laatst) }}{% endif %}{% if ch.bewaard %}, {{ ch.bewaard }} bewaard{% endif %}</span></span>
     <label class="vink"><input type="checkbox" name="meelezen" value="1" {{ 'checked' if ch.meelezen }}
-      {% if ch.meelezen %}onchange="if (!this.checked && !confirm('Niet meer meelezen? Wat Bram van deze chat bewaarde, wordt gewist.')) this.checked = true"{% endif %}> meelezen</label>
+      > meelezen</label>
+    <label class="vink"><input type="checkbox" name="archief" value="1" {{ 'checked' if ch.archief }}> archief</label>
     <label class="vink"><input type="checkbox" name="voorstellen" value="1" {{ 'checked' if ch.voorstellen }}> voorstellen</label>
     <label>Domein <select name="domein">{% for k, n in domeinen %}<option value="{{ k }}" {{ 'selected' if ch.domein == k }}>{{ n }}</option>{% endfor %}</select></label>
     <label>Eigen naam <input type="text" name="eigen_naam" value="{{ ch.eigen_naam }}" placeholder="{{ ch.naam }}"></label>

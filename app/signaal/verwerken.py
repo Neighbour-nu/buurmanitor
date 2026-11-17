@@ -2,7 +2,8 @@
 
 - Elke twee minuten haalt de planner nieuwe berichten op bij de Signal-container. Van elke chat onthoudt Buurmanitor
   alleen de naam, hoeveel berichten er langskwamen en wanneer; de tekst bewaart hij alleen bij chats waar 'meelezen'
-  aan staat. Wat je zelf vanaf je telefoon stuurt, komt ook binnen (als 'jij').
+  (Bram en Iris lezen mee) of 'archief' (alleen bewaren op de server, Claude ziet het niet) aan staat. Wat je zelf
+  vanaf je telefoon stuurt, komt ook binnen (als 'jij'). Oude berichten van voor de koppeling geeft Signal niet mee.
 - Bij chats met 'voorstellen' leest Claude (het lichte model) de nieuwe berichten, zodra het gesprek even stil is, en
   stelt taken of afspraken voor. Die voer je pas uit met een klik; in de agenda komt niets vanzelf.
 """
@@ -96,7 +97,7 @@ def groepnamen(c, n, vers=False):
 
 
 def opslaan(c, berichten):
-    """De berichten verwerken: chats bijhouden, tekst alleen bewaren waar meelezen aan staat. Geeft (nieuw, bewaard)."""
+    """De berichten verwerken: chats bijhouden, tekst alleen bewaren waar meelezen of archief aan staat. Geeft (nieuw, bewaard)."""
     nieuw = bewaard = 0
     for b in berichten:
         r = c.execute("""INSERT INTO signal_chats (sleutel, soort, naam, laatst, aantal) VALUES (%s, %s, %s, %s, 1)
@@ -104,7 +105,7 @@ def opslaan(c, berichten):
                            naam = CASE WHEN EXCLUDED.naam <> '' THEN EXCLUDED.naam ELSE signal_chats.naam END
                          RETURNING *, (xmax = 0) AS nieuw""", (b["sleutel"], b["soort"], b["chatnaam"], b["tijd"])).fetchone()
         nieuw += 1 if r["nieuw"] else 0
-        if r["meelezen"]:
+        if r["meelezen"] or r["archief"]:
             bewaard += c.execute("""INSERT INTO signal_berichten (chat_id, ts, van, van_mij, tekst, tijd) VALUES (%s, %s, %s, %s, %s, %s)
                                     ON CONFLICT DO NOTHING""", (r["id"], b["ts"], b["van"], b["van_mij"], b["tekst"], b["tijd"])).rowcount
     return nieuw, bewaard
@@ -129,6 +130,48 @@ def taak_signal(c):
     delen = [f"{len(berichten)} berichten", f"{bewaard} bewaard"] + ([f"{nieuw} nieuwe chats"] if nieuw else []) + \
             ([f"{voorstellen} voorstellen"] if voorstellen else [])
     return ", ".join(delen)
+
+
+def chatnaam(ch):
+    return ch.get("eigen_naam") or ch.get("naam") or ch.get("sleutel", "").split(":", 1)[-1][:12] or "onbekend"
+
+
+def samenvatting(c, sinds, per_chat=25, totaal=150, tekens=300):
+    """Wat er sinds 'sinds' is gezegd in de chats waar meelezen aan staat, plus de open voorstellen van Bram; voor Iris.
+    Leeg als er niets is."""
+    chats = c.execute("""SELECT ch.*, count(b.id) AS nieuw FROM signal_chats ch JOIN signal_berichten b ON b.chat_id = ch.id AND b.tijd >= %s
+                         WHERE ch.meelezen GROUP BY ch.id ORDER BY max(b.tijd) DESC""", (sinds,)).fetchall()
+    open_ = c.execute("""SELECT v.*, ch.naam, ch.eigen_naam, ch.sleutel FROM signal_voorstellen v JOIN signal_chats ch ON ch.id = v.chat_id
+                         WHERE v.status = 'open' ORDER BY v.datum NULLS LAST, v.id LIMIT 15""").fetchall()
+    if not chats and not open_:
+        return ""
+    uit, over = [], totaal
+    for ch in chats:
+        if over <= 0:
+            uit.append(f"(en nog {len(chats) - chats.index(ch)} chats met nieuwe berichten)")
+            break
+        n = min(per_chat, over)
+        rijen = c.execute("SELECT * FROM signal_berichten WHERE chat_id = %s AND tijd >= %s ORDER BY id DESC LIMIT %s",
+                          (ch["id"], sinds, n)).fetchall()[::-1]
+        over -= len(rijen)
+        kop = f"Signal-chat #{ch['id']}: {chatnaam(ch)} ({'groep' if ch['soort'] == 'groep' else 'een op een'}, {ch['domein']})"
+        if ch["nieuw"] > len(rijen):
+            kop += f", {ch['nieuw']} berichten, de laatste {len(rijen)} hieronder"
+        uit.append(kop + ":\n" + "\n".join(
+            f"  [{b['tijd'].astimezone(config.TZ):%d-%m %H.%M}] {b['van']}: {b['tekst'][:tekens]}" for b in rijen))
+    if open_:
+        uit.append("Open voorstellen van Bram uit Signal (nog niet uitgevoerd, niet nog eens voorstellen):\n" + "\n".join(
+            f"- {v['soort']}: {v['titel']}" + (f" op {v['datum']:%d-%m}" if v["datum"] else "") + f" (chat #{v['chat_id']} {chatnaam(v)})"
+            for v in open_))
+    return "\n\n".join(uit)
+
+
+def taak_uit_bericht(b, ch):
+    """Een voorstel voor een taak uit een Signal-bericht (voor het formulier op het takenbord). Pure functie."""
+    eerste = (b["tekst"] or "").strip().splitlines()[0] if (b["tekst"] or "").strip() else "Signal-bericht"
+    titel = eerste if len(eerste) <= 90 else eerste[:87].rsplit(" ", 1)[0] + "..."
+    return {"titel": titel, "prio": "middel",
+            "beschrijving": f"Uit Signal ({chatnaam(ch)}), van {b['van']} op {b['tijd'].astimezone(config.TZ):%d-%m %H.%M}:\n\n{b['tekst']}"}
 
 
 # ---------------------------------------------------------------- voorstellen

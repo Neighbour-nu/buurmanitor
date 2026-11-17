@@ -20,6 +20,30 @@
     </li>
   {% else %}<li class="noot">Geen punten.</li>{% endfor %}
   </ol>
+  {% if a.taken %}
+  <div class="adviestaken" id="taken">
+    <h3>Voorgestelde taken</h3>
+    {% for x in a.taken %}
+    {% if x.status == 'open' %}
+    <form method="post" action="/iris/advies/{{ a.id }}/taak/{{ loop.index0 }}" class="adviestaak">
+      <input type="hidden" name="terug" value="{{ terug }}">
+      <div class="velden">
+        <label class="breed">Taak <input type="text" name="titel" value="{{ x.titel }}"></label>
+        <label>Deadline <input type="date" name="deadline" value="{{ x.deadline }}"></label>
+        <label>Prioriteit <select name="prio">{% for p in ['hoog', 'middel', 'laag'] %}<option value="{{ p }}" {{ 'selected' if p == x.prio }}>{{ p }}</option>{% endfor %}</select></label>
+      </div>
+      {% if x.toelichting or x.link %}<p class="noot">{{ x.toelichting }}{% if x.link %} <a href="{{ x.link }}">openen</a>{% endif %}</p>{% endif %}
+      <div class="knoppenrij"><button class="knop vol klein" name="actie" value="taak">Maak taak</button>
+        <button class="knop klein" name="actie" value="weg">Niet nodig</button></div>
+    </form>
+    {% elif x.status == 'gemaakt' %}
+    <p class="adviestaak klaar">✓ <a href="/taken?bewerk={{ x.taak_id }}#formulier">{{ x.titel }}</a> <span class="noot">staat op het takenbord</span></p>
+    {% else %}
+    <p class="adviestaak weg noot"><s>{{ x.titel }}</s> niet nodig</p>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
   {% set g = fb.get(None) %}
   <form method="post" action="/iris/advies/{{ a.id }}/feedback" class="feedback geheel">
     <input type="hidden" name="punt" value=""><input type="hidden" name="terug" value="{{ terug }}">

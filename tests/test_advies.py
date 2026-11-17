@@ -228,3 +228,68 @@ def test_bron_met_fout(klant, monkeypatch):
         m = c.execute("SELECT * FROM meldingen WHERE bron = 'iris' ORDER BY id DESC LIMIT 1").fetchone()
     assert "Agenda (Clara): niet beschikbaar door een fout in Buurmanitor" in tekst and "Taken:" in tekst
     assert "agenda (clara) niet lezen" in m["titel"] and "RuntimeError: stuk" in m["tekst"]
+
+
+def test_taakvoorstellen_en_signal(klant, nep, monkeypatch):
+    """Iris stelt taken voor (ook uit Signal); Martijn zet ze met een klik op het takenbord of vindt ze niet nodig."""
+    gevraagd, verstuurd = nep
+    antwoord = ANTWOORD | {"taken": [
+        {"titel": "Zaal reserveren voor de jaarvergadering", "toelichting": "Anna vroeg het in Signal-chat.", "prio": "hoog",
+         "deadline": "2026-11-20", "link": "/bram/signal/chat/1"},
+        {"titel": "Begroting — amendement schrijven", "prio": "dringend", "deadline": "morgen", "link": "https://kwaad.example"},
+        {"titel": "   "}, "onzin"]}
+    monkeypatch.setattr(maken.claude, "gesprek", lambda c, p, systeem, berichten, **kw: gevraagd.append(
+        {"systeem": systeem, "vraag": berichten[-1]["content"]}) or json.dumps(antwoord))
+    from app.taken import web as taken_web  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(taken_web, "agenda_op_achtergrond", lambda tids, weg=None: None)
+    nu = dt.datetime.now(config.TZ)
+    with _db() as c:
+        maken.standaard_maken(c)
+        # bestaande adviezen krijgen Signal er eenmalig bij
+        c.execute("""UPDATE iris_adviessoorten SET bronnen = '["agenda", "taken"]', lengte = 'kort'""")
+        c.execute("DELETE FROM instellingen WHERE sleutel = 'iris_bron_signal'")
+        maken.standaard_maken(c)
+        maken.standaard_maken(c)
+        s = c.execute("SELECT * FROM iris_adviessoorten ORDER BY tijd LIMIT 1").fetchone()
+        assert s["bronnen"] == ["agenda", "taken", "signal"]
+        c.execute("DELETE FROM takenbord")
+        c.execute("INSERT INTO takenbord (titel, status, prio) VALUES ('Stukken lezen', 'nieuw', 'middel')")
+        c.execute("DELETE FROM signal_chats")
+        cid = c.execute("""INSERT INTO signal_chats (sleutel, soort, naam, meelezen, domein) VALUES ('groep:x', 'groep', 'Vereniging', true, 'prive')
+                           RETURNING id""").fetchone()["id"]
+        c.execute("INSERT INTO signal_berichten (chat_id, ts, van, van_mij, tekst, tijd) VALUES (%s, 1, 'Anna', false, %s, %s)",
+                  (cid, "Martijn, reserveer jij de zaal?", nu - dt.timedelta(hours=2)))
+        c.execute("INSERT INTO signal_berichten (chat_id, ts, van, van_mij, tekst, tijd) VALUES (%s, 2, 'Anna', false, 'oud nieuws', %s)",
+                  (cid, nu - dt.timedelta(days=3)))
+        assert "signal" in s["bronnen"]
+        gegevens = maken.verzamel(c, s, nu)
+        assert f"Signal-chat #{cid}: Vereniging" in gegevens and "Martijn, reserveer jij de zaal?" in gegevens and "oud nieuws" not in gegevens
+        a, uitslag = maken.maak_en_verstuur(c, s, nu)
+    assert uitslag.startswith("3 punten, 2 taakvoorstellen")
+    v = gevraagd[-1]
+    assert "# Al op het takenbord" in v["vraag"] and "- Stukken lezen" in v["vraag"] and "Stel in 'taken' hooguit 3 taken" in v["systeem"]
+    t = a["taken"]
+    assert [x["titel"] for x in t] == ["Zaal reserveren voor de jaarvergadering", "Begroting, amendement schrijven"]
+    assert t[0]["deadline"] == "2026-11-20" and t[0]["link"] == "/bram/signal/chat/1" and t[0]["status"] == "open"
+    assert t[1]["prio"] == "middel" and t[1]["deadline"] == "" and t[1]["link"] == ""
+    assert "Voorgestelde taken" in verstuurd[-1]["html"] and "Zaal reserveren" in verstuurd[-1]["tekst"]
+
+    pagina = klant.get(f"/iris/advies/{a['id']}", headers=KOP).text
+    assert 'id="taken"' in pagina and 'value="Zaal reserveren voor de jaarvergadering"' in pagina
+    r = klant.post(f"/iris/advies/{a['id']}/taak/0", headers=FORM, follow_redirects=True,
+                   data={"actie": "taak", "titel": "Zaal reserveren (jaarvergadering)", "deadline": "2026-11-21", "prio": "hoog"})
+    assert "staat op het takenbord (deadline 21-11)" in r.text
+    r = klant.post(f"/iris/advies/{a['id']}/taak/1", headers=FORM, follow_redirects=True, data={"actie": "weg"})
+    assert "niet nog eens voor" in r.text
+    r = klant.post(f"/iris/advies/{a['id']}/taak/0", headers=FORM, follow_redirects=True, data={"actie": "taak"})
+    assert "al afgehandeld" in r.text  # niet dubbel
+    assert klant.post(f"/iris/advies/{a['id']}/taak/9", headers=FORM, data={"actie": "taak"}).status_code == 404
+    with _db() as c:
+        taak = c.execute("SELECT * FROM takenbord WHERE titel = 'Zaal reserveren (jaarvergadering)'").fetchone()
+        assert taak and taak["prio"] == "hoog" and taak["einddatum"] == dt.date(2026, 11, 21) and "Voorgesteld door Iris" in taak["beschrijving"]
+        assert c.execute("SELECT count(*) AS n FROM takenbord").fetchone()["n"] == 2
+        maken.maak(c, s, nu)  # wat niet nodig was, krijgt Iris mee
+        c.execute("DELETE FROM signal_chats")
+    assert "# Taken die Martijn eerder niet nodig vond" in gevraagd[-1]["vraag"] and "- Begroting, amendement schrijven" in gevraagd[-1]["vraag"]
+    pagina = klant.get(f"/iris/advies/{a['id']}", headers=KOP).text
+    assert f"/taken?bewerk={taak['id']}" in pagina and "<s>Begroting, amendement schrijven</s>" in pagina

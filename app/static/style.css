@@ -888,3 +888,11 @@ form.les { align-items: center; border-bottom: 1px solid var(--lijn); padding-bo
 .signbericht .tekst { white-space: pre-wrap; }
 .signbericht.mij { align-self: flex-end; background: #E3ECFA; }
 @media (max-width: 760px) { .signbericht { max-width: 92%; } }
+
+/* Taken die Iris voorstelt */
+.adviestaken { margin: 12px 0; padding-top: 8px; border-top: 1px solid var(--lijn); }
+.adviestaken h3 { margin: 0 0 6px; }
+.adviestaak { border-bottom: 1px solid var(--lijn); padding: 6px 0; margin: 0; }
+.adviestaak:last-child { border-bottom: 0; }
+.zoekveld { display: flex; gap: 6px; align-items: center; margin: 0 0 12px; }
+.zoekveld input[type=search] { flex: 1 1 200px; min-width: 0; max-width: 340px; }

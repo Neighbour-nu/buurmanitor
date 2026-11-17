@@ -128,6 +128,54 @@ async def feedback(request: Request, aid: int):
     return _terug(terug, melding=melding)
 
 
+@router.post("/iris/advies/{aid:int}/taak/{i:int}")
+async def taakvoorstel(request: Request, aid: int, i: int):
+    """Een taak die Iris voorstelde: op het takenbord zetten (eventueel aangepast) of 'niet nodig'. Dat laatste onthoudt
+    Iris: ze stelt die taak niet nog eens voor."""
+    controleer_herkomst(request)
+    f = await request.form()
+    terug = _veilig_terug(f.get("terug"), f"/iris/advies/{aid}")
+    actie = str(f.get("actie") or "")
+
+    def doe():
+        from ..taken import web as taken_web  # pylint: disable=import-outside-toplevel
+        with db.pool.connection() as c:
+            a = c.execute("SELECT * FROM iris_adviezen WHERE id = %s FOR UPDATE", (aid,)).fetchone()
+            taken = list(a["taken"] or []) if a else []
+            if not a or i >= len(taken):
+                raise HTTPException(404)
+            x = taken[i]
+            if x.get("status") != "open":
+                return "", ""
+            if actie == "weg":
+                x["status"] = "weg"
+                melding, tid = "Genoteerd: Iris stelt deze taak niet nog eens voor.", None
+            elif actie == "taak":
+                titel = str(f.get("titel") or x["titel"]).strip()[:160] or x["titel"]
+                ruw = str((f.get("deadline") if "deadline" in f else x.get("deadline")) or "")
+                try:
+                    deadline = dt.date.fromisoformat(ruw) if ruw else None
+                except ValueError:
+                    deadline = None
+                prio = f.get("prio") if f.get("prio") in ("hoog", "middel", "laag") else x.get("prio") or "middel"
+                uitleg = (x.get("toelichting") or "") + f"\n\nVoorgesteld door Iris in het {a['naam'].lower()} van " \
+                    f"{a['tijd'].astimezone(config.TZ):%d-%m}." + (f"\nZie {x['link']}" if x.get("link") else "")
+                tid = taken_web.nieuw(c, {"titel": titel, "beschrijving": uitleg.strip(), "prio": prio, "status": "nieuw", "wacht_op": "",
+                                          "startdatum": None, "starttijd": None, "einddatum": deadline, "eindtijd": None, "doel": "",
+                                          "project_id": None})
+                x |= {"status": "gemaakt", "taak_id": tid, "titel": titel}
+                melding = f"'{titel}' staat op het takenbord" + (f" (deadline {deadline:%d-%m})" if deadline else "") + "."
+            else:
+                raise HTTPException(400)
+            c.execute("UPDATE iris_adviezen SET taken = %s WHERE id = %s", (json.dumps(taken, ensure_ascii=False), aid))
+            return melding, tid
+    melding, tid = await asyncio.to_thread(doe)
+    if tid:
+        from ..taken import web as taken_web  # pylint: disable=import-outside-toplevel
+        taken_web.agenda_op_achtergrond([tid])
+    return _terug(terug.split("#")[0] + "#taken", melding=melding or "Dit voorstel was al afgehandeld.")
+
+
 # ---------------------------------------------------------------- instellingen
 
 @router.get("/iris/instellingen", response_class=HTMLResponse)

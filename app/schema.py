@@ -688,6 +688,8 @@ MIGRATIES = [
         oordeel smallint,
         opmerking text NOT NULL DEFAULT '')""",
     "CREATE INDEX IF NOT EXISTS iris_adviezen_tijd ON iris_adviezen (tijd DESC)",
+    # Taken die Iris in een advies voorstelt: [{titel, toelichting, prio, deadline, link, status open|gemaakt|weg, taak_id}]
+    "ALTER TABLE iris_adviezen ADD COLUMN IF NOT EXISTS taken jsonb NOT NULL DEFAULT '[]'",
     """CREATE TABLE IF NOT EXISTS iris_feedback (
         id serial PRIMARY KEY,
         advies_id int NOT NULL REFERENCES iris_adviezen(id) ON DELETE CASCADE,
@@ -729,6 +731,9 @@ MIGRATIES = [
         tijd timestamptz NOT NULL,
         UNIQUE (chat_id, ts, van))""",
     "CREATE INDEX IF NOT EXISTS signal_berichten_chat ON signal_berichten (chat_id, id)",
+    # Archief: berichten bewaren op de server zonder dat Bram of Iris (Claude) ze lezen.
+    "ALTER TABLE signal_chats ADD COLUMN IF NOT EXISTS archief boolean NOT NULL DEFAULT false",
+    "CREATE INDEX IF NOT EXISTS signal_berichten_zoek ON signal_berichten USING gin (to_tsvector('dutch', tekst))",
     """CREATE TABLE IF NOT EXISTS signal_voorstellen (
         id serial PRIMARY KEY,
         chat_id int NOT NULL REFERENCES signal_chats(id) ON DELETE CASCADE,

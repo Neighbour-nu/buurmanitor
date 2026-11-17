@@ -59,7 +59,6 @@ OPRUIMEN = [
     ("verbruik", "DELETE FROM claude_gebruik WHERE tijd < now() - interval '400 days'"),
     ("verzendlog", "DELETE FROM overzicht_verzonden WHERE tijd < now() - interval '180 days'"),
     ("adviezen", "DELETE FROM iris_adviezen WHERE tijd < now() - interval '400 days'"),
-    ("signal", "DELETE FROM signal_berichten WHERE tijd < now() - interval '180 days'"),
     ("voorstellen", "DELETE FROM signal_voorstellen WHERE status <> 'open' AND aangemaakt < now() - interval '90 days'"),
 ]
 

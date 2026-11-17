@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block titel %}Zoeken · Signal · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>Zoeken in Signal</h1>
+<p class="motto"><a href="/bram/signal">Naar Signal</a> · alleen wat bewaard is (chats met meelezen of archief)</p>
+<form method="get" action="/bram/signal/zoek" class="zoekveld"><input type="search" name="q" value="{{ q }}" placeholder="Woord, naam of zin" aria-label="Zoekterm" autofocus>
+  <button class="knop klein vol" type="submit">Zoeken</button></form>
+{% if q %}
+<section class="kaart signberichten">
+  <p class="noot">{{ resultaten | length }}{{ '+' if resultaten | length == 200 }} berichten gevonden voor "{{ q }}".</p>
+  {% for b in resultaten %}
+  <div class="signbericht{{ ' mij' if b.van_mij }}">
+    <div class="noot"><a href="/bram/signal/chat/{{ b.chat_id }}?voor={{ b.id + 6 }}#b{{ b.id }}">{{ '👥' if b.soort == 'groep' else '👤' }} {{ chatnaam(b) }}</a> ·
+      {{ b.van }} · {{ b.tijd.astimezone(tz).strftime('%d-%m-%Y %H.%M') }} · <a href="/taken?nieuw=1&amp;signal={{ b.id }}#formulier">✓ taak maken</a></div>
+    <div class="tekst">{{ b.tekst }}</div>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}
