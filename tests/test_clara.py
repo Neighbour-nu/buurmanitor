@@ -290,7 +290,7 @@ def test_google_koppelen_ophalen_en_inplannen(klant, monkeypatch):
         assert c.execute("SELECT count(*) AS n FROM agenda_items WHERE koppeling_id = %s", (k["id"],)).fetchone()["n"] == 3
         conflict = c.execute("SELECT * FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Potentiële overlap%%'").fetchall()
         uitn = c.execute("SELECT * FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Uitnodiging%%'").fetchall()
-        assert len(conflict) == 1 and len(uitn) == 1
+        assert len(conflict) == 0 and len(uitn) == 1  # over overlap geen melding meer: dat regelt Martijn zelf
         item_id = c.execute("SELECT id FROM agenda_items WHERE extern_id = 'a3'").fetchone()["id"]
 
     pagina = klant.get("/clara", headers=KOP).text
@@ -300,7 +300,7 @@ def test_google_koppelen_ophalen_en_inplannen(klant, monkeypatch):
     assert overlap.count('href="/clara?week=0#a') == 2
     assert all(f'id="a{i}"' in pagina for i in __import__("re").findall(r'#a(\d+)"', overlap))
     vandaag = klant.get("/", headers=KOP).text
-    assert "potentiële overlap" in vandaag and 'href="/clara#overlap"' in vandaag
+    assert "potentiële overlap" not in vandaag and 'href="/clara#overlap"' not in vandaag
 
     # Uitnodiging beantwoorden (na een klik)
     r = klant.post(f"/clara/uitnodiging/{item_id}", headers=FORM, data={"antwoord": "geaccepteerd"}, follow_redirects=False)
@@ -819,9 +819,15 @@ def test_agenda_van_sanne_kleur_niet_bezet_en_inplannen(klant, monkeypatch):
     klant.post(f"/clara/koppeling/{kid}", headers=FORM, data={
         "naam": k["naam"], "domein": "prive", "actief": "1", "schrijfagenda": "primary",
         "aan_primary": "1", "aan_sanne": "1", "bezet_primary": "1", "bezet_sanne": "1"})
-    assert "Zwemles" in klant.get("/clara", headers=KOP).text
+    pagina = klant.get("/clara", headers=KOP).text
+    assert "Zwemles" in pagina and ">overlap<" in pagina  # Clara laat de overlap nog wel zien op haar eigen scherm
     with db.pool.connection() as c:
-        assert c.execute("SELECT count(*) AS n FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Potentiële overlap%%'").fetchone()["n"] == 1
+        assert c.execute("SELECT count(*) AS n FROM meldingen WHERE bron = 'clara' AND titel LIKE 'Potentiële overlap%%'").fetchone()["n"] == 0
+        # oude overlapmeldingen van voor deze versie gaan bij de volgende ronde naar gelezen
+        c.execute("INSERT INTO meldingen (niveau, bron, titel, sleutel) VALUES ('belangrijk', 'clara', 'Potentiële overlap op 01-01', 'clara-conflict-oud')")
+        from app.clara import sync as clara_sync  # pylint: disable=import-outside-toplevel
+        clara_sync.melden(c)
+        assert c.execute("SELECT gelezen FROM meldingen WHERE sleutel = 'clara-conflict-oud'").fetchone()["gelezen"]
         c.execute("DELETE FROM meldingen WHERE bron = 'clara'")
 
     # Sanne niet meer 'bezet voor mij': geen dubbele boeking, wel zichtbaar in haar eigen kleur.

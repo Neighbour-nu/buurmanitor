@@ -41,6 +41,8 @@ services:
       POLITIEK_SMTP_PASSWORD: ${POLITIEK_SMTP_PASSWORD:-}
       POLITIEK_MAIL_AAN: ${POLITIEK_MAIL_AAN:-}
       POLITIEK_MAIL_VAN: ${POLITIEK_MAIL_VAN:-}
+      # Signal (Bram leest mee in de chats die jij kiest): de signal-container hieronder.
+      SIGNAL_URL: ${SIGNAL_URL:-http://signal:8080}
       TZ: Europe/Amsterdam
     # Werkruimte ZEROHERO (de Doellijn, fase 2): alle ZEROHERO_-instellingen staan in zerohero.env (alleen leesbaar voor
     # jou). Leeg = nog niet overgestapt. deploy/overstap-zerohero.sh vult het bestand met de instellingen van de oude app.
@@ -57,8 +59,24 @@ services:
           - buurmanitor-app
           # Na de overstap van de Doellijn ook "cockpit-app", zodat n8n zonder aanpassing de portal bereikt.
           - ${ZEROHERO_ALIAS:-buurmanitor-reserve}
+      signal:
+
+  # Signal als gekoppeld apparaat (signal-cli). Geen poort naar buiten: alleen de app praat ermee, via het netwerk signal.
+  # De sleutels van de koppeling staan in ~/buurmanitor/signal (rechten 700). Ontkoppelen doe je in Signal op je telefoon.
+  signal:
+    image: bbernhard/signal-cli-rest-api:latest
+    restart: unless-stopped
+    environment:
+      MODE: native
+      TZ: Europe/Amsterdam
+    volumes:
+      - ${HOME}/buurmanitor/signal:/home/.local/share/signal-cli
+    networks:
+      - signal
 
 networks:
+  signal: {}
+
   cockpit:
     external: true
     name: ${COCKPIT_NETWERK}

@@ -9,5 +9,7 @@ if ! cmp -s ~/buurmanitor/app/deploy/docker-compose.yml ~/buurmanitor/docker-com
 fi
 # zerohero.env moet bestaan (docker-compose leest het); leeg tot de overstap van de Doellijn.
 touch ~/buurmanitor/zerohero.env && chmod 600 ~/buurmanitor/zerohero.env
-cd ~/buurmanitor && docker compose up -d --build
+# Signal: map voor de koppelsleutels (alleen voor jou leesbaar) en de nieuwste signal-cli.
+mkdir -p ~/buurmanitor/signal && chmod 700 ~/buurmanitor/signal
+cd ~/buurmanitor && (docker compose pull -q signal || true) && docker compose up -d --build
 sleep 5 && docker compose ps && docker compose logs --tail=5 app

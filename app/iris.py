@@ -50,18 +50,14 @@ def context(c):
 
 def _agenda(c, nu):
     """Wat Clara vandaag ziet, kort, zodat Iris de dagstart kan maken."""
-    from .clara import analyse, sync  # pylint: disable=import-outside-toplevel
+    from .clara import sync  # pylint: disable=import-outside-toplevel
     if not sync.koppelingen(c, alleen_actief=True):
         return "Agenda: nog geen agenda's gekoppeld bij Clara."
     begin = dt.datetime.combine(nu.date(), dt.time(0), tzinfo=config.TZ)
     vandaag = sync.afspraken(c, begin, begin + dt.timedelta(days=1))
     regels = [f"- {'hele dag' if a['heledag'] else a['start'].astimezone(config.TZ).strftime('%H.%M')} {a['titel']} ({a['koppeling']})"
               for a in sorted(vandaag, key=lambda a: (not a["heledag"], a["start"])) if a["antwoord"] != "afgewezen"]
-    week = sync.afspraken(c, nu, nu + dt.timedelta(days=7))
-    conf = analyse.conflicten(week)
     uit = ["Agenda vandaag (van Clara):"] + (regels or ["- geen afspraken"])
-    if conf:
-        uit.append(f"Potentiële overlap komende week: {len(conf)} keer (details bij Clara).")
     return "\n".join(uit)
 
 

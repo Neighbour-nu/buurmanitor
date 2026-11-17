@@ -876,3 +876,15 @@ form.ontvanger.uitgezet { opacity: .6; }
 .advsoort label.blok { display: block; margin: 8px 0; } .advsoort label.blok textarea { width: 100%; }
 form.les { align-items: center; border-bottom: 1px solid var(--lijn); padding-bottom: 6px; } form.les.uitgezet { opacity: .6; }
 @media (max-width: 760px) { .adviespunt { grid-template-columns: 1fr; } .adviespunt .feedback { justify-content: flex-start; max-width: none; } }
+
+/* Signal */
+.qr { image-rendering: pixelated; border: 1px solid var(--lijn); border-radius: 4px; background: #fff; }
+.signvoorstel { border-bottom: 1px solid var(--lijn); padding: 8px 0; }
+.signchat { align-items: center; border-bottom: 1px solid var(--lijn); padding: 6px 0; }
+.signchat.aan { background: var(--achtergrond, #F4F6FA); }
+.signchat .chatnaam { flex: 1 1 260px; min-width: 0; }
+.signberichten { display: flex; flex-direction: column; gap: 8px; }
+.signbericht { max-width: 75%; padding: 6px 10px; border-radius: 8px; background: var(--achtergrond, #F4F6FA); overflow-wrap: anywhere; }
+.signbericht .tekst { white-space: pre-wrap; }
+.signbericht.mij { align-self: flex-end; background: #E3ECFA; }
+@media (max-width: 760px) { .signbericht { max-width: 92%; } }

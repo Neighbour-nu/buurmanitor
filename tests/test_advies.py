@@ -115,7 +115,7 @@ def test_maken_versturen_en_planner(klant, nep):
         gegevens = maken.verzamel(c, soorten[0])
         c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (k,))
         assert "niet beschikbaar" not in gegevens and "- 19.00-23.00 Commissieavond" in gegevens and "Agenda morgen" in gegevens
-        assert "Fractievoorzittersoverleg en Commissieavond" in gegevens  # de overlap
+        assert "Overlappende" not in gegevens and "overlap" not in gegevens.lower()  # overlap regelt Martijn zelf
         assert f"taak #{laat}: Rapport schrijven" in gegevens and "2 dagen te laat" in gegevens and "Begroting lezen" in gegevens
         assert "wacht op de drukker" in gegevens and "Promonitor" not in gegevens  # Promonitor draait hier niet: stil weggelaten
         a, uitslag = maken.maak_en_verstuur(c, soorten[0])

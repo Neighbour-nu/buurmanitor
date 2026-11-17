@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block titel %}{{ chatnaam(ch) }} · Signal · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>{{ '👥' if ch.soort == 'groep' else '👤' }} {{ chatnaam(ch) }}</h1>
+<p class="motto"><a href="/bram/signal">Naar Signal</a>{% if not ch.meelezen %} · Bram leest hier niet mee{% endif %}</p>
+<section class="kaart signberichten">
+  {% for b in berichten %}
+  <div class="signbericht{{ ' mij' if b.van_mij }}">
+    <div class="noot">{{ b.van }} · {{ b.tijd.astimezone(tz).strftime('%d-%m %H.%M') }}</div>
+    <div class="tekst">{{ b.tekst }}</div>
+  </div>
+  {% else %}<p class="noot">Nog geen berichten bewaard{% if not ch.meelezen %}; zet meelezen aan om ze vanaf nu te bewaren{% endif %}.</p>{% endfor %}
+</section>
+{% endblock %}

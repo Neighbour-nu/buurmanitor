@@ -19,6 +19,7 @@ from .clara import sync as clara_sync, web as clara_web  # noqa: F401  (sync reg
 from .crm import relaties as crm_relaties, web as crm_web  # noqa: F401  (relaties registreert de planner-taak)
 from .overzichten import verzenden as overzichten_verzenden, web as overzichten_web  # noqa: F401  (verzenden registreert de planner-taak)
 from .advies import maken as advies_maken, web as advies_web  # noqa: F401  (maken registreert de planner-taak)
+from .signaal import verwerken as signaal_verwerken, web as signaal_web  # noqa: F401  (verwerken registreert de planner-taak)
 from .taken import noor, web as taken_web
 from .jesse import luisteren as jesse_luisteren, web as jesse_web  # noqa: F401  (luisteren registreert de planner-taak)
 from .vera import nieuws as vera_nieuws, web as vera_web  # noqa: F401  (nieuws registreert de planner-taak)
@@ -58,6 +59,8 @@ OPRUIMEN = [
     ("verbruik", "DELETE FROM claude_gebruik WHERE tijd < now() - interval '400 days'"),
     ("verzendlog", "DELETE FROM overzicht_verzonden WHERE tijd < now() - interval '180 days'"),
     ("adviezen", "DELETE FROM iris_adviezen WHERE tijd < now() - interval '400 days'"),
+    ("signal", "DELETE FROM signal_berichten WHERE tijd < now() - interval '180 days'"),
+    ("voorstellen", "DELETE FROM signal_voorstellen WHERE status <> 'open' AND aangemaakt < now() - interval '90 days'"),
 ]
 
 
@@ -102,6 +105,7 @@ app.include_router(jesse_web.router)
 app.include_router(crm_web.router)
 app.include_router(overzichten_web.router)
 app.include_router(advies_web.router)
+app.include_router(signaal_web.router)
 if politiek:
     app.mount("/politiek", prefix.Voorvoegsel(politiek.app, "/politiek"))
 if zerohero:

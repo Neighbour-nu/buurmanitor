@@ -214,15 +214,10 @@ def verborgen_aantal(c, van, tot):
 
 
 def melden(c, nu=None):
-    """Meldingen voor potentiële overlap (komende week) en nieuwe uitnodigingen."""
+    """Meldingen voor nieuwe uitnodigingen. Over overlap komt geen melding meer: die regelt Martijn zelf in zijn agenda
+    (Clara laat de overlap alleen nog zien op haar eigen scherm)."""
     nu = nu or dt.datetime.now(config.TZ)
-    lijst = afspraken(c, nu, nu + dt.timedelta(days=7))
-    for x in analyse.conflicten(lijst):
-        a, b = x["a"], x["b"]
-        ids = sorted([f"{a['koppeling_id']}:{a['extern_id']}", f"{b['koppeling_id']}:{b['extern_id']}"])
-        meldingen.melden(c, "belangrijk", "clara", f"Potentiële overlap op {x['van'].astimezone(config.TZ):%d-%m om %H.%M}",
-                         f"{a['titel']} ({a['koppeling']}) en {b['titel']} ({b['koppeling']})", "/clara#overlap",
-                         sleutel="clara-conflict-" + "-".join(ids)[:200] + f"-{x['van']:%Y%m%d%H%M}")
+    c.execute("UPDATE meldingen SET gelezen = true WHERE NOT gelezen AND sleutel LIKE 'clara-conflict-%%'")  # oude overlapmeldingen
     gemeld = instellingen_lijst(c, "clara_uitnodigingen")
     nieuw = [u for u in analyse.uitnodigingen(afspraken(c, nu, venster(nu)[1]), nu)
              if f"{u['koppeling_id']}:{u['extern_id']}" not in gemeld]

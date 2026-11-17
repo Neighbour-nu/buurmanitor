@@ -29,7 +29,6 @@
           <div class="open"><span class="noot">{% if not a.heledag %}{{ a.start.astimezone(agenda.tz).strftime('%H.%M') }}–{{ a.eind.astimezone(agenda.tz).strftime('%H.%M') }} · {% endif %}{{ a.agenda_naam or a.koppeling }}{% if a.niet_voor_mij %} (niet bezet voor jou){% endif %}{% if a.locatie %} · {{ a.locatie }}{% endif %}{% if a.online and not a.locatie %} · online{% endif %}{% if a.link %} · <a href="{{ a.link }}" target="_blank" rel="noopener">openen</a>{% endif %}</span></div>
         </details>
       {% else %}<p class="noot">Geen afspraken vandaag.</p>{% endfor %}
-      {% if agenda.conflicten %}<p class="item belangrijk"><a href="/clara#overlap">{{ agenda.conflicten | length }} keer potentiële overlap</a> in de komende week.</p>{% endif %}
       {% if agenda.uitnodigingen %}
         <p class="noot uitkop"><a href="/clara#uitnodigingen">{{ agenda.uitnodigingen | length }} uitnodiging{{ 'en' if agenda.uitnodigingen | length > 1 }}</a> nog te beantwoorden:</p>
         {% for u in agenda.uitnodigingen[:4] %}{% set du = u.start.astimezone(agenda.tz) %}

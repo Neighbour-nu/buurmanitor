@@ -21,7 +21,7 @@ from ..overzichten import onderdelen as od, opmaak
 
 BRONNEN = {
     "post": "Mail (Bram): mails die om actie vragen",
-    "agenda": "Agenda (Clara): afspraken en overlap",
+    "agenda": "Agenda (Clara): afspraken van vandaag en morgen",
     "taken": "Taken (Noor): te laat, deadlines, wachten op anderen",
     "crm": "CRM: kansen en projecten die aandacht vragen",
     "politiek": "Promonitor: jouw deadlines en agendapunten in de raad",
@@ -124,7 +124,7 @@ def _taken(c, nu, horizon):
 
 
 def _agenda(c, nu, horizon):
-    from ..clara import analyse, sync  # pylint: disable=import-outside-toplevel
+    from ..clara import sync  # pylint: disable=import-outside-toplevel
     if not sync.koppelingen(c, alleen_actief=True):
         return "Agenda: nog geen agenda's gekoppeld."
     begin = dt.datetime.combine(nu.date(), dt.time(0), tzinfo=config.TZ)
@@ -138,12 +138,6 @@ def _agenda(c, nu, horizon):
                 f"{'' if a['heledag'] else '-' + a['eind'].astimezone(config.TZ).strftime('%H.%M')} {a['titel']}"
                 + (f" ({a['locatie']})" if a.get("locatie") else "") + f" [{a.get('domein') or a['koppeling']}]"
                 for a in sorted(lijst, key=lambda a: (not a["heledag"], a["start"]))] or ["- geen afspraken"]
-    week = sync.afspraken(c, nu, nu + dt.timedelta(days=max(horizon, 2)))
-    conf = analyse.conflicten(week)
-    if conf:
-        uit.append(f"Overlappende afspraken in de komende {max(horizon, 2)} dagen: {len(conf)} keer.")
-        uit += [f"- {x['a']['titel']} en {x['b']['titel']} op {dag(x['van'].astimezone(config.TZ))} {x['van'].astimezone(config.TZ):%H.%M}"
-                for x in conf[:6]]
     return "\n".join(uit)
 
 
@@ -153,6 +147,11 @@ def _post(c, nu, horizon):
     oud = [r for r in c.execute("""SELECT b.* FROM post_berichten b JOIN post_koppelingen k ON k.id = b.koppeling_id
                                    WHERE b.status = 'open' AND k.actief AND b.ontvangen < now() - interval '3 days'
                                    ORDER BY b.ontvangen LIMIT 200""").fetchall() if bram_web.groep(r) == "actie"][:8]
+    signal = c.execute("""SELECT v.soort, v.titel, v.datum, coalesce(nullif(ch.eigen_naam, ''), ch.naam) AS chat FROM signal_voorstellen v
+                          JOIN signal_chats ch ON ch.id = v.chat_id WHERE v.status = 'open' ORDER BY v.datum NULLS LAST LIMIT 10""").fetchall()
+    if signal:
+        tekst += "\nOpen voorstellen uit Signal (nog niet uitgevoerd):\n" + "\n".join(
+            f"- {v['soort']}: {v['titel']}" + (f" op {dag(v['datum'])}" if v["datum"] else "") + f" (chat {v['chat']})" for v in signal)
     if oud:
         tekst += "\nVraagt om actie en staat al meer dan drie dagen open:\n" + "\n".join(
             f"- mail #{r['id']}: {r['van_naam']}: {r['onderwerp']} ({(nu - r['ontvangen']).days} dagen)" for r in oud)
@@ -278,7 +277,8 @@ def systeem(c, s):
              "noem niets wat niet in de gegevens staat. Liever één scherp punt dan drie vage. Herhaal geen dingen die geen actie of "
              "aandacht vragen. Een deadline is in gevaar als hij nadert en er nog werk open staat, als een taak te laat is, of als "
              "de agenda geen ruimte laat. Staat bij een bron 'niet beschikbaar', noem dat dan alleen kort in de samenvatting "
-             "(bijvoorbeeld 'je agenda kon ik vandaag niet lezen') en maak er geen apart punt van.",
+             "(bijvoorbeeld 'je agenda kon ik vandaag niet lezen') en maak er geen apart punt van. Noem geen overlap of dubbele "
+             "boekingen tussen afspraken: die regelt Martijn zelf in zijn agenda.",
              "# Antwoord\nAlleen JSON, zonder uitleg eromheen, in deze vorm:\n"
              '{"samenvatting": "twee of drie zinnen: de kern van vandaag", "punten": [{"soort": "belangrijk|risico|deadline|advies", '
              '"titel": "korte kop", "tekst": "een tot drie zinnen: wat er speelt, waarom het telt, en wat Martijn kan doen", '
