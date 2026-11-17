@@ -6,8 +6,9 @@ Martijn), en past die aan of haalt hem weg als de taak verandert. Een taak kan o
 """
 import asyncio
 import datetime as dt
-import threading
 import json
+import re
+import threading
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -180,7 +181,8 @@ def uit_formulier(f):
             "wacht_op": str(f.get("wacht_op") or "").strip()[:200],
             "startdatum": _datum(f.get("startdatum")), "starttijd": _tijd(f.get("starttijd")),
             "einddatum": _datum(f.get("einddatum")), "eindtijd": _tijd(f.get("eindtijd")), "doel": str(f.get("doel") or ""),
-            "project_id": int(f.get("project")) if str(f.get("project") or "").isdigit() else None}
+            "project_id": int(f.get("project")) if str(f.get("project") or "").isdigit() else None,
+            "betaallink": str(f.get("betaallink") or "").strip()[:1000] if re.match(r"^https?://", str(f.get("betaallink") or "").strip()) else ""}
 
 
 def uit_bericht(b):
@@ -208,10 +210,11 @@ def zet_volgorde(c, status, ids):
 
 
 def nieuw(c, velden, bericht_id=None):
+    velden = {"betaallink": "", **velden}
     return c.execute("""INSERT INTO takenbord (titel, beschrijving, prio, status, wacht_op, startdatum, starttijd, einddatum, eindtijd, doel,
-                                           bericht_id, project_id, afgerond)
+                                           bericht_id, betaallink, project_id, afgerond)
                         VALUES (%(titel)s, %(beschrijving)s, %(prio)s, %(status)s, %(wacht_op)s, %(startdatum)s, %(starttijd)s,
-                                %(einddatum)s, %(eindtijd)s, %(doel)s, %(bericht_id)s,
+                                %(einddatum)s, %(eindtijd)s, %(doel)s, %(bericht_id)s, %(betaallink)s,
                                 (SELECT id FROM crm_projecten WHERE id = %(project_id)s),
                                 CASE WHEN %(status)s = 'afgerond' THEN now() END) RETURNING id""",
                      {"wacht_op": "", "startdatum": None, "starttijd": None, "einddatum": None, "eindtijd": None, "doel": "",
@@ -341,7 +344,7 @@ async def taak_opslaan(request: Request, tid: int):
                 raise HTTPException(404)
             c.execute("""UPDATE takenbord SET titel = %(titel)s, beschrijving = %(beschrijving)s, prio = %(prio)s, wacht_op = %(wacht_op)s,
                          startdatum = %(startdatum)s, starttijd = %(starttijd)s, einddatum = %(einddatum)s, eindtijd = %(eindtijd)s,
-                         doel = %(doel)s, project_id = (SELECT id FROM crm_projecten WHERE id = %(project_id)s),
+                         doel = %(doel)s, project_id = (SELECT id FROM crm_projecten WHERE id = %(project_id)s), betaallink = %(betaallink)s,
                          afgerond = CASE WHEN %(status)s = 'afgerond' THEN coalesce(afgerond, now()) END,
                          gearchiveerd = CASE WHEN %(status)s = 'afgerond' THEN gearchiveerd END,
                          status = %(status)s, bijgewerkt = now() WHERE id = %(id)s""", velden | {"id": tid})

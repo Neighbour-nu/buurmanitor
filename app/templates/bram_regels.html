@@ -108,6 +108,24 @@
         <a href="/bram/instellingen">Post-instellingen</a> (knop "Google Drive toestaan").</p>
       {% elif not google %}<p class="noot">Opslaan in Google Drive kan met een gekoppeld Gmail-account (Post-instellingen).</p>{% endif %}
     </fieldset>
+    <fieldset id="taakmaken">
+      <legend>Een taak maken</legend>
+      <div class="velden">
+        <label class="vink breed"><input type="checkbox" name="taak" value="1" {{ 'checked' if a.taak }}> een taak maken op het takenbord (één per mail)</label>
+        <label class="vink breed"><input type="checkbox" name="taak_betaling" value="1" {{ 'checked' if a.taak_betaling }}>
+          het is een factuur: zoek bedrag, vervaldatum, factuurnummer en betaallink</label>
+        <label class="breed">titel <input type="text" name="taak_titel" value="{{ a.taak_titel }}"
+          placeholder="leeg: Betalen: {afzender} {bedrag} (factuur), anders het onderwerp van de mail"></label>
+        <label>prioriteit <select name="taak_prio"><option value="">middel</option>
+          <option value="hoog" {{ 'selected' if a.taak_prio == 'hoog' }}>hoog</option><option value="laag" {{ 'selected' if a.taak_prio == 'laag' }}>laag</option></select></label>
+        <label>deadline na ontvangst (dagen) <input type="number" name="taak_dagen" min="1" max="365" value="{{ a.taak_dagen or '' }}" class="smal"
+          placeholder="14"></label>
+      </div>
+      <p class="noot">In de titel kun je <code>{afzender}</code>, <code>{onderwerp}</code>, <code>{bedrag}</code> en <code>{nummer}</code> (factuurnummer)
+        gebruiken. Bij een factuur wordt de deadline de vervaldatum uit de mail of de pdf; staat die er niet in, dan het aantal dagen
+        hierboven (standaard 14). De betaallink wordt een knop Betalen op de taak, en een factuur die deze regel in Drive opslaat een link
+        op de taak. De deadline komt ook in je agenda, net als bij je andere taken. Bram zoekt dit zelf in de tekst; Claude komt er niet aan te pas.</p>
+    </fieldset>
     <p class="knoppenrij"><button class="knop vol" type="submit">{{ 'Opslaan' if vorm.id else 'Regel maken' }}</button>
       {% if vorm.id %}<a class="knop" href="/bram/regels#regelvorm">Annuleren</a>{% endif %}</p>
   </form>

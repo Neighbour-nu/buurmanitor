@@ -15,6 +15,9 @@ Met de bijlagen: opslaan in een map in Google Drive (met {jaar}, {maand} of {afz
 datum en afzender voor de bestandsnaam), en/of doorsturen naar een vast adres (zoals de inbox van je boekhouding).
 Eventueel alleen bijlagen waarvan de naam iets bevat ('.pdf, factuur'). De bijlagen gaan eerst; lukt dat niet, dan
 blijft de mail in de inbox staan en zie je het in het logboek.
+Een taak maken: met een eigen titel ({afzender}, {onderwerp}, {bedrag}, {nummer}), prioriteit en deadline. Bij een
+factuur zoekt Bram bedrag, vervaldatum, factuurnummer en betaallink in de mail en de pdf; de deadline wordt dan de
+vervaldatum, de betaallink een knop op de taak en de in Drive opgeslagen factuur een link op de taak.
 Een map of label staat op naam in de regel, zodat één regel voor Gmail en Outlook tegelijk kan gelden; bestaat de map
 nog niet, dan maakt Bram hem aan als dat in de regel is aangevinkt.
 
@@ -26,7 +29,7 @@ import json
 import re
 
 from ..kern import config, meldingen
-from . import bronnen, drive
+from . import betaling, bronnen, drive
 
 VOORWAARDEN = ("van", "aan", "onderwerp", "tekst", "bijlage", "bijlage_naam", "factuur")
 TEKSTVELDEN = ("van", "aan", "onderwerp", "tekst", "bijlage_naam")
@@ -57,7 +60,11 @@ def uit_formulier(f):
          "drive_map": str(f.get("drive_map") or "").strip()[:400],
          "bestandsnaam": "datum" if str(f.get("bestandsnaam") or "") == "datum" else "",
          "bijlage_filter": str(f.get("bijlage_filter") or "").strip()[:200],
-         "doorsturen": ", ".join(termen(f.get("doorsturen")))[:300]}
+         "doorsturen": ", ".join(termen(f.get("doorsturen")))[:300],
+         "taak": str(f.get("taak") or "") == "1", "taak_titel": str(f.get("taak_titel") or "").strip()[:160],
+         "taak_prio": str(f.get("taak_prio") or "") if str(f.get("taak_prio") or "") in ("laag", "hoog") else "",
+         "taak_dagen": int(f.get("taak_dagen")) if str(f.get("taak_dagen") or "").isdigit() and 0 < int(f.get("taak_dagen")) <= 365 else 0,
+         "taak_betaling": str(f.get("taak_betaling") or "") == "1"}
     if a["verwijderen"]:  # naar de prullenbak: verplaatsen, archiveren en een label hebben dan geen zin meer
         a.update(map="", archiveren=False, label="", maken=False)
     if a["map"]:
@@ -72,7 +79,10 @@ def uit_formulier(f):
     adressen = termen(a.get("doorsturen"))
     if any(not EMAIL.match(x) for x in adressen) or len(adressen) > 3:
         return v, a, "Doorsturen kan naar hooguit drie geldige mailadressen, met komma's ertussen."
-    if not ({"gelezen", "archiveren", "map", "label", "drive", "doorsturen", "verwijderen"} & set(a)):
+    if not a.get("taak"):
+        for k in ("taak_titel", "taak_prio", "taak_dagen", "taak_betaling"):
+            a.pop(k, None)
+    if not ({"gelezen", "archiveren", "map", "label", "drive", "doorsturen", "verwijderen", "taak"} & set(a)):
         return v, a, "Kies minstens één actie."
     if not ({"drive", "doorsturen"} & set(a)):
         for k in ("bestandsnaam", "bijlage_filter"):
@@ -107,6 +117,9 @@ def beschrijf(v, a):
         dan.append(f'{welke} opslaan in Drive: {a.get("drive_map")}' + (" (met datum en afzender)" if a.get("bestandsnaam") == "datum" else ""))
     if a.get("doorsturen"):
         dan.append(f'{welke if not a.get("drive") else "bijlagen"} doorsturen naar {a["doorsturen"]}')
+    if a.get("taak"):
+        dan.append("taak maken" + (f' "{a["taak_titel"]}"' if a.get("taak_titel") else "")
+                   + (" (betaling: bedrag, vervaldatum en betaallink zoeken)" if a.get("taak_betaling") else ""))
     if a.get("verwijderen"):
         dan.append("verwijderen (naar de prullenbak)")
     return " en ".join(als), ", ".join(dan)
@@ -203,7 +216,8 @@ def uitvoeren(c, k, b, regel):
     g = k["soort"] == "google"
     tok = sync.toegang(c, k)
     # Eerst de bijlagen: lukt dat niet, dan blijft de mail staan waar hij staat (en kun je het later opnieuw proberen).
-    bijlagen_gedaan, link = bijlagen_verwerken(c, k, tok, b, regel) if heeft_bijlage_acties(a) else ("", "")
+    bijlagen_gedaan, link, bestanden = bijlagen_verwerken(c, k, tok, b, regel) if heeft_bijlage_acties(a) else ("", "", [])
+    taak_gedaan = taak_maken(c, k, tok, b, regel, bestanden) if a.get("taak") else ""
     map_id = label_id = None
     if a.get("map"):
         map_id = zoek_naam(sync.mappen(c, k), a["map"]) or zoek_naam(sync.mappen(c, k, vers=True), a["map"])
@@ -220,7 +234,7 @@ def uitvoeren(c, k, b, regel):
                 sync.vergeet_mappen(k["id"])
         else:
             label_id = a["label"]  # een categorie in Outlook is gewoon een naam
-    gedaan = [bijlagen_gedaan] if bijlagen_gedaan else []
+    gedaan = [x for x in (bijlagen_gedaan, taak_gedaan) if x]
     nieuw_id = None
     if g:
         erbij = [x for x in (label_id, map_id) if x]
@@ -292,8 +306,8 @@ def bijlagen_verwerken(c, k, tok, b, regel):
     te_groot = [x["naam"] for x in gekozen if x["data"] is None]
     gekozen = [x for x in gekozen if x["data"] is not None]
     if not gekozen:
-        return ("geen bijlagen om te verwerken" if not te_groot else f"bijlage te groot: {', '.join(te_groot)}"), ""
-    gedaan, link = [], ""
+        return ("geen bijlagen om te verwerken" if not te_groot else f"bijlage te groot: {', '.join(te_groot)}"), "", []
+    gedaan, link, bestanden = [], "", []
     if a.get("drive"):
         dk = c.execute("SELECT * FROM post_koppelingen WHERE id = %s", (a["drive"],)).fetchone()
         if not dk or dk["soort"] != "google":
@@ -308,11 +322,14 @@ def bijlagen_verwerken(c, k, tok, b, regel):
         nieuw = al = 0
         for x in gekozen:
             naam = bestandsnaam(x["naam"], b, a.get("bestandsnaam"))
-            if drive.bestaat(dtok, mid, naam):
+            fid = drive.bestaat(dtok, mid, naam)
+            if fid:
                 al += 1
-                continue
-            drive.uploaden(dtok, mid, naam, x["soort"], x["data"])
-            nieuw += 1
+            else:
+                fid = drive.uploaden(dtok, mid, naam, x["soort"], x["data"])
+                nieuw += 1
+            if fid:
+                bestanden.append({"naam": naam, "url": drive.bestand_link(fid)})
         gedaan.append(f"{nieuw} {'bijlage' if nieuw == 1 else 'bijlagen'} in Drive ({pad})" + (f", {al} stond(en) er al" if al else ""))
         link = drive.map_link(mid)
     if a.get("doorsturen"):
@@ -329,7 +346,54 @@ def bijlagen_verwerken(c, k, tok, b, regel):
             gedaan.append(f"{len(gekozen)} {'bijlage' if len(gekozen) == 1 else 'bijlagen'} doorgestuurd naar {a['doorsturen']}")
     if te_groot:
         gedaan.append(f"overgeslagen (te groot): {', '.join(te_groot)}")
-    return ", ".join(gedaan), link
+    return ", ".join(gedaan), link, bestanden
+
+
+def taak_titel(sjabloon, b, g, betaling_):
+    """De titel van de taak: het sjabloon ingevuld, of een standaardtitel. Pure functie."""
+    if not sjabloon:
+        sjabloon = "Betalen: {afzender} {bedrag}" if betaling_ else "{onderwerp}"
+    t = re.sub(r"\{(afzender|onderwerp|bedrag|nummer)\}", lambda m: {"afzender": afzender(b), "onderwerp": b.get("onderwerp") or "",
+                                                                     "bedrag": g.get("bedrag") or "", "nummer": g.get("nummer") or ""}[m.group(1)],
+               sjabloon)
+    return re.sub(r"\s{2,}", " ", re.sub(r"\(\s*\)", "", t)).strip(" -:")[:160] or (b.get("onderwerp") or "Taak uit een mail")[:160]
+
+
+def taak_maken(c, k, tok, b, regel, bestanden):
+    """Een taak bij deze mail (één per mail). Bij een betaling: bedrag, vervaldatum, factuurnummer en betaallink uit de mail
+    en de pdf; de deadline is de vervaldatum (anders de ingestelde termijn na ontvangst)."""
+    from ..taken import web as taken_web  # pylint: disable=import-outside-toplevel
+    a = regel["acties"] or {}
+    if c.execute("SELECT 1 FROM takenbord WHERE bericht_id = %s", (b["id"],)).fetchone():
+        return "taak bestond al"
+    ontvangen = b.get("ontvangen") if isinstance(b.get("ontvangen"), dt.datetime) else dt.datetime.now(config.TZ)
+    ontvangen_dag = ontvangen.astimezone(config.TZ).date()
+    g = {}
+    if a.get("taak_betaling"):
+        m = (bronnen.gmail_volledig if k["soort"] == "google" else bronnen.ms_volledig)(tok, b["extern_id"])
+        g = betaling.gegevens(m.get("tekst") or "", m.get("html") or "", [x.get("tekst") for x in m.get("bijlagen") or []], ontvangen_dag)
+    dagen = a.get("taak_dagen") or (14 if a.get("taak_betaling") else 0)
+    einddatum = g.get("vervaldatum") or (ontvangen_dag + dt.timedelta(days=dagen) if dagen else None)
+    regels_ = [f"Uit de mail van {b.get('van_naam') or b.get('van_adres') or 'onbekend'}: {b.get('onderwerp') or ''}"]
+    if a.get("taak_betaling"):
+        regels_ += [f"Bedrag: {g['bedrag'] or 'niet gevonden, zie de factuur'}"]
+        if g.get("nummer"):
+            regels_.append(f"Factuurnummer: {g['nummer']}")
+        regels_.append(f"Vervaldatum: {g['vervaldatum']:%d-%m-%Y} (uit de factuur)" if g.get("vervaldatum")
+                       else f"Vervaldatum niet gevonden: deadline op {dagen} dagen na ontvangst gezet. Kijk het na op de factuur.")
+        regels_.append(f"Betaallink: {g['link']}" if g.get("link") else "Geen betaallink gevonden: betaal via het rekeningnummer op de factuur.")
+    if bestanden:
+        regels_.append("Factuur in Drive: " + ", ".join(f"{x['naam']} ({x['url']})" for x in bestanden))
+    regels_.append(f"Gemaakt door de regel '{regel['naam']}' in Post.")
+    velden = {"titel": taak_titel(a.get("taak_titel"), b, g, a.get("taak_betaling")), "beschrijving": "\n".join(regels_),
+              "prio": a.get("taak_prio") or "middel", "status": "nieuw", "wacht_op": "", "startdatum": None, "starttijd": None,
+              "einddatum": einddatum, "eindtijd": None, "doel": "", "project_id": None}
+    tid = taken_web.nieuw(c, velden, b["id"])
+    c.execute("UPDATE takenbord SET bijlagen = %s, betaallink = %s WHERE id = %s",
+              (json.dumps(bestanden, ensure_ascii=False), g.get("link") or "", tid))
+    if einddatum:
+        taken_web.agenda_op_achtergrond([tid])
+    return "taak gemaakt" + (f" ({g['bedrag']}, uiterlijk {einddatum:%d-%m})" if a.get("taak_betaling") and g.get("bedrag") and einddatum else "")
 
 
 def _log(c, regel, k, b, wat="", fout="", link=""):

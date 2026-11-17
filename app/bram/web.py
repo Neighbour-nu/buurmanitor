@@ -685,7 +685,9 @@ def regels_scherm(request: Request, bewerk: int = 0, melding: str = "", fout: st
              "archiveren": qp.get("archiveren") == "1", "maken": qp.get("maken") == "1" if vooraf else True,
              "verwijderen": qp.get("verwijderen") == "1",
              "drive": int(qp.get("drive")) if str(qp.get("drive", "")).isdigit() else 0, "drive_map": qp.get("drive_map", ""),
-             "bestandsnaam": qp.get("bestandsnaam", ""), "bijlage_filter": qp.get("bijlage_filter", ""), "doorsturen": qp.get("doorsturen", "")}
+             "bestandsnaam": qp.get("bestandsnaam", ""), "bijlage_filter": qp.get("bijlage_filter", ""), "doorsturen": qp.get("doorsturen", ""),
+             "taak": qp.get("taak") == "1", "taak_titel": qp.get("taak_titel", ""), "taak_prio": qp.get("taak_prio", ""),
+             "taak_dagen": int(qp.get("taak_dagen")) if str(qp.get("taak_dagen", "")).isdigit() else 0, "taak_betaling": qp.get("taak_betaling") == "1"}
         vorm = {"id": 0, "naam": qp.get("naam", ""), "koppeling_id": int(qp.get("account") or 0) or None, "voorwaarden": v, "acties": a}
     return templates.TemplateResponse("bram_regels.html", ctx(
         request, "bram", lijst=lijst, log=log, ks=ks, vorm=vorm, beschrijf=regels.beschrijf, mapnamen=mapnamen,
@@ -707,7 +709,8 @@ async def regel_opslaan(request: Request):
     if fout:
         terug = {k: str(f.get(k) or "") for k in (*regels.TEKSTVELDEN, "bijlage", "factuur", "gelezen", "archiveren", "map", "label",
                                                   "maken", "naam", "account", "drive", "drive_map", "bestandsnaam",
-                                                  "bijlage_filter", "doorsturen", "verwijderen")}
+                                                  "bijlage_filter", "doorsturen", "verwijderen", "taak", "taak_titel", "taak_prio",
+                                                  "taak_dagen", "taak_betaling")}
         return _terug("/bram/regels?" + urlencode({k: w for k, w in terug.items() if w} | {"vooraf": "1"}) + "#regelvorm",
                       fout=fout)
     if not naam:

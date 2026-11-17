@@ -104,8 +104,14 @@ def map_id(toegang, koppeling_id, map_tekst):
 
 
 def bestaat(toegang, map_, naam):
+    """Het id van een bestand met deze naam in de map, of '' als het er niet is."""
     q = f"'{_q(map_)}' in parents and name = '{_q(naam)}' and trashed = false"
-    return bool(_drive(toegang, "/files", {"q": q, "fields": "files(id)", "pageSize": "1", "corpora": "allDrives"}).get("files"))
+    return ((_drive(toegang, "/files", {"q": q, "fields": "files(id)", "pageSize": "1", "corpora": "allDrives"}).get("files") or [{}])[0]
+            .get("id") or "")
+
+
+def bestand_link(fid):
+    return f"https://drive.google.com/file/d/{fid}/view"
 
 
 def uploaden(toegang, map_, naam, soort, data):

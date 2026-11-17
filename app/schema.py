@@ -600,6 +600,9 @@ MIGRATIES = [
     "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS kans_id int REFERENCES crm_kansen(id) ON DELETE SET NULL",
     # Eigen volgorde binnen een kolom (slepen op het bord). Leeg: automatisch op prioriteit en datum.
     "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS volgorde int",
+    # Taken uit een regel in Post: links naar de bijlagen (in Google Drive) en een betaallink (knop Betalen).
+    "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS bijlagen jsonb NOT NULL DEFAULT '[]'",
+    "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS betaallink text NOT NULL DEFAULT ''",
     # Voorstellen van Iris in het gesprek ("maak een kans van die mail van Jan"): pas na Martijns klik aangemaakt.
     """CREATE TABLE IF NOT EXISTS crm_voorstellen (
         id serial PRIMARY KEY,

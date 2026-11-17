@@ -74,6 +74,8 @@
     {% if not formulier.id and formulier.bericht_id %}<input type="hidden" name="bericht_id" value="{{ formulier.bericht_id }}">{% endif %}
     <label class="breed">Korte titel <input type="text" name="titel" value="{{ formulier.titel }}" maxlength="160" required {{ 'autofocus' if not wacht }}></label>
     <label class="breed">Beschrijving <textarea name="beschrijving" rows="5">{{ formulier.beschrijving }}</textarea></label>
+    {% if formulier.bijlagen %}<p class="noot breed">Bijlagen: {% for x in formulier.bijlagen %}📎 <a href="{{ x.url }}" target="_blank" rel="noopener">{{ x.naam }}</a>{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+    <label class="breed">Betaallink <input type="url" name="betaallink" value="{{ formulier.betaallink or '' }}" placeholder="https://… (optioneel: wordt een knop Betalen op de taak)"></label>
     <label>Prioriteit <select name="prio">{% for w, n in prios %}<option value="{{ w }}" {{ 'selected' if formulier.prio == w }}>{{ n }}</option>{% endfor %}</select></label>
     <label>Kolom <select name="status" id="status-keuze">{% for w, n in statussen %}<option value="{{ w }}" {{ 'selected' if formulier.status == w }}>{{ n }}</option>{% endfor %}</select></label>
     <label class="breed wacht-veld">Wachtend op (wie of wat) <input type="text" name="wacht_op" value="{{ formulier.wacht_op }}" maxlength="200" placeholder="bijvoorbeeld de griffie, of Jan van Upper Spire" {{ 'autofocus' if wacht }}></label>
@@ -161,6 +163,9 @@
       </div>
       {% if t.status == 'wachtend' %}<div class="noot wacht">Wacht op: {% if t.wacht_op %}<b>{{ t.wacht_op }}</b>{% else %}<a href="/taken?bewerk={{ t.id }}&wacht=1#formulier">invullen</a>{% endif %}</div>{% endif %}
       {% if t.bericht_id %}<div class="noot">✉ <a href="/bram/bericht/{{ t.bericht_id }}">{{ t.mail_onderwerp or 'mail' }}</a></div>{% endif %}
+      {% for x in t.bijlagen or [] %}<div class="noot">📎 <a href="{{ x.url }}" target="_blank" rel="noopener">{{ x.naam }}</a></div>{% endfor %}
+      {% if t.betaallink %}<div><a class="knop klein vol betaalknop" href="{{ t.betaallink }}" target="_blank" rel="noopener noreferrer"
+        title="Opent de betaalpagina van de afzender">💳 Betalen</a></div>{% endif %}
       {% if t.project %}<div class="noot">📁 <a href="/crm/project/{{ t.project_id }}">{{ t.project }}</a></div>{% elif t.kans_id %}<div class="noot">💼 <a href="/crm/kans/{{ t.kans_id }}">kans</a></div>{% endif %}
       {% if t.agenda_fout %}<div class="noot urgent">Agenda: {{ t.agenda_fout }}</div>{% endif %}
       <form method="post" action="/taken/{{ t.id }}/status" class="taakverplaats">

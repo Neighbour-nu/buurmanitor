@@ -303,3 +303,81 @@ def test_eerst_opslaan_dan_verwijderen(klant, opzet, monkeypatch):  # pylint: di
         b2 = _bericht(c, g, "m4")
         over, aantal = regels.toepassen(c, g, [b2])
     assert aantal == 0 and weg == ["m3"] and [x["id"] for x in over] == [b2["id"]]
+
+
+# ---------------------------------------------------------------- een taak maken (factuur betalen)
+
+FACTUUR = """Beste Martijn, hierbij de factuur voor november. Factuurnummer: F2026-1182
+Subtotaal € 69,83  BTW € 14,66  Totaal incl. btw € 84,49
+Wij verzoeken u het bedrag uiterlijk 1 december 2026 te voldoen."""
+
+
+def test_betaalgegevens():
+    from app.bram import betaling  # pylint: disable=import-outside-toplevel
+    html = ('<a href="https://pay.example/checkout/abc?x=1&amp;y=2">Betaal direct met iDEAL</a> '
+            '<a href="https://energie.example/afmelden">Afmelden</a> <a href="https://energie.example/">Onze site</a>')
+    g = betaling.gegevens(FACTUUR, html, [], dt.date(2026, 11, 15))
+    assert g == {"bedrag": "€ 84,49", "vervaldatum": dt.date(2026, 12, 1), "nummer": "F2026-1182", "link": "https://pay.example/checkout/abc?x=1&y=2"}
+    g = betaling.gegevens("Zie de bijlage.", "", ["Te betalen: EUR 1.234,50\nVervaldatum: 30-11-2026\nInvoice no. INV-77"])
+    assert (g["bedrag"], g["vervaldatum"], g["nummer"], g["link"]) == ("€ 1.234,50", dt.date(2026, 11, 30), "INV-77", "")
+    assert betaling.vervaldatum("Graag betalen binnen 14 dagen.", dt.date(2026, 11, 15)) == dt.date(2026, 11, 29)
+    assert betaling.betaallink("", "Betaal via https://tikkie.example/pay/abc123 graag") == "https://tikkie.example/pay/abc123"
+    assert betaling.gegevens("Hallo, gewoon een mail.", "", []) == {"bedrag": "", "vervaldatum": None, "nummer": "", "link": ""}
+    assert regels.taak_titel("", MAIL, {"bedrag": "€ 84,49"}, True) == "Betalen: Energie BV € 84,49"
+    assert regels.taak_titel("Factuur {nummer} ({bedrag})", MAIL, {"nummer": "F1"}, True) == "Factuur F1"
+    assert regels.taak_titel("", MAIL, {}, False) == "Uw factuur november"
+    v, a, fout = regels.uit_formulier({"factuur": "1", "taak": "1", "taak_betaling": "1", "taak_prio": "hoog", "taak_dagen": "10"})
+    assert not fout and a == {"taak": True, "taak_betaling": True, "taak_prio": "hoog", "taak_dagen": 10}
+    assert "taak maken (betaling: bedrag, vervaldatum en betaallink zoeken)" in regels.beschrijf(v, a)[1]
+    assert "taak_titel" not in regels.uit_formulier({"factuur": "1", "gelezen": "1", "taak_titel": "x"})[1]
+
+
+def test_regel_maakt_betaaltaak(klant, opzet, monkeypatch):  # pylint: disable=redefined-outer-name
+    from app.taken import web as taken_web  # pylint: disable=import-outside-toplevel
+    g = opzet["g"]
+    monkeypatch.setattr(bronnen, "gmail_volledig", lambda tok, mid, met_bijlagen=True: {
+        "tekst": "Uw factuur staat klaar.", "html": '<a href="https://pay.example/checkout/abc">Nu betalen</a>',
+        "bijlagen": [{"naam": "Factuur 118.pdf", "tekst": FACTUUR}]})
+    naar_agenda = []
+    monkeypatch.setattr(taken_web, "agenda_op_achtergrond", lambda tids, weg=None: naar_agenda.extend(tids))
+    with _db() as c:
+        c.execute("DELETE FROM takenbord")
+    r = klant.post("/bram/regels", headers=FORM, follow_redirects=False, data={
+        "naam": "Facturen", "factuur": "1", "gelezen": "1", "map": "Facturen", "drive": str(g["id"]), "drive_map": "Administratie/{jaar}",
+        "taak": "1", "taak_betaling": "1", "taak_prio": "hoog"})
+    assert "/probeer" in r.headers["location"]
+    with _db() as c:
+        b = _bericht(c, g, "m5")
+        over, aantal = regels.toepassen(c, g, [b])
+        t = c.execute("SELECT * FROM takenbord WHERE bericht_id = %s", (b["id"],)).fetchone()
+        wat = c.execute("SELECT wat FROM post_regel_log ORDER BY id DESC LIMIT 1").fetchone()["wat"]
+    assert aantal == 1 and not over and opzet["gewijzigd"] == [("m5", ["Label_1"], ["UNREAD", "INBOX"])]  # daarna pas gelezen en verplaatst
+    assert (t["titel"], t["prio"], t["status"], t["einddatum"]) == ("Betalen: Energie BV € 84,49", "hoog", "nieuw", dt.date(2026, 12, 1))
+    assert t["betaallink"] == "https://pay.example/checkout/abc" and naar_agenda == [t["id"]]
+    assert [x["naam"] for x in t["bijlagen"]] == ["Factuur 118.pdf"] and t["bijlagen"][0]["url"].startswith("https://drive.google.com/file/d/")
+    assert "Factuurnummer: F2026-1182" in t["beschrijving"] and "Vervaldatum: 01-12-2026 (uit de factuur)" in t["beschrijving"]
+    assert "taak gemaakt (€ 84,49, uiterlijk 01-12)" in wat
+    pagina = klant.get("/taken", headers=KOP).text
+    assert "💳 Betalen" in pagina and 'href="https://pay.example/checkout/abc"' in pagina and "📎" in pagina
+    assert 'name="betaallink" value="https://pay.example/checkout/abc"' in klant.get(f"/taken?bewerk={t['id']}", headers=KOP).text
+    # Nog eens toepassen: geen tweede taak.
+    with _db() as c:
+        c.execute("UPDATE post_berichten SET status = 'open' WHERE id = %s", (b["id"],))
+        regel = c.execute("SELECT * FROM post_regels WHERE naam = 'Facturen'").fetchone()
+        regels.nu_toepassen(c, regel, [b["id"]])
+        assert c.execute("SELECT count(*) AS n FROM takenbord WHERE bericht_id = %s", (b["id"],)).fetchone()["n"] == 1
+        assert "taak bestond al" in c.execute("SELECT wat FROM post_regel_log ORDER BY id DESC LIMIT 1").fetchone()["wat"]
+    # Zonder vervaldatum en betaallink: deadline na de ingestelde termijn, en de taak zegt wat er ontbrak.
+    monkeypatch.setattr(bronnen, "gmail_volledig", lambda tok, mid, met_bijlagen=True: {"tekst": "Factuur: Totaal € 12,00", "html": "", "bijlagen": []})
+    with _db() as c:
+        c.execute("UPDATE post_regels SET acties = acties || '{\"taak_dagen\": 10}' WHERE id = %s", (regel["id"],))
+        b2 = _bericht(c, g, "m6")
+        regels.toepassen(c, g, [b2])
+        t2 = c.execute("SELECT * FROM takenbord WHERE bericht_id = %s", (b2["id"],)).fetchone()
+    assert t2["einddatum"] == dt.date(2026, 11, 25) and t2["betaallink"] == ""
+    assert "Vervaldatum niet gevonden: deadline op 10 dagen na ontvangst" in t2["beschrijving"] and "Geen betaallink gevonden" in t2["beschrijving"]
+    # De betaallink is aan te passen in het formulier (alleen http(s)).
+    r = klant.post(f"/taken/{t2['id']}", headers=FORM, follow_redirects=False, data={"titel": t2["titel"], "prio": "middel", "status": "nieuw",
+                                                                                   "betaallink": "javascript:alert(1)"})
+    with _db() as c:
+        assert c.execute("SELECT betaallink FROM takenbord WHERE id = %s", (t2["id"],)).fetchone()["betaallink"] == ""
