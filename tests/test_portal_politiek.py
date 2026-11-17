@@ -155,3 +155,40 @@ def test_whaller_indeling_uit_pdf(klant, monkeypatch):
     assert "fout=Dat+is+geen+PDF" in r.headers["location"]
     klant.post("/politiek/whaller/indeling/weg", headers=FORMULIER, data={"sleutel": "commissie:2026-11-10", "week": "2026-11-09"})
     assert "📄" not in klant.get(week, headers=KOP).text
+
+
+def test_herschrijven_met_bijlage(klant, monkeypatch):
+    """Bij 'Wat moet er anders?' een bijlage meegeven: de tekst gaat mee naar Claude, ook bij een volgende versie."""
+    from psycopg.types.json import Jsonb  # pylint: disable=import-outside-toplevel
+    from app.politiek import main as pol, schrijven  # pylint: disable=import-outside-toplevel
+    gestart = []
+    monkeypatch.setattr(schrijven, "start", lambda pool, cid: gestart.append(cid))
+    k = pol.q1("""INSERT INTO concepten (soort, titel, bron, invoer, status, tekst) VALUES ('bijdrage', 'Parkeren', %s, %s, 'klaar', 'Versie een.')
+                  RETURNING id""", (Jsonb({}), Jsonb({"aanwijzingen": "Schrijf een bijdrage."})))["id"]
+    assert 'enctype="multipart/form-data"' in klant.get(f"/politiek/concepten/{k}", headers=KOP).text
+    r = klant.post(f"/politiek/concepten/{k}/herschrijf", headers=FORMULIER, follow_redirects=False,
+                   data={"aanwijzingen": "Verwerk de cijfers uit de bijlage."},
+                   files=[("bijlagen", ("cijfers.txt", "Bezetting garage 92 procent in 2026.".encode(), "text/plain"))])
+    nieuw = int(r.headers["location"].rsplit("/", 1)[-1])
+    invoer = pol.q1("SELECT invoer FROM concepten WHERE id = %s", (nieuw,))["invoer"]
+    assert gestart == [nieuw] and invoer["bijlagen"] == [{"naam": "cijfers.txt", "tekst": "Bezetting garage 92 procent in 2026."}]
+    assert invoer["vorige"] == "Versie een." and invoer["aanwijzingen"] == "Verwerk de cijfers uit de bijlage."
+    # Alleen een bijlage, zonder aanwijzing, mag ook; een volgende versie zonder upload houdt de bijlage.
+    pol.uitvoeren("UPDATE concepten SET status = 'klaar', tekst = 'Versie twee.' WHERE id = %s", (nieuw,))
+    assert "cijfers.txt" in klant.get(f"/politiek/concepten/{nieuw}", headers=KOP).text
+    r = klant.post(f"/politiek/concepten/{nieuw}/herschrijf", headers=FORMULIER, follow_redirects=False, data={"aanwijzingen": "Korter."})
+    derde = int(r.headers["location"].rsplit("/", 1)[-1])
+    assert pol.q1("SELECT invoer FROM concepten WHERE id = %s", (derde,))["invoer"]["bijlagen"][0]["naam"] == "cijfers.txt"
+    # Niets meegegeven, of een bestand dat niet te lezen is: terug met uitleg.
+    r = klant.post(f"/politiek/concepten/{k}/herschrijf", headers=FORMULIER, follow_redirects=False, data={"aanwijzingen": ""})
+    assert "bijlage+toe" in r.headers["location"]
+    r = klant.post(f"/politiek/concepten/{k}/herschrijf", headers=FORMULIER, follow_redirects=False, data={"aanwijzingen": "x"},
+                   files=[("bijlagen", ("foto.jpg", b"\xff\xd8", "image/jpeg"))])
+    assert "kon+niet+worden+gelezen" in r.headers["location"] and "Dit bestandstype" in klant.get(r.headers["location"], headers=KOP).text
+    # De opdracht aan Claude: de bijlage staat erin.
+    gevraagd = []
+    monkeypatch.setattr(schrijven.claude, "vraag", lambda c, rol, systeem, tekst, *a, **kw: gevraagd.append(tekst) or "Nieuwe tekst.")
+    with pol.pool.connection() as c:
+        schrijven.maak_concept(c, nieuw)
+    assert "Bijlage die Martijn meegaf bij de aanwijzingen: cijfers.txt" in gevraagd[0] and "92 procent" in gevraagd[0]
+    pol.uitvoeren("DELETE FROM concepten WHERE id IN (%s, %s, %s)", (k, nieuw, derde))

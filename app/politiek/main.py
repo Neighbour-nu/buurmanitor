@@ -1363,7 +1363,7 @@ def concepten_lijst(request: Request, soort: str = ""):
 
 
 @app.get("/concepten/{cid}", response_class=HTMLResponse)
-def concept_scherm(request: Request, cid: int):
+def concept_scherm(request: Request, cid: int, melding: str = ""):
     k = q1("SELECT * FROM concepten WHERE id = %s", (cid,))
     if not k:
         raise HTTPException(404)
@@ -1374,7 +1374,7 @@ def concept_scherm(request: Request, cid: int):
     return templates.TemplateResponse("concept.html", ctx(
         request, "concepten", k=k, meta=k["meta"] or {}, soorten=schrijven.SOORTEN, md=schrijven.md_html,
         weergave=schrijven.velden_als_tekst(k["soort"], k["velden"]) if k["velden"] else k["tekst"],
-        versies=[v["id"] for v in versies], kinderen=[v["id"] for v in kinderen]))
+        versies=[v["id"] for v in versies], kinderen=[v["id"] for v in kinderen], melding=melding))
 
 
 @app.get("/concepten/{cid}/word")
@@ -1408,6 +1408,28 @@ async def concept_herschrijf(request: Request, cid: int):
     invoer = dict(k["invoer"] or {})
     invoer["aanwijzingen"] = str(form.get("aanwijzingen", "")).strip()
     invoer["vorige"] = k["tekst"] or ""
+    # Bijlagen: de tekst eruit, voor Claude. Nieuwe bijlagen vervangen die van de vorige versie; zonder nieuwe gaan die mee.
+    nieuwe = []
+    for bestand in form.getlist("bijlagen"):
+        if not getattr(bestand, "filename", ""):
+            continue
+        inhoud = await bestand.read()
+        terug = f"/concepten/{cid}?"
+        if len(inhoud) > MAX_UPLOAD:
+            return RedirectResponse(terug + urlencode({"melding": f"{bestand.filename} is te groot."}), status_code=303)
+        try:
+            tekst = (await asyncio.to_thread(fractie.tekst_uit_bestand, bestand.filename, inhoud)).strip()
+        except Exception as e:  # noqa: BLE001
+            return RedirectResponse(terug + urlencode({"melding": f"{bestand.filename} kon niet worden gelezen: {e}"}), status_code=303)
+        if not tekst:
+            return RedirectResponse(terug + urlencode({"melding": f"In {bestand.filename} staat geen tekst die ik kan lezen (een scan?)."}),
+                                    status_code=303)
+        nieuwe.append({"naam": bestand.filename[:200], "tekst": tekst[:schrijven.BIJLAGE_MAX]})
+    if nieuwe:
+        invoer["bijlagen"] = nieuwe[:5]
+    if not invoer["aanwijzingen"] and not nieuwe:
+        return RedirectResponse(f"/concepten/{cid}?" + urlencode({"melding": "Schrijf wat er anders moet, of voeg een bijlage toe."}),
+                                status_code=303)
     r = q1("""INSERT INTO concepten (soort, titel, bron, invoer, ouder_id, origineel, origineel_naam)
               VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
            (k["soort"], k["titel"], Jsonb(k["bron"] or {}), Jsonb(invoer), cid, k["origineel"], k["origineel_naam"]))

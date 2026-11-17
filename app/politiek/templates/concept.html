@@ -7,6 +7,7 @@
     {% for v in versies %}{% if v == k.id %}<b>{{ loop.index }}</b>{% else %}<a href="/concepten/{{ v }}">{{ loop.index }}</a>{% endif %} {% endfor %}
     {% for v in kinderen %}<a href="/concepten/{{ v }}">nieuwer</a> {% endfor %}{% endif %}</p>
 <h1 class="titel">{{ k.titel }}</h1>
+{% if melding %}<div class="melding">{{ melding }}</div>{% endif %}
 
 {% if k.status == 'bezig' %}
 <div class="kaart"><p><b>Claude schrijft dit concept.</b> Dat duurt meestal een tot twee minuten. Deze pagina ververst vanzelf.</p>
@@ -69,17 +70,23 @@
 {% endif %}
 
 <h2 class="sub">Herschrijven</h2>
-<form method="post" action="/concepten/{{ k.id }}/herschrijf" class="kaart">
+<form method="post" action="/concepten/{{ k.id }}/herschrijf" class="kaart" enctype="multipart/form-data">
   <label for="aanwijzingen">Wat moet er anders?</label>
-  <textarea id="aanwijzingen" name="aanwijzingen" required placeholder="Bijvoorbeeld: korter, scherper op de huren, laat vraag 3 weg, voeg een vraag toe over de planning."></textarea>
+  <textarea id="aanwijzingen" name="aanwijzingen" placeholder="Bijvoorbeeld: korter, scherper op de huren, laat vraag 3 weg, voeg een vraag toe over de planning. Of: verwerk de cijfers uit de bijlage."></textarea>
+  <label for="bijlagen" style="margin-top:10px">Bijlage (optioneel: Word, pdf of tekst; meerdere mag)</label>
+  <input id="bijlagen" type="file" name="bijlagen" multiple accept=".docx,.pdf,.txt,.md">
+  <p class="noot" style="margin:2px 0 0">Claude leest de bijlage mee bij het herschrijven, bijvoorbeeld een reactie van een collega, een nieuw stuk of eigen aantekeningen.
+    {% if k.invoer and k.invoer.bijlagen %}Uploadt je niets, dan gaan de bijlagen van deze versie weer mee ({{ k.invoer.bijlagen | map(attribute='naam') | join(', ') }}).{% endif %}</p>
   <p style="margin-top:10px"><button class="knop vol" type="submit">Maak nieuwe versie</button>
   <span class="noot">De huidige versie blijft bewaard.</span></p>
 </form>
 {% endif %}
 
-{% if k.invoer and (k.invoer.aanwijzingen or k.invoer.tekst) %}
+{% if k.invoer and (k.invoer.aanwijzingen or k.invoer.tekst or k.invoer.bijlagen) %}
 <details class="kaart" style="margin-top:12px"><summary>Wat je meegaf</summary>
   {% if k.invoer.aanwijzingen %}<p><b>Aanwijzingen:</b> {{ k.invoer.aanwijzingen }}</p>{% endif %}
+  {% for b in k.invoer.bijlagen or [] %}<details><summary><b>Bijlage:</b> {{ b.naam }} <span class="noot">({{ b.tekst | length }} tekens)</span></summary>
+    <div class="document">{{ b.tekst | truncate(4000) }}</div></details>{% endfor %}
   {% if k.invoer.tekst %}<div class="document">{{ k.invoer.tekst }}</div>{% endif %}
 </details>{% endif %}
 
