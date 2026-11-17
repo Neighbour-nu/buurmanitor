@@ -68,6 +68,9 @@ services:
     restart: unless-stopped
     environment:
       MODE: native
+      # signal-cli draait als de gebruiker ubuntu (uid 1000), zodat hij in ~/buurmanitor/signal mag schrijven.
+      SIGNAL_CLI_UID: "1000"
+      SIGNAL_CLI_GID: "1000"
       TZ: Europe/Amsterdam
     volumes:
       - ${HOME}/buurmanitor/signal:/home/.local/share/signal-cli

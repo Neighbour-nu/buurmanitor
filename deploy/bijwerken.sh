@@ -10,9 +10,12 @@ fi
 # zerohero.env moet bestaan (docker-compose leest het); leeg tot de overstap van de Doellijn.
 touch ~/buurmanitor/zerohero.env && chmod 600 ~/buurmanitor/zerohero.env
 # Signal: map voor de koppelsleutels (alleen voor jou leesbaar) en de nieuwste signal-cli.
-# (Docker kan de map al als root hebben gemaakt; dan met sudo, en anders niet stoppen.)
+# Docker kan de map als root hebben gemaakt; dan kan signal-cli er niet in schrijven. Terug naar jou (met sudo), anders niet stoppen.
 mkdir -p ~/buurmanitor/signal 2>/dev/null || sudo -n mkdir -p ~/buurmanitor/signal || true
-chmod 700 ~/buurmanitor/signal 2>/dev/null || sudo -n chmod 700 ~/buurmanitor/signal 2>/dev/null \
-  || echo "Let op: zet de rechten van ~/buurmanitor/signal zelf op 700:  sudo chmod 700 ~/buurmanitor/signal"
+if [ "$(stat -c %u ~/buurmanitor/signal)" != "$(id -u)" ]; then
+  sudo -n chown -R "$(id -u):$(id -g)" ~/buurmanitor/signal 2>/dev/null \
+    || echo "Let op: ~/buurmanitor/signal is niet van jou. Doe:  sudo chown -R $(id -un): ~/buurmanitor/signal"
+fi
+chmod 700 ~/buurmanitor/signal 2>/dev/null || true
 cd ~/buurmanitor && (docker compose pull -q signal || true) && docker compose up -d --build
 sleep 5 && docker compose ps && docker compose logs --tail=5 app

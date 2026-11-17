@@ -33,7 +33,8 @@
       const f = document.getElementById("qrfout");
       let t = "";
       try { const r = await fetch("/bram/signal/qr", { cache: "no-store" }); t = (await r.json()).detail || ""; } catch (e) { /* geen uitleg */ }
-      f.textContent = "De QR-code kon niet worden gemaakt" + (t ? ": " + t : ".") + " Ververs de pagina; blijft dit, kijk dan met: docker compose logs --tail=30 signal";
+      f.textContent = "De QR-code kon niet worden gemaakt" + (t ? ": " + t : ".") + " Ververs de pagina. Blijft dit staan, stuur dan de uitvoer van: "
+        + "cd ~/buurmanitor && docker compose logs --tail=40 signal";
       f.hidden = false; this.hidden = true;
     });
   </script>
