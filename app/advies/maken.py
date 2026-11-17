@@ -129,11 +129,11 @@ def _agenda(c, nu, horizon):
         return "Agenda: nog geen agenda's gekoppeld."
     begin = dt.datetime.combine(nu.date(), dt.time(0), tzinfo=config.TZ)
     uit = []
-    for dag in range(2):
-        van = begin + dt.timedelta(days=dag)
+    for n in range(2):  # vandaag en morgen
+        van = begin + dt.timedelta(days=n)
         lijst = [a for a in sync.afspraken(c, van, van + dt.timedelta(days=1))
                  if a.get("antwoord") != "afgewezen" and a.get("status") != "geannuleerd" and not (a.get("niet_voor_mij") and not a.get("mee"))]
-        uit.append(f"Agenda {'vandaag' if dag == 0 else 'morgen'} ({dag(van)}):")
+        uit.append(f"Agenda {'vandaag' if n == 0 else 'morgen'} ({dag(van)}):")
         uit += [f"- {'hele dag' if a['heledag'] else a['start'].astimezone(config.TZ).strftime('%H.%M')}"
                 f"{'' if a['heledag'] else '-' + a['eind'].astimezone(config.TZ).strftime('%H.%M')} {a['titel']}"
                 + (f" ({a['locatie']})" if a.get("locatie") else "") + f" [{a.get('domein') or a['koppeling']}]"
@@ -245,9 +245,12 @@ def verzamel(c, s, nu=None):
             continue
         try:
             tekst = f(c, nu, s["horizon"])
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001  (een fout in Buurmanitor zelf: melden, en Iris zegt het eerlijk)
             traceback.print_exc()
-            tekst = f"{BRONNEN[bron].split(':')[0]}: niet beschikbaar ({str(e)[:100]})."
+            naam = BRONNEN[bron].split(":")[0]
+            tekst = f"{naam}: niet beschikbaar door een fout in Buurmanitor (niet in de bron zelf)."
+            meldingen.melden(c, "normaal", "iris", f"Iris kon {naam.lower()} niet lezen voor haar advies",
+                             f"{type(e).__name__}: {str(e)[:250]}", link="/iris/instellingen", sleutel=f"irisbron-{bron}-{nu:%Y%m%d}")
         if tekst:
             delen.append(tekst)
     return "\n\n".join(delen)
@@ -274,7 +277,8 @@ def systeem(c, s):
              "Kies wat er echt toe doet en zeg waarom. Wees concreet: noem namen, data en tijden uit de gegevens. Verzin niets en "
              "noem niets wat niet in de gegevens staat. Liever één scherp punt dan drie vage. Herhaal geen dingen die geen actie of "
              "aandacht vragen. Een deadline is in gevaar als hij nadert en er nog werk open staat, als een taak te laat is, of als "
-             "de agenda geen ruimte laat.",
+             "de agenda geen ruimte laat. Staat bij een bron 'niet beschikbaar', noem dat dan alleen kort in de samenvatting "
+             "(bijvoorbeeld 'je agenda kon ik vandaag niet lezen') en maak er geen apart punt van.",
              "# Antwoord\nAlleen JSON, zonder uitleg eromheen, in deze vorm:\n"
              '{"samenvatting": "twee of drie zinnen: de kern van vandaag", "punten": [{"soort": "belangrijk|risico|deadline|advies", '
              '"titel": "korte kop", "tekst": "een tot drie zinnen: wat er speelt, waarom het telt, en wat Martijn kan doen", '

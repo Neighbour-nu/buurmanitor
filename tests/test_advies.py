@@ -107,7 +107,15 @@ def test_maken_versturen_en_planner(klant, nep):
         c.execute("INSERT INTO takenbord (titel, status, prio, wacht_op) VALUES ('Offerte', 'wachtend', 'middel', 'de drukker')")
         c.execute("INSERT INTO instellingen (sleutel, waarde) VALUES ('iris_achtergrond', 'De begroting gaat voor.')")
         c.execute("INSERT INTO iris_lessen (tekst) VALUES ('Mail van de griffie is altijd belangrijk.')")
+        k = c.execute("INSERT INTO agenda_koppelingen (soort, naam, domein) VALUES ('ics', 'Raad', 'politiek') RETURNING id").fetchone()["id"]
+        begin = dt.datetime.combine(vandaag, dt.time(0), tzinfo=config.TZ)
+        for n, (titel, van, tot) in enumerate((("Commissieavond", 19, 23), ("Fractievoorzittersoverleg", 18, 20))):
+            c.execute("INSERT INTO agenda_items (koppeling_id, extern_id, titel, start, eind) VALUES (%s, %s, %s, %s, %s)",
+                      (k, f"e{n}", titel, begin + dt.timedelta(hours=van), begin + dt.timedelta(hours=tot)))
         gegevens = maken.verzamel(c, soorten[0])
+        c.execute("DELETE FROM agenda_koppelingen WHERE id = %s", (k,))
+        assert "niet beschikbaar" not in gegevens and "- 19.00-23.00 Commissieavond" in gegevens and "Agenda morgen" in gegevens
+        assert "Fractievoorzittersoverleg en Commissieavond" in gegevens  # de overlap
         assert f"taak #{laat}: Rapport schrijven" in gegevens and "2 dagen te laat" in gegevens and "Begroting lezen" in gegevens
         assert "wacht op de drukker" in gegevens and "Promonitor" not in gegevens  # Promonitor draait hier niet: stil weggelaten
         a, uitslag = maken.maak_en_verstuur(c, soorten[0])
@@ -208,3 +216,15 @@ def test_gesprek_kent_de_lessen(klant, nep):
         iris.antwoord(c, gid)
         c.execute("DELETE FROM gesprekken WHERE id = %s", (gid,))
     assert "Wat Martijn je leerde" in gevraagd[-1]["systeem"] and "Mail van de griffie is altijd belangrijk." in gevraagd[-1]["systeem"]
+
+
+def test_bron_met_fout(klant, monkeypatch):
+    def kapot(c, nu, h):
+        raise RuntimeError("stuk")
+    monkeypatch.setitem(maken.VERZAMELAARS, "agenda", kapot)
+    with _db() as c:
+        s = c.execute("SELECT * FROM iris_adviessoorten ORDER BY tijd LIMIT 1").fetchone()
+        tekst = maken.verzamel(c, s | {"bronnen": ["agenda", "taken"]})
+        m = c.execute("SELECT * FROM meldingen WHERE bron = 'iris' ORDER BY id DESC LIMIT 1").fetchone()
+    assert "Agenda (Clara): niet beschikbaar door een fout in Buurmanitor" in tekst and "Taken:" in tekst
+    assert "agenda (clara) niet lezen" in m["titel"] and "RuntimeError: stuk" in m["tekst"]
