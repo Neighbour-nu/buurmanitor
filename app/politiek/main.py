@@ -1418,7 +1418,13 @@ async def concept_herschrijf(request: Request, cid: int):
         if len(inhoud) > MAX_UPLOAD:
             return RedirectResponse(terug + urlencode({"melding": f"{bestand.filename} is te groot."}), status_code=303)
         try:
-            tekst = (await asyncio.to_thread(fractie.tekst_uit_bestand, bestand.filename, inhoud)).strip()
+            if bestand.filename.lower().endswith(schrijven.AFBEELDING) or (bestand.content_type or "").startswith("image/"):
+                def lees(inhoud=inhoud):
+                    with pool.connection() as c:
+                        return schrijven.tekst_uit_afbeelding(c, inhoud)
+                tekst = "(Uitgelezen uit de afbeelding)\n" + (await asyncio.to_thread(lees)).strip()
+            else:
+                tekst = (await asyncio.to_thread(fractie.tekst_uit_bestand, bestand.filename, inhoud)).strip()
         except Exception as e:  # noqa: BLE001
             return RedirectResponse(terug + urlencode({"melding": f"{bestand.filename} kon niet worden gelezen: {e}"}), status_code=303)
         if not tekst:

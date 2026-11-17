@@ -73,14 +73,43 @@
 <form method="post" action="/concepten/{{ k.id }}/herschrijf" class="kaart" enctype="multipart/form-data">
   <label for="aanwijzingen">Wat moet er anders?</label>
   <textarea id="aanwijzingen" name="aanwijzingen" placeholder="Bijvoorbeeld: korter, scherper op de huren, laat vraag 3 weg, voeg een vraag toe over de planning. Of: verwerk de cijfers uit de bijlage."></textarea>
-  <label for="bijlagen" style="margin-top:10px">Bijlage (optioneel: Word, pdf of tekst; meerdere mag)</label>
-  <input id="bijlagen" type="file" name="bijlagen" multiple accept=".docx,.pdf,.txt,.md">
-  <p class="noot" style="margin:2px 0 0">Claude leest de bijlage mee bij het herschrijven, bijvoorbeeld een reactie van een collega, een nieuw stuk of eigen aantekeningen.
+  <label for="bijlagen" style="margin-top:10px">Bijlage (optioneel: Word, pdf, tekst of een schermafbeelding; meerdere mag)</label>
+  <input id="bijlagen" type="file" name="bijlagen" multiple accept=".docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.gif,.heic,image/*">
+  <p class="noot" id="plakhint" style="margin:2px 0 0">Een schermafbeelding kun je ook plakken (Cmd-V of Ctrl-V) terwijl je in dit formulier bent.
+    Claude leest de bijlage mee bij het herschrijven, bijvoorbeeld een reactie van een collega, een nieuw stuk of eigen aantekeningen.
     {% if k.invoer and k.invoer.bijlagen %}Uploadt je niets, dan gaan de bijlagen van deze versie weer mee ({{ k.invoer.bijlagen | map(attribute='naam') | join(', ') }}).{% endif %}</p>
+  <ul id="geplakt" class="noot" style="margin:4px 0 0"></ul>
   <p style="margin-top:10px"><button class="knop vol" type="submit">Maak nieuwe versie</button>
   <span class="noot">De huidige versie blijft bewaard.</span></p>
 </form>
 {% endif %}
+
+<script>
+// Een schermafbeelding plakken: hij komt bij de gekozen bestanden (zonder naam krijgt hij er een met de tijd).
+(function () {
+  const vorm = document.getElementById("bijlagen") && document.getElementById("bijlagen").form, veld = document.getElementById("bijlagen"),
+        lijst = document.getElementById("geplakt");
+  if (!vorm || !window.DataTransfer) return;
+  function toon() { lijst.replaceChildren(...[...veld.files].map(f => { const li = document.createElement("li"); li.textContent = f.name; return li; })); }
+  veld.addEventListener("change", toon);
+  document.addEventListener("paste", e => {
+    const plaatjes = [...(e.clipboardData ? e.clipboardData.items : [])].filter(i => i.kind === "file" && i.type.startsWith("image/"));
+    if (!plaatjes.length) return;
+    e.preventDefault();
+    const dt = new DataTransfer();
+    [...veld.files].forEach(f => dt.items.add(f));
+    plaatjes.forEach(i => {
+      const f = i.getAsFile(), tijd = new Date().toTimeString().slice(0, 8).replace(/:/g, "."),
+            ext = (f.type.split("/")[1] || "png").replace("jpeg", "jpg"), namen = [...dt.files].map(x => x.name);
+      let naam = `schermafbeelding ${tijd}.${ext}`, n = 2;
+      while (namen.includes(naam)) naam = `schermafbeelding ${tijd} (${n++}).${ext}`;
+      dt.items.add(new File([f], naam, { type: f.type }));
+    });
+    veld.files = dt.files;
+    toon();
+  });
+})();
+</script>
 
 {% if k.invoer and (k.invoer.aanwijzingen or k.invoer.tekst or k.invoer.bijlagen) %}
 <details class="kaart" style="margin-top:12px"><summary>Wat je meegaf</summary>

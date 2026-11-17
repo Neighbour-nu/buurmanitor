@@ -183,8 +183,11 @@ def test_herschrijven_met_bijlage(klant, monkeypatch):
     r = klant.post(f"/politiek/concepten/{k}/herschrijf", headers=FORMULIER, follow_redirects=False, data={"aanwijzingen": ""})
     assert "bijlage+toe" in r.headers["location"]
     r = klant.post(f"/politiek/concepten/{k}/herschrijf", headers=FORMULIER, follow_redirects=False, data={"aanwijzingen": "x"},
-                   files=[("bijlagen", ("foto.jpg", b"\xff\xd8", "image/jpeg"))])
+                   files=[("bijlagen", ("tekening.dwg", b"\x00\x01", "application/octet-stream"))])
     assert "kon+niet+worden+gelezen" in r.headers["location"] and "Dit bestandstype" in klant.get(r.headers["location"], headers=KOP).text
+    r = klant.post(f"/politiek/concepten/{k}/herschrijf", headers=FORMULIER, follow_redirects=False, data={"aanwijzingen": "x"},
+                   files=[("bijlagen", ("kapot.jpg", b"\xff\xd8", "image/jpeg"))])
+    assert "geen+afbeelding+die+ik+kan+openen" in r.headers["location"]
     # De opdracht aan Claude: de bijlage staat erin.
     gevraagd = []
     monkeypatch.setattr(schrijven.claude, "vraag", lambda c, rol, systeem, tekst, *a, **kw: gevraagd.append(tekst) or "Nieuwe tekst.")
@@ -192,3 +195,33 @@ def test_herschrijven_met_bijlage(klant, monkeypatch):
         schrijven.maak_concept(c, nieuw)
     assert "Bijlage die Martijn meegaf bij de aanwijzingen: cijfers.txt" in gevraagd[0] and "92 procent" in gevraagd[0]
     pol.uitvoeren("DELETE FROM concepten WHERE id IN (%s, %s, %s)", (k, nieuw, derde))
+
+
+def test_herschrijven_met_schermafbeelding(klant, monkeypatch):
+    """Een schermafbeelding als bijlage: Claude leest hem uit (verkleind tot JPEG), de tekst gaat mee bij het herschrijven."""
+    import io  # pylint: disable=import-outside-toplevel
+    from PIL import Image  # pylint: disable=import-outside-toplevel
+    from psycopg.types.json import Jsonb  # pylint: disable=import-outside-toplevel
+    from app.politiek import main as pol, schrijven  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(schrijven, "start", lambda pool, cid: None)
+    gezien = []
+
+    def vraag(c, rol, systeem, inhoud, model, **kw):
+        gezien.append(inhoud)
+        return "Bezetting parkeergarage: 92 procent — in 2026."
+    monkeypatch.setattr(schrijven.claude, "vraag", vraag)
+    beeld = io.BytesIO()
+    Image.new("RGBA", (3000, 1500), (255, 0, 0, 128)).save(beeld, "PNG")
+    k = pol.q1("""INSERT INTO concepten (soort, titel, bron, invoer, status, tekst) VALUES ('bijdrage', 'Parkeren', %s, %s, 'klaar', 'Versie een.')
+                  RETURNING id""", (Jsonb({}), Jsonb({})))["id"]
+    assert "Cmd-V of Ctrl-V" in klant.get(f"/politiek/concepten/{k}", headers=KOP).text
+    r = klant.post(f"/politiek/concepten/{k}/herschrijf", headers=FORMULIER, follow_redirects=False, data={"aanwijzingen": ""},
+                   files=[("bijlagen", ("schermafbeelding 06.40.12.png", beeld.getvalue(), "image/png"))])
+    nieuw = int(r.headers["location"].rsplit("/", 1)[-1])
+    b = pol.q1("SELECT invoer FROM concepten WHERE id = %s", (nieuw,))["invoer"]["bijlagen"][0]
+    assert b["naam"] == "schermafbeelding 06.40.12.png" and b["tekst"] == "(Uitgelezen uit de afbeelding)\nBezetting parkeergarage: 92 procent, in 2026."
+    blok = gezien[0][0]
+    assert blok["type"] == "image" and blok["source"]["media_type"] == "image/jpeg"
+    klein = Image.open(io.BytesIO(__import__("base64").b64decode(blok["source"]["data"])))
+    assert max(klein.size) == 1800 and klein.mode == "RGB"
+    pol.uitvoeren("DELETE FROM concepten WHERE id IN (%s, %s)", (k, nieuw))
