@@ -86,7 +86,7 @@
 </section>
 
 <section class="kaart" id="chats">
-  <div class="adlkop"><h2>Chats <span class="noot">({{ totaal }})</span></h2>
+  <div class="adlkop"><h2>{{ "Verwijderde chats" if verborgen else "Chats" }} <span class="noot">({{ chats | length if verborgen else totaal }})</span></h2>
     <form method="get" action="/bram/signal/zoek" class="inline zoekveld"><input type="search" name="q" placeholder="Zoek in het archief" aria-label="Zoek in het Signal-archief">
       <button class="knop klein" type="submit">Zoeken</button></form></div>
   <p class="noot">Hier komen de chats bij zodra er een bericht in langskomt. <b>Meelezen</b>: Bram en Iris lezen mee (het gaat naar Claude)
@@ -95,7 +95,7 @@
     Signal geeft alleen berichten van na de koppeling; oudere berichten komen niet mee.</p>
   {% for ch in chats %}
   <form method="post" action="/bram/signal/chat/{{ ch.id }}" class="velden signchat{{ ' aan' if ch.meelezen or ch.archief }}" id="chat-{{ ch.id }}"
-    onsubmit="const m = this.meelezen.checked || this.archief.checked; return m || {{ 'true' if not ch.bewaard else 'false' }} || confirm('Meelezen en archief allebei uit? Dan worden de {{ ch.bewaard }} bewaarde berichten van deze chat gewist.')">
+    onsubmit="if (event.submitter && event.submitter.dataset.los) return true; const m = this.meelezen.checked || this.archief.checked; return m || {{ 'true' if not ch.bewaard else 'false' }} || confirm('Meelezen en archief allebei uit? Dan worden de {{ ch.bewaard }} bewaarde berichten van deze chat gewist.')">
     <span class="chatnaam">{{ '👥' if ch.soort == 'groep' else '👤' }} <b>{% if ch.meelezen or ch.archief or ch.bewaard %}<a href="/bram/signal/chat/{{ ch.id }}">{{ chatnaam(ch) }}</a>{% else %}{{ chatnaam(ch) }}{% endif %}</b>
       <span class="noot">{{ ch.aantal }} berichten{% if ch.laatst %}, laatst {{ geleden(ch.laatst) }}{% endif %}{% if ch.bewaard %}, {{ ch.bewaard }} bewaard{% endif %}</span></span>
     <label class="vink"><input type="checkbox" name="meelezen" value="1" {{ 'checked' if ch.meelezen }}
@@ -104,10 +104,18 @@
     <label class="vink"><input type="checkbox" name="voorstellen" value="1" {{ 'checked' if ch.voorstellen }}> voorstellen</label>
     <label>Domein <select name="domein">{% for k, n in domeinen %}<option value="{{ k }}" {{ 'selected' if ch.domein == k }}>{{ n }}</option>{% endfor %}</select></label>
     <label>Eigen naam <input type="text" name="eigen_naam" value="{{ ch.eigen_naam }}" placeholder="{{ ch.naam }}"></label>
+    {% if verborgen %}
+    <button class="knop klein vol" type="submit" formaction="/bram/signal/chat/{{ ch.id }}/terugzetten" data-los="1">Terugzetten</button>
+    {% else %}
     <button class="knop klein" type="submit">Opslaan</button>
+    <button class="knop klein" type="submit" formaction="/bram/signal/chat/{{ ch.id }}/verwijderen" data-los="1" title="Chat verwijderen" aria-label="Chat verwijderen"
+      onclick="return confirm('{{ chatnaam(ch) | replace("'", "") | e }} verwijderen?{{ (' De ' ~ ch.bewaard ~ ' bewaarde berichten worden gewist.') if ch.bewaard }} Nieuwe berichten uit deze chat worden niet meer bewaard. In Signal zelf verandert niets.')">🗑</button>
+    {% endif %}
   </form>
   {% else %}<p class="noot">Nog geen chats. Stuur jezelf een berichtje of wacht tot er iets binnenkomt.</p>{% endfor %}
-  {% if not alle and totaal > chats | length %}<p><a href="/bram/signal?alle=1#chats">Alle {{ totaal }} chats tonen</a></p>{% endif %}
+  {% if not alle and not verborgen and totaal > chats | length %}<p><a href="/bram/signal?alle=1#chats">Alle {{ totaal }} chats tonen</a></p>{% endif %}
+  {% if verborgen %}<p class="noot"><a href="/bram/signal#chats">Terug naar de chats</a></p>
+  {% elif n_verborgen %}<p class="noot"><a href="/bram/signal?verborgen=1#chats">Verwijderde chats ({{ n_verborgen }})</a></p>{% endif %}
 </section>
 
 <section class="kaart">

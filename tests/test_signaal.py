@@ -392,3 +392,31 @@ def test_alles_wissen(schoon, container):
     with _db() as c:
         assert c.execute("SELECT count(*) AS n FROM signal_chats").fetchone()["n"] == 0
         assert not verwerken.instelling(c, "signal_nummer")
+
+
+def test_chat_verwijderen_en_terugzetten(schoon, container):
+    with _db() as c:
+        container["inbox"] = [env(dataMessage=dm("eerste", groupInfo={"groupId": "grp1"}))]
+        verwerken.taak_signal(c)
+        cid = c.execute("SELECT id FROM signal_chats").fetchone()["id"]
+        c.execute("UPDATE signal_chats SET meelezen = true WHERE id = %s", (cid,))
+        container["inbox"] = [env(dataMessage=dm("geheim bericht", ts=T0 + 1, groupInfo={"groupId": "grp1"}))]
+        verwerken.taak_signal(c)
+        c.execute("INSERT INTO signal_voorstellen (chat_id, soort, titel) VALUES (%s, 'taak', 'Iets')", (cid,))
+    assert "Chat verwijderen" in schoon.get("/bram/signal", headers=KOP).text
+    r = schoon.post(f"/bram/signal/chat/{cid}/verwijderen", headers=FORM, follow_redirects=True)
+    assert "Fractie is verwijderd, met 1 bewaarde berichten" in r.text and f'id="chat-{cid}"' not in r.text
+    assert "Verwijderde chats (1)" in r.text
+    with _db() as c:
+        assert c.execute("SELECT count(*) AS n FROM signal_berichten").fetchone()["n"] == 0
+        assert c.execute("SELECT count(*) AS n FROM signal_voorstellen WHERE status = 'open'").fetchone()["n"] == 0
+        # nieuwe berichten: niet bewaard, chat blijft weg
+        container["inbox"] = [env(dataMessage=dm("nog een", ts=T0 + 2, groupInfo={"groupId": "grp1"}))]
+        assert "0 bewaard" in verwerken.taak_signal(c)
+        assert c.execute("SELECT verborgen FROM signal_chats WHERE id = %s", (cid,)).fetchone()["verborgen"]
+    r = schoon.get("/bram/signal?verborgen=1", headers=KOP)
+    assert f'id="chat-{cid}"' in r.text and "Terugzetten" in r.text
+    r = schoon.post(f"/bram/signal/chat/{cid}/terugzetten", headers=FORM, follow_redirects=True)
+    assert "staat weer bij de chats" in r.text and f'id="chat-{cid}"' in r.text and "Verwijderde chats" not in r.text
+    assert schoon.post("/bram/signal/chat/999999/verwijderen", headers=FORM).status_code == 404
+    assert schoon.post(f"/bram/signal/chat/{cid}/verwijderen", headers=KOP).status_code in (400, 403)  # zonder herkomst

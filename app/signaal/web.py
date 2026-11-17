@@ -27,7 +27,7 @@ chatnaam = verwerken.chatnaam
 
 
 @router.get("/bram/signal", response_class=HTMLResponse)
-def scherm(request: Request, melding: str = "", fout: str = "", alle: int = 0):
+def scherm(request: Request, melding: str = "", fout: str = "", alle: int = 0, verborgen: int = 0):
     with db.pool.connection() as c:
         nummer = verwerken.instelling(c, "signal_nummer")
         bereikbaar = True
@@ -37,9 +37,11 @@ def scherm(request: Request, melding: str = "", fout: str = "", alle: int = 0):
             except bron.SignalFout as e:
                 bereikbaar, fout = False, fout or str(e)
         chats = c.execute("""SELECT ch.*, (SELECT count(*) FROM signal_berichten b WHERE b.chat_id = ch.id) AS bewaard
-                             FROM signal_chats ch ORDER BY (ch.meelezen OR ch.archief) DESC, ch.laatst DESC NULLS LAST LIMIT %s""",
-                          (500 if alle else 60,)).fetchall()
-        totaal = c.execute("SELECT count(*) AS n FROM signal_chats").fetchone()["n"]
+                             FROM signal_chats ch WHERE ch.verborgen = %s
+                             ORDER BY (ch.meelezen OR ch.archief) DESC, ch.laatst DESC NULLS LAST LIMIT %s""",
+                          (bool(verborgen), 500 if alle or verborgen else 60)).fetchall()
+        totaal = c.execute("SELECT count(*) AS n FROM signal_chats WHERE NOT verborgen").fetchone()["n"]
+        n_verborgen = c.execute("SELECT count(*) AS n FROM signal_chats WHERE verborgen").fetchone()["n"]
         voorstellen = c.execute("""SELECT v.*, ch.naam, ch.eigen_naam, ch.sleutel, ch.domein FROM signal_voorstellen v
                                    JOIN signal_chats ch ON ch.id = v.chat_id WHERE v.status = 'open' ORDER BY v.datum NULLS LAST, v.id""").fetchall()
         taak = c.execute("SELECT * FROM taken WHERE naam = 'signal'").fetchone()
@@ -57,7 +59,7 @@ def scherm(request: Request, melding: str = "", fout: str = "", alle: int = 0):
         agendas = clara_sync.koppelingen(c, alleen_actief=True)
     doelen = clara_web._schrijfdoelen(agendas)  # pylint: disable=protected-access
     return templates.TemplateResponse("bram_signal.html", ctx(
-        request, "bram", actief=bron.actief(), bereikbaar=bereikbaar, nummer=nummer, controle=controle, tellers=tellers, chats=chats, totaal=totaal, alle=alle, voorstellen=voorstellen, taak=taak,
+        request, "bram", actief=bron.actief(), bereikbaar=bereikbaar, nummer=nummer, controle=controle, tellers=tellers, chats=chats, totaal=totaal, alle=alle, verborgen=verborgen, n_verborgen=n_verborgen, voorstellen=voorstellen, taak=taak,
         doelen=doelen, doel_voor=clara_web._doel_voor, chatnaam=chatnaam, domeinen=DOMEINEN,  # pylint: disable=protected-access
         sleutel_ok=bool(config.ANTHROPIC_API_KEY), planner_aan=config.PLANNER_AAN, tz=config.TZ, melding=melding, fout=fout))
 
@@ -147,6 +149,32 @@ async def chat_opslaan(request: Request, cid: int):
 
 
 PER_PAGINA = 300
+
+
+@router.post("/bram/signal/chat/{cid:int}/verwijderen")
+async def chat_verwijderen(request: Request, cid: int):
+    """Een chat van het scherm halen: wat er bewaard was (berichten, open voorstellen) gaat weg, en nieuwe berichten uit
+    deze chat worden niet meer bewaard of getoond. Terugzetten kan onder 'Verwijderde chats'."""
+    controleer_herkomst(request)
+    with db.pool.connection() as c:
+        ch = c.execute("""UPDATE signal_chats SET verborgen = true, meelezen = false, archief = false WHERE id = %s RETURNING *""",
+                       (cid,)).fetchone()
+        if not ch:
+            raise HTTPException(404)
+        gewist = c.execute("DELETE FROM signal_berichten WHERE chat_id = %s", (cid,)).rowcount
+        c.execute("DELETE FROM signal_voorstellen WHERE chat_id = %s AND status = 'open'", (cid,))
+    return _terug("/bram/signal#chats", melding=f"{chatnaam(ch)} is verwijderd" + (f", met {gewist} bewaarde berichten" if gewist else "")
+                  + ". Nieuwe berichten uit deze chat worden niet bewaard.")
+
+
+@router.post("/bram/signal/chat/{cid:int}/terugzetten")
+async def chat_terugzetten(request: Request, cid: int):
+    controleer_herkomst(request)
+    with db.pool.connection() as c:
+        ch = c.execute("UPDATE signal_chats SET verborgen = false WHERE id = %s RETURNING *", (cid,)).fetchone()
+    if not ch:
+        raise HTTPException(404)
+    return _terug(f"/bram/signal#chat-{cid}", melding=f"{chatnaam(ch)} staat weer bij de chats. Zet meelezen of archief aan om berichten te bewaren.")
 
 
 @router.get("/bram/signal/chat/{cid:int}", response_class=HTMLResponse)
