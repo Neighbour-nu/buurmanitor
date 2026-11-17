@@ -46,8 +46,20 @@
 <section class="kaart">
   <div class="adlkop"><h2>Gekoppeld met {{ nummer }}</h2>
     <form method="post" action="/bram/signal/ophalen" class="inline"><button class="knop klein" type="submit">Nu ophalen</button></form></div>
-  <p class="noot">{% if not planner_aan %}<b>De planner staat uit: berichten komen alleen binnen met Nu ophalen.</b>{% elif taak and taak.laatst %}Elke twee minuten opgehaald; laatst {{ geleden(taak.laatst) }}: {{ taak.resultaat or 'geen uitslag' }}.{% endif %}
+  {% if taak and taak.fout %}<p class="item urgent">Het ophalen ging {{ geleden(taak.laatst) if taak.laatst else '' }} mis: {{ taak.fout.splitlines()[0] }}</p>{% endif %}
+  <p class="noot">{% if not planner_aan %}<b>De planner staat uit: berichten komen alleen binnen met Nu ophalen.</b>{% elif taak and taak.laatst %}Elke twee minuten opgehaald; laatst {{ geleden(taak.laatst) }}{% if taak.resultaat %}: {{ taak.resultaat }}{% endif %}.{% else %}Nog niet opgehaald; dat gebeurt binnen twee minuten, of nu met de knop.{% endif %}
     {% if not sleutel_ok %} Er is geen Claude-sleutel, dus Bram maakt nog geen voorstellen.{% endif %}</p>
+  <details class="controle"{% if (taak and taak.fout) or not tellers.meelezen %} open{% endif %}><summary>Controle</summary>
+    <ul class="noot">
+      <li>Chats met meelezen (Bram en Iris): <b>{{ tellers.meelezen }}</b>{% if not tellers.meelezen %}. <b>Zet bij Chats hieronder meelezen aan</b>, anders bewaren en lezen Bram en Iris niets.{% endif %}</li>
+      <li>Chats met alleen archief: {{ tellers.archief }}</li>
+      <li>Bewaarde berichten: {{ tellers.bewaard }}, waarvan {{ tellers.dag }} in de afgelopen 24 uur (die ziet Iris){% if tellers.laatst %}; laatste {{ geleden(tellers.laatst) }}{% endif %}.</li>
+      {% if controle %}<li>Laatst iets binnengekomen {{ geleden(controle.tijd) }}: {{ controle.ontvangen }} keer iets van Signal
+        ({% for s, n in controle.soorten | dictsort %}{{ n }} {{ s }}{{ ', ' if not loop.last }}{% endfor %}), daarvan {{ controle.berichten }} berichten met tekst, {{ controle.bewaard }} bewaard.</li>
+      {% else %}<li>Er is nog niets van Signal binnengekomen. Stuur iemand een bericht (of laat je een bericht sturen) en klik op Nu ophalen.</li>{% endif %}
+      <li>Alleen berichten van na het koppelen, en van een chat pas vanaf het moment dat meelezen of archief aan staat.</li>
+    </ul>
+  </details>
 </section>
 
 <section class="kaart" id="voorstellen">

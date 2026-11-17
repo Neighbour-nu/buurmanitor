@@ -1,6 +1,7 @@
 """Schermen voor Signal (onder Post): koppelen, chats kiezen, meelezen en de voorstellen uitvoeren."""
 import asyncio
 import datetime as dt
+import json
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request
@@ -42,10 +43,21 @@ def scherm(request: Request, melding: str = "", fout: str = "", alle: int = 0):
         voorstellen = c.execute("""SELECT v.*, ch.naam, ch.eigen_naam, ch.sleutel, ch.domein FROM signal_voorstellen v
                                    JOIN signal_chats ch ON ch.id = v.chat_id WHERE v.status = 'open' ORDER BY v.datum NULLS LAST, v.id""").fetchall()
         taak = c.execute("SELECT * FROM taken WHERE naam = 'signal'").fetchone()
+        try:
+            controle = json.loads(verwerken.instelling(c, "signal_controle", "") or "null")
+            if controle:
+                controle["tijd"] = dt.datetime.fromisoformat(controle["tijd"])
+        except (ValueError, KeyError, TypeError):
+            controle = None
+        tellers = c.execute("""SELECT count(*) FILTER (WHERE meelezen) AS meelezen, count(*) FILTER (WHERE archief AND NOT meelezen) AS archief,
+                               (SELECT count(*) FROM signal_berichten) AS bewaard,
+                               (SELECT count(*) FROM signal_berichten WHERE tijd > now() - interval '24 hours') AS dag,
+                               (SELECT max(tijd) FROM signal_berichten) AS laatst
+                               FROM signal_chats""").fetchone()
         agendas = clara_sync.koppelingen(c, alleen_actief=True)
     doelen = clara_web._schrijfdoelen(agendas)  # pylint: disable=protected-access
     return templates.TemplateResponse("bram_signal.html", ctx(
-        request, "bram", actief=bron.actief(), bereikbaar=bereikbaar, nummer=nummer, chats=chats, totaal=totaal, alle=alle, voorstellen=voorstellen, taak=taak,
+        request, "bram", actief=bron.actief(), bereikbaar=bereikbaar, nummer=nummer, controle=controle, tellers=tellers, chats=chats, totaal=totaal, alle=alle, voorstellen=voorstellen, taak=taak,
         doelen=doelen, doel_voor=clara_web._doel_voor, chatnaam=chatnaam, domeinen=DOMEINEN,  # pylint: disable=protected-access
         sleutel_ok=bool(config.ANTHROPIC_API_KEY), planner_aan=config.PLANNER_AAN, tz=config.TZ, melding=melding, fout=fout))
 

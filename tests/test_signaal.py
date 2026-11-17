@@ -47,10 +47,19 @@ def test_uit_envelop():
     g = verwerken.uit_envelop(env(dataMessage=dm("Vergadering om acht", groupInfo={"groupId": "grp1"})), {"grp1": "Fractie"})
     assert g["sleutel"] == "groep:grp1" and g["soort"] == "groep" and g["chatnaam"] == "Fractie" and g["van"] == "Anna"
 
-    eigen = verwerken.uit_envelop(env(syncMessage={"sentMessage": dm("Doe ik", destinationUuid="uuid-anna")}))
+    eigen = verwerken.uit_envelop(env(sourceUuid="uuid-ik", sourceNumber="+31600000000", source="+31600000000", sourceName="Martijn",
+                                      syncMessage={"sentMessage": dm("Doe ik", destinationUuid="uuid-anna")}))
     assert eigen["sleutel"] == "persoon:uuid-anna" and eigen["van"] == "jij" and eigen["van_mij"] and eigen["chatnaam"] == ""
 
-    assert verwerken.uit_envelop(env(syncMessage={"sentMessage": dm("notitie aan mezelf")})) is None
+    # Notitie aan jezelf (Note to Self): met of zonder bestemming, of met je eigen nummer als bestemming
+    for m in (dm("notitie aan mezelf"), dm("notitie", destinationNumber="+31600000000", destinationUuid="uuid-ik")):
+        n = verwerken.uit_envelop(env(sourceUuid="uuid-ik", sourceNumber="+31600000000", syncMessage={"sentMessage": m}))
+        assert n["sleutel"] == "persoon:notities" and n["chatnaam"] == "Notities aan jezelf" and n["van_mij"]
+    assert verwerken.soorten([env(dataMessage=dm("a")), env(dataMessage=dm("b", groupInfo={"groupId": "g"})), env(receiptMessage={}),
+                              env(syncMessage={"sentMessage": dm("c")}), env(syncMessage={"contacts": {}}), env(typingMessage={}),
+                              env(dataMessage=dm(reaction={"emoji": "x"})), env(dataMessage=dm()), env()]) == {
+        "bericht": 1, "bericht in groep": 1, "leesbevestiging": 1, "zelf verstuurd": 1, "synchronisatie": 1, "aan het typen": 1,
+        "reactie": 1, "leeg bericht": 1, "overig": 1}
     assert verwerken.uit_envelop(env(dataMessage=dm(reaction={"emoji": "👍"}))) is None
     assert verwerken.uit_envelop(env(dataMessage=dm("x", remoteDelete={"timestamp": 1}))) is None
     assert verwerken.uit_envelop(env(receiptMessage={"isDelivery": True})) is None
@@ -230,6 +239,24 @@ def test_schermen(schoon, container, monkeypatch):
     container["inbox"] = [env(dataMessage=dm("hallo", groupInfo={"groupId": "grp1"}))]
     r = schoon.post("/bram/signal/ophalen", headers=FORM, follow_redirects=True)
     assert "1 berichten" in r.text and "Fractie" in r.text
+    assert "Chats met meelezen (Bram en Iris): <b>0</b>" in r.text and "Zet bij Chats hieronder meelezen aan" in r.text
+    assert "1 keer iets van Signal" in r.text and "1 bericht in groep" in r.text
+
+    # De container geeft regels als tekst, en de groepen lukken even niet: ophalen gaat door
+    def geen_groepen(_n):
+        raise bron.SignalFout("groepen kapot")
+    monkeypatch.setattr(bron, "groepen", geen_groepen)
+    container["inbox"] = [json.dumps(env(dataMessage=dm("als tekst", ts=T0 + 50))), "geen json"]
+    r = schoon.post("/bram/signal/ophalen", headers=FORM, follow_redirects=True)
+    assert "1 berichten" in r.text
+
+    # Gaat het ophalen mis, dan staat de reden op het scherm
+    def stuk(_n):
+        raise bron.SignalFout("Signal gaf fout 400: iets ging mis")
+    monkeypatch.setattr(bron, "ontvang", stuk)
+    schoon.post("/bram/signal/ophalen", headers=FORM)
+    r = schoon.get("/bram/signal", headers=KOP)
+    assert "Het ophalen ging" in r.text and "Signal gaf fout 400: iets ging mis" in r.text
 
     # zonder herkomst: geweigerd
     assert schoon.post("/bram/signal/ophalen", headers=KOP, follow_redirects=False).status_code in (400, 403)

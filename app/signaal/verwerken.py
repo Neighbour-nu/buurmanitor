@@ -51,14 +51,54 @@ def uit_envelop(e, groepnamen=None):
         sleutel, soort, chatnaam = f"groep:{groep}", "groep", groepnamen.get(groep, "")
     elif van_mij:
         bestemming = m.get("destinationUuid") or m.get("destinationNumber") or m.get("destination") or ""
-        if not bestemming:
-            return None  # bijvoorbeeld een notitie aan jezelf
-        sleutel, soort, chatnaam = f"persoon:{bestemming}", "persoon", ""
+        zelf = {x for x in (afzender_id, env.get("sourceNumber"), env.get("source"), e.get("account")) if x}
+        if not bestemming or bestemming in zelf or m.get("destinationNumber") in zelf:
+            sleutel, soort, chatnaam = "persoon:notities", "persoon", "Notities aan jezelf"  # Note to Self
+        else:
+            sleutel, soort, chatnaam = f"persoon:{bestemming}", "persoon", ""
     else:
         sleutel, soort, chatnaam = f"persoon:{afzender_id}", "persoon", afzender
     ts = m.get("timestamp") or env.get("timestamp")
     return {"sleutel": sleutel, "soort": soort, "chatnaam": chatnaam, "van": "jij" if van_mij else afzender, "van_mij": van_mij,
             "tekst": (tekst + (" (bewerkt)" if bewerkt else ""))[:4000], "ts": int(ts or 0), "tijd": _ms(ts)}
+
+
+def _envelop(e):
+    """Een element uit het antwoord van de container: meestal een dict, soms een JSON-regel als tekst."""
+    if isinstance(e, str):
+        try:
+            e = json.loads(e)
+        except ValueError:
+            return None
+    return e if isinstance(e, dict) else None
+
+
+def soorten(ruw):
+    """Hoeveel van elk soort Signal-bericht er binnenkwam (zonder inhoud). Pure functie."""
+    uit = {}
+    for e in ruw:
+        env = e.get("envelope") or e
+        if "dataMessage" in env:
+            dm = env["dataMessage"] or {}
+            s = "reactie" if dm.get("reaction") else "bericht in groep" if dm.get("groupInfo") else "bericht"
+            if not (dm.get("message") or dm.get("attachments") or dm.get("reaction")):
+                s = "leeg bericht"
+        elif "editMessage" in env:
+            s = "bewerkt bericht"
+        elif "syncMessage" in env:
+            s = "zelf verstuurd" if (env["syncMessage"] or {}).get("sentMessage") else "synchronisatie"
+        elif "receiptMessage" in env:
+            s = "leesbevestiging"
+        elif "typingMessage" in env:
+            s = "aan het typen"
+        elif "callMessage" in env:
+            s = "oproep"
+        elif "storyMessage" in env:
+            s = "verhaal"
+        else:
+            s = "overig"
+        uit[s] = uit.get(s, 0) + 1
+    return uit
 
 
 def instelling(c, sleutel, standaard=""):
@@ -83,12 +123,17 @@ def nummer(c):
 
 
 def groepnamen(c, n, vers=False):
-    """{groep-id: naam}; Signal noemt de groep in een bericht bij zijn interne id."""
+    """{groep-id: naam}; Signal noemt de groep in een bericht bij zijn interne id. Lukt het ophalen niet, dan de bewaarde
+    namen: berichten ophalen gaat voor."""
     bewaard = json.loads(instelling(c, "signal_groepen", "{}") or "{}")
     if bewaard and not vers:
         return bewaard
     namen = {}
-    for g in bron.groepen(n):
+    try:
+        lijst = bron.groepen(n)
+    except bron.SignalFout:
+        return bewaard
+    for g in lijst if isinstance(lijst, list) else []:
         for sleutel in (g.get("internal_id"), g.get("id")):
             if sleutel:
                 namen[sleutel] = g.get("name") or ""
@@ -120,12 +165,21 @@ def taak_signal(c):
         return "nog niet gekoppeld"
     namen = groepnamen(c, n)
     ruw = bron.ontvang(n)
+    if isinstance(ruw, dict):
+        ruw = [ruw]
+    if not isinstance(ruw, list):
+        raise bron.SignalFout(f"Onverwacht antwoord van Signal: {str(ruw)[:200]}")
+    ruw = [_envelop(e) for e in ruw]
+    ruw = [e for e in ruw if e]
     berichten = [b for b in (uit_envelop(e, namen) for e in ruw) if b]
     if any(b["soort"] == "groep" and not b["chatnaam"] for b in berichten):  # een nieuwe groep: namen opnieuw ophalen
         namen = groepnamen(c, n, vers=True)
         berichten = [b for b in (uit_envelop(e, namen) for e in ruw) if b]
     nieuw, bewaard = opslaan(c, berichten)
     zet(c, "signal_laatst", dt.datetime.now(config.TZ).isoformat())
+    if ruw:  # wat er binnenkwam, alleen als aantallen (zonder inhoud): voor het blok Controle op het scherm
+        zet(c, "signal_controle", json.dumps({"tijd": dt.datetime.now(config.TZ).isoformat(), "ontvangen": len(ruw),
+                                               "soorten": soorten(ruw), "berichten": len(berichten), "bewaard": bewaard}))
     voorstellen = analyseren(c) if config.ANTHROPIC_API_KEY else 0
     delen = [f"{len(berichten)} berichten", f"{bewaard} bewaard"] + ([f"{nieuw} nieuwe chats"] if nieuw else []) + \
             ([f"{voorstellen} voorstellen"] if voorstellen else [])
