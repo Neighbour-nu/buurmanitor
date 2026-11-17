@@ -26,7 +26,17 @@
     <li>Scan deze code. Hij is maar kort geldig; ververs de pagina voor een nieuwe.</li>
     <li>Klik daarna op <b>Ik heb gescand</b>.</li>
   </ol>
-  <p><img src="/bram/signal/qr" alt="QR-code om Buurmanitor aan Signal te koppelen" width="260" height="260" class="qr"></p>
+  <p><img src="/bram/signal/qr" alt="QR-code om Buurmanitor aan Signal te koppelen" width="260" height="260" class="qr" id="qr"></p>
+  <p class="item urgent" id="qrfout" hidden></p>
+  <script>
+    document.getElementById("qr").addEventListener("error", async function () {
+      const f = document.getElementById("qrfout");
+      let t = "";
+      try { const r = await fetch("/bram/signal/qr", { cache: "no-store" }); t = (await r.json()).detail || ""; } catch (e) { /* geen uitleg */ }
+      f.textContent = "De QR-code kon niet worden gemaakt" + (t ? ": " + t : ".") + " Ververs de pagina; blijft dit, kijk dan met: docker compose logs --tail=30 signal";
+      f.hidden = false; this.hidden = true;
+    });
+  </script>
   <form method="post" action="/bram/signal/gekoppeld"><button class="knop vol" type="submit">Ik heb gescand</button></form>
   <p class="noot">Buurmanitor wordt dan een gekoppeld apparaat, net als Signal op een laptop. Je oude berichten komen niet mee, alleen wat
     er vanaf nu binnenkomt. Je ziet Buurmanitor in Signal staan bij Gekoppelde apparaten en kunt hem daar altijd weghalen.</p>

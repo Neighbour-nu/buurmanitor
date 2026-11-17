@@ -81,6 +81,20 @@ def test_bron_zonder_url(monkeypatch):
         bron.accounts()
 
 
+def test_accounts_voor_de_eerste_koppeling(monkeypatch):
+    """Vóór de eerste koppeling geeft de container fout 500 op de lijst met accounts: dat is 'nog niet gekoppeld'."""
+    def vraag(pad, **kw):
+        raise bron.SignalFout("Signal gaf fout 500: Couldn't get list of accounts: Failed to read local accounts list", 500)
+    monkeypatch.setattr(bron, "_vraag", vraag)
+    assert bron.accounts() == []
+
+    def kapot(pad, **kw):
+        raise bron.SignalFout("Signal gaf fout 502: iets anders", 502)
+    monkeypatch.setattr(bron, "_vraag", kapot)
+    with pytest.raises(bron.SignalFout):
+        bron.accounts()
+
+
 # ---------------------------------------------------------------- met database
 
 @pytest.fixture(scope="module")

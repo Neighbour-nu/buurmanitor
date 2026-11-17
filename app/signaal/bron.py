@@ -13,7 +13,9 @@ URL = os.environ.get("SIGNAL_URL", "").rstrip("/")
 
 
 class SignalFout(Exception):
-    pass
+    def __init__(self, tekst, code=None):
+        super().__init__(tekst)
+        self.code = code
 
 
 def actief():
@@ -32,7 +34,7 @@ def _vraag(pad, timeout=30, ruw=False):
             tekst = json.loads(tekst).get("error") or tekst
         except (ValueError, AttributeError):
             pass
-        raise SignalFout(f"Signal gaf fout {e.code}: {tekst[:200]}") from e
+        raise SignalFout(f"Signal gaf fout {e.code}: {tekst[:200]}", e.code) from e
     except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
         raise SignalFout(f"De Signal-container is niet bereikbaar ({getattr(e, 'reason', e)}).") from e
     if ruw:
@@ -42,7 +44,15 @@ def _vraag(pad, timeout=30, ruw=False):
 
 def accounts():
     """De gekoppelde nummers (leeg zolang er niet gekoppeld is)."""
-    return [a for a in (_vraag("/v1/accounts") or []) if a]
+    try:
+        lijst = _vraag("/v1/accounts") or []
+    except SignalFout as e:
+        # Vóór de eerste koppeling heeft signal-cli nog geen lijst met accounts en geeft de container fout 500
+        # ("Failed to read local accounts list"). Dat betekent gewoon: nog niet gekoppeld.
+        if e.code == 500 and "accounts" in str(e).lower():
+            return []
+        raise
+    return [a for a in lijst if a]
 
 
 def qr_code(naam="Buurmanitor"):
