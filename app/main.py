@@ -18,6 +18,7 @@ from .bram import sync as bram_sync, web as bram_web  # noqa: F401  (sync regist
 from .clara import sync as clara_sync, web as clara_web  # noqa: F401  (sync registreert de planner-taak)
 from .crm import relaties as crm_relaties, web as crm_web  # noqa: F401  (relaties registreert de planner-taak)
 from .overzichten import verzenden as overzichten_verzenden, web as overzichten_web  # noqa: F401  (verzenden registreert de planner-taak)
+from .advies import maken as advies_maken, web as advies_web  # noqa: F401  (maken registreert de planner-taak)
 from .taken import noor, web as taken_web
 from .jesse import luisteren as jesse_luisteren, web as jesse_web  # noqa: F401  (luisteren registreert de planner-taak)
 from .vera import nieuws as vera_nieuws, web as vera_web  # noqa: F401  (nieuws registreert de planner-taak)
@@ -56,6 +57,7 @@ OPRUIMEN = [
     ("logboek", "DELETE FROM logboek WHERE tijd < now() - interval '400 days'"),
     ("verbruik", "DELETE FROM claude_gebruik WHERE tijd < now() - interval '400 days'"),
     ("verzendlog", "DELETE FROM overzicht_verzonden WHERE tijd < now() - interval '180 days'"),
+    ("adviezen", "DELETE FROM iris_adviezen WHERE tijd < now() - interval '400 days'"),
 ]
 
 
@@ -99,6 +101,7 @@ app.include_router(vera_web.router)
 app.include_router(jesse_web.router)
 app.include_router(crm_web.router)
 app.include_router(overzichten_web.router)
+app.include_router(advies_web.router)
 if politiek:
     app.mount("/politiek", prefix.Voorvoegsel(politiek.app, "/politiek"))
 if zerohero:
@@ -220,9 +223,14 @@ def iris_scherm(request: Request, g: int | None = None):
         crm_voorstellen.setdefault(v["bericht_id"], []).append(v)
     eerdere = q("SELECT id, titel, bijgewerkt FROM gesprekken WHERE persona = 'iris' AND NOT gearchiveerd ORDER BY bijgewerkt DESC LIMIT 15")
     archief = q("SELECT id, titel, bijgewerkt FROM gesprekken WHERE persona = 'iris' AND gearchiveerd ORDER BY bijgewerkt DESC LIMIT 30")
+    with db.pool.connection() as c:
+        advies_maken.standaard_maken(c)
+        advies, fb = advies_web.laatste(c)
+        soorten = c.execute("SELECT id, naam FROM iris_adviessoorten ORDER BY tijd, id").fetchall()
     return templates.TemplateResponse("iris.html", ctx(
         request, "iris", gesprek=gesprek, berichten=berichten, eerdere=eerdere, archief=archief, p=personas.get("iris"), crm_voorstellen=crm_voorstellen,
-        sleutel_ok=bool(config.ANTHROPIC_API_KEY)))
+        sleutel_ok=bool(config.ANTHROPIC_API_KEY), advies=advies, fb=fb, adviessoorten=soorten, soorten_iconen=advies_maken.SOORTEN, tz=config.TZ,
+        melding=request.query_params.get("melding", ""), fout=request.query_params.get("fout", "")))
 
 
 @app.post("/iris")

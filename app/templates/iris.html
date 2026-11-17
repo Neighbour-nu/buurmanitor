@@ -1,9 +1,20 @@
 {% extends "base.html" %}
+{% from "_advies.html" import advieskaart with context %}
 {% block titel %}Iris · Buurmanitor{% endblock %}
 {% block inhoud %}
 <h1>Iris <span class="noot">{{ p.rol }}</span></h1>
 <p class="motto">{{ p.motto }}</p>
 {% if not sleutel_ok %}<p class="item urgent">Er is nog geen Claude-sleutel ingesteld. Draai op de server: <code>bash ~/buurmanitor/app/deploy/sleutel.sh</code></p>{% endif %}
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+
+{% if advies %}{{ advieskaart(advies, fb, soorten_iconen, '/iris#advies', tz) }}
+{% else %}<section class="kaart" id="advies"><p class="noot">Iris maakt elke ochtend en avond een kort advies: wat belangrijk is, waar het mis kan
+  gaan en welke deadlines in gevaar komen. Tijden, inhoud en bronnen stel je in bij <a href="/iris/instellingen">Instellen</a>.</p></section>{% endif %}
+<form method="post" action="/iris/advies/maak" class="velden nuadvies">
+  <label>Nu een advies <select name="soort">{% for s in adviessoorten %}<option value="{{ s.id }}">{{ s.naam }}</option>{% endfor %}</select></label>
+  <button class="knop" type="submit">Maken</button> <span class="noot">Iris doet er een halve minuut over; de pagina laadt opnieuw als het klaar is.</span>
+</form>
 
 <div class="gesprek-raster">
   <section class="kaart">
@@ -19,8 +30,8 @@
           </div>
         {% endfor %}</div>
     {% else %}
-      <p class="noot">Vraag Iris wat er speelt, wat er op de planning staat, of hoe het met de server gaat.
-        Agenda, mail en de andere bronnen komen er in de volgende fases bij.</p>
+      <p class="noot">Vraag Iris wat er speelt, wat er op de planning staat, of hoe het met de server gaat. Ze ziet je agenda,
+        mail, taken, het CRM, het nieuws en de socials, en kent de lessen uit je feedback op haar adviezen.</p>
     {% endfor %}
     <form method="post" action="/iris">
       <input type="hidden" name="gesprek" value="{{ gesprek.id if gesprek else '' }}">

@@ -147,8 +147,10 @@ def antwoord(c, gesprek_id):
     berichten = c.execute("SELECT rol, tekst FROM gesprek_berichten WHERE gesprek_id = %s ORDER BY id",
                           (gesprek_id,)).fetchall()
     from .crm import voorstel  # pylint: disable=import-outside-toplevel
+    from .advies import maken as advies  # pylint: disable=import-outside-toplevel
+    les = advies.lessen_tekst(c)
     systeem = (personas.systeemtekst(personas.get("iris")) + "\n\n" + voorstel.uitleg_voor_iris(c)
-               + "\n\n# Wat je nu weet\n" + context(c))
+               + (f"\n\n{les}" if les else "") + "\n\n# Wat je nu weet\n" + context(c))
     tekst = claude.gesprek(c, "iris", systeem, [{"role": b["rol"], "content": b["tekst"]} for b in berichten if (b["tekst"] or "").strip()][-30:],
                            max_tokens=1500)
     tekst = tekst.replace(" — ", ", ").replace("—", ", ").replace(" – ", ", ")

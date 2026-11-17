@@ -1,0 +1,34 @@
+{# Eén advies van Iris met feedback per punt en op het geheel. #}
+{% macro advieskaart(a, fb, iconen, terug, tz, kop=true) %}
+<section class="kaart advies" id="advies">
+  {% if kop %}<div class="adlkop"><h2>{{ a.naam }} <span class="noot">{{ a.tijd.astimezone(tz).strftime('%d-%m %H.%M') }} · {{ geleden(a.tijd) }}</span></h2>
+    <span class="noot"><a href="/iris/advies">Alle adviezen</a> · <a href="/iris/instellingen">Instellen</a></span></div>{% endif %}
+  {% if a.samenvatting %}<p class="adviessamenvatting">{{ a.samenvatting }}</p>{% endif %}
+  <ol class="adviespunten">
+  {% for p in a.punten %}{% set f = fb.get(loop.index0) %}
+    <li class="adviespunt {{ p.soort }}">
+      <div class="punttekst"><b>{{ iconen.get(p.soort, '') }} {{ p.titel }}</b> {{ p.tekst }}
+        {% if p.link %}<a href="{{ p.link }}">openen</a>{% endif %}{% if p.bron %} <span class="noot">({{ p.bron }})</span>{% endif %}</div>
+      <form method="post" action="/iris/advies/{{ a.id }}/feedback" class="feedback">
+        <input type="hidden" name="punt" value="{{ loop.index0 }}"><input type="hidden" name="terug" value="{{ terug }}">
+        <button class="duim{{ ' aan' if f and f.oordeel > 0 }}" name="oordeel" value="1" title="Nuttig" aria-label="{{ p.titel }}: nuttig">👍</button>
+        <button class="duim{{ ' aan' if f and f.oordeel < 0 }}" name="oordeel" value="-1" title="Niet nuttig" aria-label="{{ p.titel }}: niet nuttig">👎</button>
+        <details{{ ' open' if f and f.opmerking }}><summary>{{ 'Jouw opmerking' if f and f.opmerking else 'Opmerking' }}</summary>
+          <textarea name="opmerking" rows="2" placeholder="Bijvoorbeeld: dit is niet belangrijk, want ... / dit wil ik altijd weten">{{ f.opmerking if f else '' }}</textarea>
+          <button class="knop klein" name="oordeel" value="0">Opslaan</button></details>
+      </form>
+    </li>
+  {% else %}<li class="noot">Geen punten.</li>{% endfor %}
+  </ol>
+  {% set g = fb.get(None) %}
+  <form method="post" action="/iris/advies/{{ a.id }}/feedback" class="feedback geheel">
+    <input type="hidden" name="punt" value=""><input type="hidden" name="terug" value="{{ terug }}">
+    <span>Was dit advies nuttig?</span>
+    <button class="duim{{ ' aan' if g and g.oordeel > 0 }}" name="oordeel" value="1" aria-label="Het advies was nuttig">👍</button>
+    <button class="duim{{ ' aan' if g and g.oordeel < 0 }}" name="oordeel" value="-1" aria-label="Het advies was niet nuttig">👎</button>
+    <details{{ ' open' if g and g.opmerking }}><summary>{{ 'Jouw opmerking' if g and g.opmerking else 'Wat mist er, of wat moet anders?' }}</summary>
+      <textarea name="opmerking" rows="2" placeholder="Bijvoorbeeld: zet deadlines van de raad altijd bovenaan / minder nieuws, meer taken">{{ g.opmerking if g else '' }}</textarea>
+      <button class="knop klein" name="oordeel" value="0">Opslaan</button></details>
+  </form>
+</section>
+{% endmacro %}

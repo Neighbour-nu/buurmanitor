@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% from "_advies.html" import advieskaart with context %}
+{% block titel %}{{ a.naam }} · Iris · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>{{ a.naam }} <span class="noot">{{ a.tijd.astimezone(tz).strftime('%d-%m-%Y %H.%M') }}</span></h1>
+<p class="motto"><a href="/iris">Naar Iris</a> · <a href="/iris/advies">Alle adviezen</a> · <a href="/iris/instellingen">Instellen</a></p>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{{ advieskaart(a, fb, soorten_iconen, '/iris/advies/' ~ a.id, tz, kop=false) }}
+{% endblock %}

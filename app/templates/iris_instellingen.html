@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block titel %}Instellingen · Iris · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>Iris instellen</h1>
+<p class="motto">Wanneer Iris je adviseert, waarover, uit welke bronnen, en wat ze van je feedback leerde. <a href="/iris">Naar Iris</a> · <a href="/iris/advies">Alle adviezen</a></p>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+{% if not planner_aan %}<p class="item belangrijk">De planner staat uit, dus Iris maakt de adviezen niet vanzelf. Met "Nu een advies" op het Iris-scherm kan het wel.</p>
+{% elif taak and taak.laatst %}<p class="noot">De planner keek {{ geleden(taak.laatst) }}: {{ taak.resultaat or 'geen uitslag' }}.</p>{% endif %}
+
+{% macro soortvorm(s, actie, nieuw=false) %}
+<form method="post" action="{{ actie }}" class="advsoort">
+  <div class="velden">
+    <label class="vink"><input type="checkbox" name="actief" value="1" {{ 'checked' if s.actief }}> <span><b>Aan</b></span></label>
+    <label>Naam <input type="text" name="naam" value="{{ s.naam }}" required></label>
+    <label>Tijd <input type="time" name="tijd" value="{{ s.tijd.strftime('%H:%M') if s.tijd else '12:00' }}"></label>
+    <label>Hoe ver vooruit (dagen) <input type="number" name="horizon" min="1" max="60" value="{{ s.horizon }}" class="smal"></label>
+    <label>Lengte <select name="lengte">{% for k, (naam, n) in lengtes.items() %}<option value="{{ k }}" {{ 'selected' if s.lengte == k }}>{{ naam }} (hooguit {{ n }} punten)</option>{% endfor %}</select></label>
+  </div>
+  <div class="vinkjes" role="group" aria-label="Dagen">
+    {% for d in range(7) %}<label class="vink"><input type="checkbox" name="dag_{{ d }}" value="1" {{ 'checked' if d in s.dagen }}> {{ dagen_kort[d] }}</label>{% endfor %}
+  </div>
+  <label class="blok">Opdracht aan Iris <textarea name="opdracht" rows="3" required>{{ s.opdracht }}</textarea></label>
+  <fieldset><legend>Bronnen</legend>
+    <div class="bronvinkjes">{% for k, uitleg in bronnen.items() %}<label class="vink"><input type="checkbox" name="bron_{{ k }}" value="1" {{ 'checked' if k in s.bronnen }}> {{ uitleg }}</label>{% endfor %}</div>
+  </fieldset>
+  <div class="velden">
+    <label class="vink"><input type="checkbox" name="mail" value="1" {{ 'checked' if s.mail }}> <span>Ook mailen naar</span></label>
+    <label><input type="text" name="mail_aan" value="{{ s.mail_aan }}" placeholder="je mailadres" aria-label="Mailadres"></label>
+    <label class="vink"><input type="checkbox" name="telegram" value="1" {{ 'checked' if s.telegram }}> <span>Ook een korte versie via Telegram</span></label>
+  </div>
+  <div class="knoppenrij"><button class="knop vol" type="submit" name="actie" value="opslaan">{{ 'Toevoegen' if nieuw else 'Opslaan' }}</button>
+    {% if not nieuw %}<button class="knop" type="submit" name="actie" value="weg" onclick="return confirm('{{ s.naam }} verwijderen? Eerdere adviezen blijven bewaard.')">Verwijderen</button>
+    {% if s.laatst %}<span class="noot">Laatst {{ geleden(s.laatst) }}{% if s.uitslag %}: {{ s.uitslag }}{% endif %}</span>{% endif %}{% endif %}</div>
+</form>
+{% endmacro %}
+
+{% for s in soorten %}
+<section class="kaart" id="soort-{{ s.id }}">
+  <h2>{{ s.naam }} <span class="noot">{{ s.tijd.strftime('%H.%M') }} uur{% if not s.actief %} · uit{% endif %}</span></h2>
+  {{ soortvorm(s, '/iris/instellingen/soort/' ~ s.id) }}
+</section>
+{% endfor %}
+
+<section class="kaart" id="nieuw">
+  <details><summary><b>Nog een advies toevoegen</b> <span class="noot">(bijvoorbeeld een weekvooruitblik op zondagavond)</span></summary>
+    {{ soortvorm({'naam': 'Weekvooruitblik', 'actief': true, 'tijd': none, 'horizon': 7, 'lengte': 'normaal', 'dagen': [6],
+                  'opdracht': 'Kijk vooruit naar de komende week: wat zijn de grote momenten, welke deadlines komen eraan en waar zit te weinig ruimte?',
+                  'bronnen': bronnen.keys() | list, 'mail': false, 'mail_aan': '', 'telegram': false}, '/iris/instellingen/soort/nieuw', nieuw=true) }}
+  </details>
+</section>
+
+<section class="kaart" id="achtergrond">
+  <h2>Achtergrond</h2>
+  <p class="noot">Wat Iris moet weten bij elk advies: waar je deze weken op focust, wat even geen prioriteit heeft, wie belangrijk is.
+    Bijvoorbeeld: "Tot de begrotingsbehandeling gaat de raad voor. Upper Spire-releases altijd noemen."</p>
+  <form method="post" action="/iris/instellingen/achtergrond">
+    <textarea name="achtergrond" rows="5" aria-label="Achtergrond voor Iris">{{ achtergrond }}</textarea>
+    <div class="knoppenrij"><button class="knop vol" type="submit">Opslaan</button></div>
+  </form>
+</section>
+
+<section class="kaart" id="lessen">
+  <h2>Wat Iris leerde</h2>
+  <p class="noot">Uit je feedback op de adviezen (een opmerking, of 👎) maakt Iris korte lessen. Die gaan mee in elk volgend advies en in je
+    gesprekken met haar. Klopt een les niet, pas hem aan, zet hem uit of verwijder hem. Je kunt ook zelf een les toevoegen.</p>
+  {% for l in lessen %}
+  <form method="post" action="/iris/les/{{ l.id }}" class="velden les{{ '' if l.actief else ' uitgezet' }}">
+    <label class="vink"><input type="checkbox" name="actief" value="1" {{ 'checked' if l.actief }} aria-label="Les {{ loop.index }} aan"></label>
+    <label class="breed"><input type="text" name="tekst" value="{{ l.tekst }}" aria-label="Les {{ loop.index }}"></label>
+    <div class="knoppenrij"><button class="knop klein" type="submit" name="actie" value="opslaan">Opslaan</button>
+      <button class="knop klein" type="submit" name="actie" value="weg">Verwijderen</button></div>
+    <p class="noot breed">{{ 'Uit je feedback' if l.bron == 'feedback' else 'Zelf toegevoegd' }}, {{ geleden(l.bijgewerkt) }}{% if l.fb_opmerking %}: "{{ l.fb_opmerking | truncate(140) }}"{% endif %}</p>
+  </form>
+  {% else %}<p class="noot">Nog geen lessen. Geef feedback op een advies (👍, 👎 of een opmerking), dan leert Iris ervan.</p>{% endfor %}
+  <form method="post" action="/iris/lessen" class="velden">
+    <label class="breed">Zelf een les toevoegen <input type="text" name="tekst" placeholder="Bijvoorbeeld: Mail van de griffie is altijd belangrijk."></label>
+    <button class="knop" type="submit">Toevoegen</button>
+  </form>
+</section>
+{% endblock %}

@@ -854,3 +854,25 @@ form.ontvanger.uitgezet { opacity: .6; }
 .taakverplaats .bovenaan { border: 1px solid var(--lijn); background: var(--wit); border-radius: 4px; padding: 1px 7px; cursor: pointer;
   color: var(--zacht); font-size: 14px; line-height: 1.4; }
 .taakverplaats .bovenaan:hover, .taakverplaats .bovenaan:focus-visible { color: var(--blauw); border-color: var(--blauw); }
+
+/* Iris: adviezen met feedback */
+.advies .adlkop { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.adviessamenvatting { background: var(--achtergrond, #F4F6FA); border-left: 4px solid var(--blauw); padding: 10px 14px; margin: 8px 0 12px; }
+.adviespunten { list-style: none; padding: 0; margin: 0; }
+.adviespunt { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; padding: 10px 0; border-bottom: 1px solid var(--lijn); align-items: start; }
+.adviespunt .punttekst > b { display: block; margin-bottom: 2px; }
+.adviespunt.risico .punttekst b, .adviespunt.deadline .punttekst b { color: var(--rooddonker); }
+.feedback { display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; }
+.feedback .duim { border: 1px solid var(--lijn); background: var(--wit); border-radius: 4px; padding: 1px 7px; cursor: pointer; filter: grayscale(1); opacity: .7; }
+.feedback .duim:hover, .feedback .duim:focus-visible, .feedback .duim.aan { filter: none; opacity: 1; border-color: var(--blauw); }
+.feedback details { min-width: 0; }
+.feedback details summary { cursor: pointer; font-size: 13px; color: var(--zacht); }
+.feedback details textarea { width: 100%; min-width: 240px; margin: 4px 0; }
+.adviespunt .feedback { max-width: 300px; justify-content: flex-end; }
+.feedback.geheel { margin-top: 12px; align-items: center; }
+.nuadvies { margin: 0 0 16px; align-items: flex-end; }
+.adviesregel { padding: 8px 0; border-bottom: 1px solid var(--lijn); }
+.bronvinkjes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 2px 16px; }
+.advsoort label.blok { display: block; margin: 8px 0; } .advsoort label.blok textarea { width: 100%; }
+form.les { align-items: center; border-bottom: 1px solid var(--lijn); padding-bottom: 6px; } form.les.uitgezet { opacity: .6; }
+@media (max-width: 760px) { .adviespunt { grid-template-columns: 1fr; } .adviespunt .feedback { justify-content: flex-start; max-width: none; } }

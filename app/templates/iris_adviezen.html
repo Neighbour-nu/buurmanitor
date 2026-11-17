@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block titel %}Adviezen · Iris · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>Adviezen van Iris</h1>
+<p class="motto"><a href="/iris">Naar Iris</a> · <a href="/iris/instellingen">Instellen</a></p>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+<section class="kaart">
+  {% for a in lijst %}
+  <div class="adviesregel"><a href="/iris/advies/{{ a.id }}"><b>{{ a.naam }}</b></a> <span class="noot">{{ a.tijd.astimezone(tz).strftime('%d-%m %H.%M') }}
+    · {{ a.punten | length }} punten{% if a.feedback %} · feedback gegeven{% endif %}{% if a.oordeel == 1 %} 👍{% elif a.oordeel == -1 %} 👎{% endif %}</span>
+    <div class="noot">{{ a.samenvatting | truncate(220) }}</div></div>
+  {% else %}<p class="noot">Nog geen adviezen. Iris maakt ze op de tijden die je bij <a href="/iris/instellingen">Instellen</a> kiest.</p>{% endfor %}
+</section>
+{% endblock %}
