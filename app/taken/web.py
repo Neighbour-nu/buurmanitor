@@ -1,8 +1,9 @@
 """Taken: een kanbanbord met zes kolommen (Nieuw, Triage, Gepland, Actief, Wachtend op, Afgerond).
 
 Een taak heeft een korte titel, een beschrijving, een prioriteit en eventueel een start- en een einddatum (met of
-zonder tijd). Staat er een datum bij, dan zet Buurmanitor de taak als afspraak in de agenda (de eigen agenda van
-Martijn), en past die aan of haalt hem weg als de taak verandert. Een taak kan ook uit een mail in Post komen.
+zonder tijd). Staat er een datum bij, dan zet Buurmanitor de taak standaard in Google Taken (zie google.py; een taak
+met een begintijd als afspraak in de agenda), of, als je dat zo instelt, als afspraak in de agenda zoals vroeger. Hij
+past het aan of haalt het weg als de taak verandert. Een taak kan ook uit een mail in Post komen.
 """
 import asyncio
 import datetime as dt
@@ -17,7 +18,7 @@ from urllib.parse import urlencode
 from ..clara import bronnen as agenda_bronnen, kluis, sync as agenda_sync, web as clara_web
 from ..kern import claude, config, db, planner
 from ..kern.web import DAGEN, controleer_herkomst, ctx, templates
-from . import noor, reeksen
+from . import google, noor, reeksen
 
 router = APIRouter()
 STATUSSEN = (("nieuw", "Nieuw"), ("triage", "Triage"), ("gepland", "Gepland"), ("actief", "Actief"),
@@ -92,23 +93,53 @@ def _spec(a, doel):
 
 
 def _weg_uit_agenda(c, t):
+    """De afspraak of de Google-taak bij deze taakrij weghalen."""
     if not t["agenda_extern"]:
         return
-    k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (t["agenda_koppeling"],)).fetchone()
-    if k:
-        try:
-            (agenda_bronnen.google_verwijder if k["soort"] == "google" else agenda_bronnen.ms_verwijder)(
-                agenda_sync.toegang(c, k), t["agenda_id"], t["agenda_extern"])
-        except agenda_bronnen.NietGevonden:
-            pass
-    c.execute("UPDATE takenbord SET agenda_koppeling = NULL, agenda_id = '', agenda_extern = '', agenda_spec = '' WHERE id = %s", (t["id"],))
+    if t.get("agenda_soort") == "google_taak":
+        google.verwijder(c, t)
+    else:
+        k = c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (t["agenda_koppeling"],)).fetchone()
+        if k:
+            try:
+                (agenda_bronnen.google_verwijder if k["soort"] == "google" else agenda_bronnen.ms_verwijder)(
+                    agenda_sync.toegang(c, k), t["agenda_id"], t["agenda_extern"])
+            except agenda_bronnen.NietGevonden:
+                pass
+    c.execute("""UPDATE takenbord SET agenda_koppeling = NULL, agenda_id = '', agenda_extern = '', agenda_spec = '',
+                 agenda_soort = CASE WHEN agenda_soort = 'google_weg' THEN agenda_soort ELSE 'afspraak' END WHERE id = %s""", (t["id"],))
+
+
+def gewenste_vorm(t, inst):
+    """'afspraak', 'google' of None. Een afgeronde taak die in Google staat, blijft daar (afgevinkt); een taak die je in
+    Google verwijderde, komt er pas weer in als je hem op het bord terugzet."""
+    if t["status"] == "afgerond":
+        if t.get("agenda_soort") == "google_taak" and t["agenda_extern"] and inst["taken_vorm"] == "google_taken":
+            return "google"
+        return None
+    return google.vorm(t, inst, afspraak)
 
 
 def agenda_bijwerken(c, tid):
-    """De afspraak bij een taak maken, vernieuwen of weghalen. Fouten komen bij de taak te staan (de taak zelf blijft)."""
+    """De afspraak of Google-taak bij een taak maken, vernieuwen of weghalen. Fouten komen bij de taak te staan (de taak
+    zelf blijft)."""
     t = c.execute("SELECT * FROM takenbord WHERE id = %s", (tid,)).fetchone()
     if not t:
         return ""
+    inst = google.instellingen(c)
+    vorm = gewenste_vorm(t, inst)
+    try:
+        if t["agenda_extern"] and ((t["agenda_soort"] == "google_taak") != (vorm == "google") or not vorm):
+            _weg_uit_agenda(c, t)  # van vorm veranderd (of nergens meer): eerst weg op de oude plek
+            t = c.execute("SELECT * FROM takenbord WHERE id = %s", (tid,)).fetchone()
+        if vorm == "google":
+            return google.bijwerken(c, t, inst)
+        if vorm != "afspraak":
+            c.execute("UPDATE takenbord SET agenda_fout = '' WHERE id = %s AND agenda_fout <> ''", (tid,))
+            return ""
+    except (agenda_bronnen.BronFout, kluis.KluisFout) as e:
+        c.execute("UPDATE takenbord SET agenda_fout = %s WHERE id = %s", (str(e)[:300], tid))
+        return f"maar Google Taken lukte niet: {e}" if vorm == "google" else f"maar de agenda lukte niet: {e}"
     a = afspraak(t)
     doelen = [w for w, _l, _d in clara_web._reisdoelen(agenda_sync.koppelingen(c, alleen_actief=True))]  # pylint: disable=protected-access
     doel = t["doel"] if t["doel"] in doelen else (doelen[0] if doelen else "")
@@ -117,9 +148,6 @@ def agenda_bijwerken(c, tid):
         return ""
     try:
         _weg_uit_agenda(c, t)
-        if not a:
-            c.execute("UPDATE takenbord SET agenda_fout = '' WHERE id = %s", (tid,))
-            return ""
         if not doel:
             c.execute("UPDATE takenbord SET agenda_fout = %s WHERE id = %s",
                       ("Er is geen eigen agenda met schrijfrechten om de taak in te zetten.", tid))
@@ -128,8 +156,8 @@ def agenda_bijwerken(c, tid):
                + (f"\n\n{t['beschrijving']}" if t["beschrijving"] else ""))
         kid, extern = clara_web._maak(c, doel, a["titel"], a["start"], a["eind"], oms, bijwerken=False,  # pylint: disable=protected-access
                                       heledag=a["heledag"])
-        c.execute("""UPDATE takenbord SET agenda_koppeling = %s, agenda_id = %s, agenda_extern = %s, agenda_spec = %s, agenda_fout = '', doel = %s
-                     WHERE id = %s""", (kid, doel.split("|", 1)[1], extern, spec, doel, tid))
+        c.execute("""UPDATE takenbord SET agenda_soort = 'afspraak', agenda_koppeling = %s, agenda_id = %s, agenda_extern = %s,
+                     agenda_spec = %s, agenda_fout = '', doel = %s WHERE id = %s""", (kid, doel.split("|", 1)[1], extern, spec, doel, tid))
         agenda_sync.synchroniseer(c, c.execute("SELECT * FROM agenda_koppelingen WHERE id = %s", (kid,)).fetchone(), forceer=True)
         return "in de agenda gezet"
     except (agenda_bronnen.BronFout, kluis.KluisFout) as e:
@@ -156,20 +184,61 @@ def agenda_op_achtergrond(tids, weg=None):
     threading.Thread(target=werk, name="taken-agenda", daemon=True).start()
 
 
+def gelijktrekken(c):
+    """Alle taken nalopen: afspraken en Google-taken maken, aanpassen of weghalen waar dat nodig is (bijvoorbeeld na het
+    wisselen tussen afspraken en Google Taken). Afgeronde taken van meer dan 30 dagen geleden blijven met rust."""
+    rijen = c.execute("""SELECT id, agenda_spec, agenda_extern FROM takenbord WHERE gearchiveerd IS NULL
+                           AND (status <> 'afgerond' OR (agenda_extern <> '' AND coalesce(afgerond, bijgewerkt) > now() - interval '30 days'))
+                         ORDER BY id""").fetchall()
+    gedaan = fouten = mis = 0
+    for r in rijen:
+        uitslag = agenda_bijwerken(c, r["id"])
+        na = c.execute("SELECT agenda_spec, agenda_extern, agenda_fout FROM takenbord WHERE id = %s", (r["id"],)).fetchone()
+        gedaan += bool(na and (na["agenda_spec"], na["agenda_extern"]) != (r["agenda_spec"], r["agenda_extern"]))
+        fouten += bool(na and na["agenda_fout"])
+        mis = mis + 1 if uitslag.startswith("maar") else 0
+        if mis >= 3:  # Google of de agenda doet het (nog) niet: later opnieuw, niet alles één voor één laten mislukken
+            raise Onderbroken(f"Gestopt na drie keer mis: {na['agenda_fout']}")
+    return f"{len(rijen)} taken nagekeken, {gedaan} gezet, aangepast of weggehaald" + (f", {fouten} met een fout" if fouten else "")
+
+
+class Onderbroken(Exception):
+    pass
+
+
 @planner.taak("takenagenda", elke=dt.timedelta(hours=6))
 def taak_takenagenda(c):
-    """De agenda gelijktrekken met de taken: afspraken van taken die de afgelopen 30 dagen zijn afgerond eruit (ook als dat
-    bij het afronden niet lukte), en open taken zonder afspraak er alsnog in. Oudere afgeronde taken blijven met rust."""
-    rijen = c.execute("""SELECT id, agenda_spec FROM takenbord WHERE (status = 'afgerond' AND agenda_extern <> ''
-                           AND coalesce(afgerond, bijgewerkt) > now() - interval '30 days')
-                         OR (status <> 'afgerond' AND agenda_extern = '' AND agenda_fout = '' AND gearchiveerd IS NULL
-                           AND coalesce(einddatum, startdatum) >= current_date)""").fetchall()
-    gedaan = 0
-    for r in rijen:
-        agenda_bijwerken(c, r["id"])
-        na = c.execute("SELECT agenda_spec FROM takenbord WHERE id = %s", (r["id"],)).fetchone()
-        gedaan += bool(na and na["agenda_spec"] != r["agenda_spec"])
-    return f"{len(rijen)} taken nagekeken, {gedaan} afspraken gezet, aangepast of weggehaald"
+    """De agenda en Google Taken gelijktrekken met het bord (ook als dat bij het opslaan niet lukte)."""
+    try:
+        uitslag = gelijktrekken(c)
+    except Onderbroken as e:
+        return str(e)
+    google.zet(c, "taken_vorm_toegepast", google.instellingen(c)["taken_vorm"])
+    return uitslag
+
+
+@planner.taak("takengoogle", elke=dt.timedelta(minutes=10))
+def taak_takengoogle(c):
+    """Wat je in Google Taken afvinkt, hernoemt of verplaatst, komt op het bord. Is de vorm net gewisseld (bijvoorbeeld van
+    afspraken naar Google Taken), dan eerst alles gelijktrekken."""
+    inst = google.instellingen(c)
+    voor = ""
+    toegepast = c.execute("SELECT waarde FROM instellingen WHERE sleutel = 'taken_vorm_toegepast'").fetchone()
+    if not toegepast or toegepast["waarde"] != inst["taken_vorm"]:
+        try:
+            voor = gelijktrekken(c) + "; "
+        except Onderbroken as e:
+            return str(e)  # de volgende ronde opnieuw
+        google.zet(c, "taken_vorm_toegepast", inst["taken_vorm"])
+    bekeken, aangepast = google.ophalen(c)
+    mis = 0
+    for r in c.execute("""SELECT id FROM takenbord WHERE (agenda_soort IN ('google_taak', 'google_weg') AND bijgewerkt > now() - interval '15 minutes')
+                          OR (agenda_fout <> '' AND status <> 'afgerond' AND gearchiveerd IS NULL) ORDER BY id LIMIT 200""").fetchall():
+        uitslag = agenda_bijwerken(c, r["id"])  # wat Google veranderde verwerken, en wat eerder misging opnieuw proberen
+        mis = mis + 1 if uitslag.startswith("maar") else 0
+        if mis >= 3:  # Google doet het (nog) niet: niet alles één voor één laten mislukken
+            break
+    return voor + f"Google Taken: {bekeken} bekeken, {aangepast} op het bord aangepast"
 
 
 def uit_formulier(f):
@@ -267,6 +336,7 @@ def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, w
                                  ORDER BY titel""", (project,)).fetchall()
         in_archief = c.execute("SELECT count(*) AS n FROM takenbord WHERE gearchiveerd IS NOT NULL").fetchone()["n"]
         doelen = clara_web._reisdoelen(agenda_sync.koppelingen(c, alleen_actief=True))  # pylint: disable=protected-access
+        inst = google.instellingen(c)
         formulier = None
         if bewerk:
             formulier = c.execute("SELECT * FROM takenbord WHERE id = %s", (bewerk,)).fetchone()
@@ -310,7 +380,7 @@ def bord(request: Request, bewerk: int = 0, nieuw_: int = 0, bericht: int = 0, w
         request, "taken", kolommen=kolommen, formulier=formulier, statussen=STATUSSEN, prios=PRIO, prio_namen=PRIO_NAMEN,
         doelen=doelen, vandaag=vandaag, DAGEN=DAGEN, melding=melding, fout=fout, wacht=wacht, mail=mail, in_archief=in_archief, tz=config.TZ,
         afgerond_dagen=AFGEROND_DAGEN, praat=praat, paneel=paneel, sleutel_ok=bool(config.ANTHROPIC_API_KEY),
-        reeksen=lijst_reeksen, reeksform=reeksform, later=len(later), dagcodes=reeksen.DAGCODES, projecten=projecten,
+        reeksen=lijst_reeksen, reeksform=reeksform, vorm=inst["taken_vorm"], tijd_afspraak=inst["taken_tijd_afspraak"] == "1", later=len(later), dagcodes=reeksen.DAGCODES, projecten=projecten,
         project=next((p for p in projecten if p["id"] == project), None)))
 
 
@@ -459,6 +529,51 @@ async def taak_weg(request: Request, tid: int):
             return t
     t = await asyncio.to_thread(doe)
     return _terug(terug, melding=f"Taak '{t['titel']}' verwijderd" + (" (ook uit de agenda)" if t["agenda_extern"] else "") + ".")
+
+
+# ---------------------------------------------------------------- instellen: afspraken of Google Taken
+
+@router.get("/taken/instellingen", response_class=HTMLResponse)
+def instellingen_scherm(request: Request, melding: str = "", fout: str = ""):
+    with db.pool.connection() as c:
+        inst = google.instellingen(c)
+        accounts = [k for k in agenda_sync.koppelingen(c, alleen_actief=True) if k["soort"] == "google" and k["schrijven"]]
+        tellers = c.execute("""SELECT count(*) FILTER (WHERE agenda_soort = 'google_taak' AND agenda_extern <> '') AS google,
+                               count(*) FILTER (WHERE agenda_soort = 'afspraak' AND agenda_extern <> '') AS afspraken,
+                               count(*) FILTER (WHERE agenda_fout <> '' AND status <> 'afgerond') AS fouten,
+                               max(agenda_fout) FILTER (WHERE agenda_fout <> '' AND status <> 'afgerond') AS fout
+                               FROM takenbord WHERE gearchiveerd IS NULL""").fetchone()
+        taak = c.execute("SELECT * FROM taken WHERE naam = 'takengoogle'").fetchone()
+    return templates.TemplateResponse("taken_instellingen.html", ctx(
+        request, "taken", inst=inst, vormen=google.VORMEN, accounts=accounts, tellers=tellers, taak=taak, melding=melding, fout=fout))
+
+
+@router.post("/taken/instellingen")
+async def instellingen_opslaan(request: Request):
+    """Opslaan en daarna op de achtergrond alles gelijktrekken: bijvoorbeeld de afspraken van taken uit de agenda halen en
+    ze als taak in Google Taken zetten."""
+    controleer_herkomst(request)
+    f = await request.form()
+    vorm = str(f.get("taken_vorm") or "")
+    if vorm not in dict(google.VORMEN):
+        raise HTTPException(400)
+    with db.pool.connection() as c:
+        google.zet(c, "taken_vorm", vorm)
+        google.zet(c, "taken_tijd_afspraak", "1" if f.get("taken_tijd_afspraak") else "0")
+        google.zet(c, "taken_google_alle", "1" if f.get("taken_google_alle") else "0")
+        google.zet(c, "taken_google_lijst", (str(f.get("taken_google_lijst") or "").strip() or "Buurmanitor")[:100])
+        google.zet(c, "taken_google_account", str(f.get("taken_google_account") or "")[:20])
+
+    def werk():
+        try:
+            with db.achtergrond.connection() as c:
+                gelijktrekken(c)
+                google.zet(c, "taken_vorm_toegepast", vorm)
+        except Exception:  # noqa: BLE001  (de planner probeert het over tien minuten opnieuw)
+            pass
+    threading.Thread(target=werk, name="taken-gelijktrekken", daemon=True).start()
+    return _terug("/taken/instellingen", melding="Opgeslagen. Buurmanitor zet de taken nu op de nieuwe plek; dat duurt even. "
+                                                 "Ververs deze pagina over een minuut.")
 
 
 # ---------------------------------------------------------------- archief

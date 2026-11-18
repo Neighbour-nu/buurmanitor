@@ -733,6 +733,8 @@ MIGRATIES = [
     "CREATE INDEX IF NOT EXISTS signal_berichten_chat ON signal_berichten (chat_id, id)",
     # Archief: berichten bewaren op de server zonder dat Bram of Iris (Claude) ze lezen.
     "ALTER TABLE signal_chats ADD COLUMN IF NOT EXISTS archief boolean NOT NULL DEFAULT false",
+    # Waar de taak buiten Buurmanitor staat: afspraak (agenda), google_taak (Google Taken) of google_weg (in Google verwijderd)
+    "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS agenda_soort text NOT NULL DEFAULT 'afspraak'",
     # Verwijderd van het scherm: niets meer bewaren en niet meer tonen, ook als er nieuwe berichten komen (terug te zetten).
     "ALTER TABLE signal_chats ADD COLUMN IF NOT EXISTS verborgen boolean NOT NULL DEFAULT false",
     "CREATE INDEX IF NOT EXISTS signal_berichten_zoek ON signal_berichten USING gin (to_tsvector('dutch', tekst))",

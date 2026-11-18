@@ -12,7 +12,8 @@
 <section class="kopregel">
   <div>
     <h1>Taken</h1>
-    <p class="motto">Sleep een taak naar een andere kolom. Met een datum staat de taak ook in je agenda.</p>
+    <p class="motto">Sleep een taak naar een andere kolom. {% if vorm == 'google_taken' %}Met een datum staat de taak ook in Google Taken{% if tijd_afspraak %} (met een begintijd: in je agenda){% endif %}.{% elif vorm == 'afspraak' %}Met een datum staat de taak ook in je agenda.{% endif %}
+      <a href="/taken/instellingen">Instellen</a></p>
   </div>
   <div class="knoppen">
     <a class="knop {{ 'vol' if praat }}" href="{{ '/taken' if praat else '/taken?praat=1#noor' }}">💬 {{ 'Gesprek sluiten' if praat else 'Vraag Noor' }}</a>
@@ -69,7 +70,7 @@
 <section class="kaart taakformulier" id="formulier">
   <h2>{{ 'Taak bewerken' if formulier.id else 'Nieuwe taak' }}</h2>
   {% if mail %}<p class="noot">Uit de mail <a href="/bram/bericht/{{ mail.id }}">{{ mail.onderwerp }}</a>{% if mail.van_naam %} van {{ mail.van_naam }}{% endif %}.</p>{% endif %}
-  {% if formulier.agenda_fout %}<p class="item urgent">Agenda: {{ formulier.agenda_fout }}</p>{% endif %}
+  {% if formulier.agenda_fout %}<p class="item urgent">{{ 'Google Taken' if vorm == 'google_taken' else 'Agenda' }}: {{ formulier.agenda_fout }}</p>{% endif %}
   <form method="post" action="/taken/{{ formulier.id if formulier.id else 'nieuw' }}" class="velden">
     {% if not formulier.id and formulier.bericht_id %}<input type="hidden" name="bericht_id" value="{{ formulier.bericht_id }}">{% endif %}
     <label class="breed">Korte titel <input type="text" name="titel" value="{{ formulier.titel }}" maxlength="160" required {{ 'autofocus' if not wacht }}></label>
@@ -159,7 +160,7 @@
       <div class="taakregel">
         <span class="label prio {{ t.prio }}">{{ prio_namen[t.prio] }}</span>
         {% if te_laat %}<span class="label rood">te laat</span>{% endif %}
-        {% if t.startdatum or t.einddatum %}<span class="noot" title="{{ 'staat in je agenda' if t.agenda_extern else '' }}">{{ datums(t) }}{% if t.agenda_extern %} 📅{% endif %}</span>{% endif %}
+        {% if t.startdatum or t.einddatum %}<span class="noot" title="{{ ('staat in Google Taken' if t.agenda_soort == 'google_taak' else 'staat in je agenda') if t.agenda_extern else '' }}">{{ datums(t) }}{% if t.agenda_extern %}{{ ' ☑' if t.agenda_soort == 'google_taak' else ' 📅' }}{% endif %}</span>{% endif %}
       </div>
       {% if t.status == 'wachtend' %}<div class="noot wacht">Wacht op: {% if t.wacht_op %}<b>{{ t.wacht_op }}</b>{% else %}<a href="/taken?bewerk={{ t.id }}&wacht=1#formulier">invullen</a>{% endif %}</div>{% endif %}
       {% if t.bericht_id %}<div class="noot">✉ <a href="/bram/bericht/{{ t.bericht_id }}">{{ t.mail_onderwerp or 'mail' }}</a></div>{% endif %}

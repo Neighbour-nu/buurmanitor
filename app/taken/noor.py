@@ -175,7 +175,7 @@ def _taakregel(t, vandaag):
     if t.get("mail_onderwerp"):
         extra.append(f"uit de mail van {t.get('mail_van') or 'onbekend'}: {t['mail_onderwerp']}")
     if t["agenda_extern"]:
-        extra.append("staat in de agenda")
+        extra.append("staat in Google Taken" if t.get("agenda_soort") == "google_taak" else "staat in de agenda")
     regel = f"- [taak {t['id']}] {t['titel']} ({'; '.join(extra)})"
     if t["beschrijving"]:
         regel += "\n  " + " ".join(t["beschrijving"].split())[:300]

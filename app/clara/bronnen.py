@@ -126,7 +126,7 @@ def _id_token_gegevens(id_token):
 # ---------------------------------------------------------------- Google
 
 GOOGLE_SCOPES = ("openid email https://www.googleapis.com/auth/calendar.readonly "
-                 "https://www.googleapis.com/auth/calendar.events")
+                 "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks")
 GOOGLE_API = "https://www.googleapis.com/calendar/v3"
 
 

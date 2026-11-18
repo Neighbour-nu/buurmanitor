@@ -77,7 +77,12 @@ def klant():
         from app.kern import db  # pylint: disable=import-outside-toplevel
         with db.pool.connection() as c:
             c.execute("TRUNCATE takenbord, agenda_koppelingen, post_koppelingen CASCADE")
+            # Deze tests gaan over taken als afspraak in de agenda; Google Taken staat in tests/test_taken_google.py.
+            c.execute("""INSERT INTO instellingen (sleutel, waarde) VALUES ('taken_vorm', 'afspraak'), ('taken_vorm_toegepast', 'afspraak')
+                         ON CONFLICT (sleutel) DO UPDATE SET waarde = EXCLUDED.waarde""")
         yield k
+        with db.pool.connection() as c:
+            c.execute("DELETE FROM instellingen WHERE sleutel IN ('taken_vorm', 'taken_vorm_toegepast')")
 
 
 def test_bord_agenda_en_kolommen(klant, monkeypatch):
@@ -144,8 +149,8 @@ def test_bord_agenda_en_kolommen(klant, monkeypatch):
     with db.pool.connection() as c:
         oud = web.nieuw(c, {"titel": "Oude taak", "beschrijving": "", "prio": "laag", "status": "afgerond", "startdatum": s, "doel": f"{k}|primary"})
         c.execute("UPDATE takenbord SET agenda_koppeling = %s, agenda_id = 'primary', agenda_extern = 'oud-ev', agenda_spec = 'oud' WHERE id = %s", (k, oud))
-        assert web.taak_takenagenda(c) == "1 taken nagekeken, 1 afspraken gezet, aangepast of weggehaald" and weg[-1] == "oud-ev"
-        assert web.taak_takenagenda(c) == "0 taken nagekeken, 0 afspraken gezet, aangepast of weggehaald"
+        assert web.taak_takenagenda(c) == "2 taken nagekeken, 1 gezet, aangepast of weggehaald" and weg[-1] == "oud-ev"
+        assert web.taak_takenagenda(c) == "1 taken nagekeken, 0 gezet, aangepast of weggehaald"  # de open taak, al goed
         c.execute("DELETE FROM takenbord WHERE id = %s", (oud,))
     # Toch niet af: terug naar Actief, en de afspraak komt terug.
     klant.post(f"/taken/{tid}/status", headers=FORM, data={"status": "actief"})

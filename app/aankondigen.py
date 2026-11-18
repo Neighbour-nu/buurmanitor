@@ -86,7 +86,8 @@ def te_melden_taken(taken, nu, minuten, ochtend, tz=config.TZ, met_taken=True, m
     for t in taken:
         if t["status"] == "afgerond":
             continue
-        if met_taken and t.get("starttijd") and t.get("startdatum") and not t.get("agenda_extern"):
+        in_agenda = t.get("agenda_extern") and t.get("agenda_soort", "afspraak") == "afspraak"  # Google Taken kent geen tijd
+        if met_taken and t.get("starttijd") and t.get("startdatum") and not in_agenda:
             start = dt.datetime.combine(t["startdatum"], t["starttijd"], tzinfo=tz)
             if nu < start <= nu + dt.timedelta(minutes=minuten):
                 over = max(1, round((start - nu).total_seconds() / 60))

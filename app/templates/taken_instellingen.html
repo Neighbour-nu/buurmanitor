@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block titel %}Instellen · Taken · Buurmanitor{% endblock %}
+{% block inhoud %}
+<h1>Taken instellen</h1>
+<p class="motto">Waar een taak met een datum buiten Buurmanitor komt te staan. <a href="/taken">Naar het bord</a></p>
+{% if melding %}<p class="item">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
+{% if tellers.fouten %}<p class="item urgent">Bij {{ tellers.fouten }} {{ 'taak' if tellers.fouten == 1 else 'taken' }} lukte het niet: {{ tellers.fout }}</p>{% endif %}
+
+<section class="kaart">
+  <form method="post" action="/taken/instellingen">
+    <fieldset class="keuzes">
+      <legend>Een taak met een datum zet Buurmanitor</legend>
+      {% for w, n in vormen %}<label class="vink"><input type="radio" name="taken_vorm" value="{{ w }}" {{ 'checked' if inst.taken_vorm == w }}> {{ n }}</label>{% endfor %}
+    </fieldset>
+    <p class="noot">Google Taken zie je in Gmail (het taakicoon rechts), in Google Agenda (als takenlijst, apart aan en uit te zetten)
+      en in de app Google Tasks. Je agenda blijft vrij voor echte afspraken. Google Taken kent alleen een datum, geen tijd.</p>
+    <div class="velden">
+      <label class="vink breed"><input type="checkbox" name="taken_tijd_afspraak" value="1" {{ 'checked' if inst.taken_tijd_afspraak == '1' }}>
+        Een taak met een begintijd blijft een afspraak in de agenda (dan houd je die tijd echt vrij)</label>
+      <label class="vink breed"><input type="checkbox" name="taken_google_alle" value="1" {{ 'checked' if inst.taken_google_alle == '1' }}>
+        Ook taken zonder datum in Google Taken zetten</label>
+      <label>Naam van de lijst in Google Taken <input type="text" name="taken_google_lijst" value="{{ inst.taken_google_lijst }}"></label>
+      <label>Google-account <select name="taken_google_account">
+        <option value="">het account van de gekozen agenda, anders het eerste</option>
+        {% for k in accounts %}<option value="{{ k.id }}" {{ 'selected' if inst.taken_google_account == k.id | string }}>{{ k.naam }}{% if k.account and k.account != k.naam %} ({{ k.account }}){% endif %}</option>{% endfor %}
+      </select></label>
+    </div>
+    {% if not accounts %}<p class="item urgent">Er is nog geen Google-account met schrijfrechten gekoppeld. Doe dat onder <a href="/clara/koppelingen">Clara, Agenda-instellingen</a>.</p>{% endif %}
+    <p><button class="knop vol" type="submit">Opslaan</button></p>
+  </form>
+</section>
+
+<section class="kaart">
+  <h2>Stand</h2>
+  <ul class="noot">
+    <li>Taken in Google Taken: {{ tellers.google }}</li>
+    <li>Taken als afspraak in de agenda: {{ tellers.afspraken }}</li>
+    <li>{% if taak and taak.laatst %}Laatst met Google bijgewerkt {{ geleden(taak.laatst) }}{% if taak.resultaat %}: {{ taak.resultaat }}{% endif %}{% if taak.fout %} <b>(mis: {{ taak.fout.splitlines()[0] }})</b>{% endif %}.{% else %}Nog niet met Google bijgewerkt; dat gebeurt elke tien minuten.{% endif %}</li>
+  </ul>
+  <p class="noot">Twee kanten op: vink je een taak in Google af, dan gaat hij hier naar Afgerond; zet je hem in Google terug, dan komt hij
+    hier bij Gepland. Een nieuwe titel of datum in Google komt ook op het bord. Verwijder je een taak in Google, dan gaat hij hier
+    naar Afgerond. Nieuwe taken die je in Google maakt, komen niet op het bord.</p>
+  <p class="noot"><b>Eerste keer:</b> koppel je Google-account opnieuw onder <a href="/clara/koppelingen">Clara, Agenda-instellingen</a>
+    (hetzelfde account; je instellingen blijven staan) en sta daarbij Taken toe. Staat in je Google Cloud-project de Google Tasks API
+    nog uit, zet hem dan aan (API's en services, Bibliotheek, Google Tasks API).</p>
+</section>
+{% endblock %}
