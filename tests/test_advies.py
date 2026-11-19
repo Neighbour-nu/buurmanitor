@@ -259,8 +259,8 @@ def test_taakvoorstellen_en_signal(klant, nep, monkeypatch):
                            RETURNING id""").fetchone()["id"]
         c.execute("INSERT INTO signal_berichten (chat_id, ts, van, van_mij, tekst, tijd) VALUES (%s, 1, 'Anna', false, %s, %s)",
                   (cid, "Martijn, reserveer jij de zaal?", nu - dt.timedelta(hours=2)))
-        c.execute("INSERT INTO signal_berichten (chat_id, ts, van, van_mij, tekst, tijd) VALUES (%s, 2, 'Anna', false, 'oud nieuws', %s)",
-                  (cid, nu - dt.timedelta(days=3)))
+        c.execute("INSERT INTO signal_berichten (chat_id, ts, van, van_mij, tekst, tijd, binnen) VALUES (%s, 2, 'Anna', false, 'oud nieuws', %s, %s)",
+                  (cid, nu - dt.timedelta(days=3), nu - dt.timedelta(days=3)))
         assert "signal" in s["bronnen"]
         gegevens = maken.verzamel(c, s, nu)
         assert f"Signal-chat #{cid}: Vereniging" in gegevens and "Martijn, reserveer jij de zaal?" in gegevens and "oud nieuws" not in gegevens

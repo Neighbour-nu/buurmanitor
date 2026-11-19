@@ -21,7 +21,7 @@ from ..overzichten import onderdelen as od, opmaak
 
 BRONNEN = {
     "post": "Mail (Bram): mails die om actie vragen",
-    "signal": "Signal (Bram): berichten uit de chats waar je meelezen aanzette",
+    "signal": "Chats (Bram): Signal, WhatsApp en Teams, alleen waar je meelezen aanzette",
     "agenda": "Agenda (Clara): afspraken van vandaag en morgen",
     "taken": "Taken (Noor): te laat, deadlines, wachten op anderen",
     "crm": "CRM: kansen en projecten die aandacht vragen",
@@ -163,10 +163,10 @@ def _post(c, nu, horizon):
 def _signal(c, nu, horizon):
     from ..signaal import verwerken as signaal  # pylint: disable=import-outside-toplevel
     if not c.execute("SELECT 1 FROM signal_chats WHERE meelezen LIMIT 1").fetchone():
-        return "Signal: nog geen chats waarin Bram meeleest."
+        return "Chats: nog geen chats (Signal, WhatsApp, Teams) waarin Bram meeleest."
     tekst = signaal.samenvatting(c, nu - SIGNAL_TERUG)
-    return (f"Signal, de afgelopen 24 uur (alleen chats waar Martijn meelezen aanzette; 'jij' is Martijn zelf):\n{tekst}" if tekst
-            else "Signal: geen nieuwe berichten in de afgelopen 24 uur.")
+    return (f"Chats (Signal, WhatsApp, Teams), de afgelopen 24 uur (alleen chats waar Martijn meelezen aanzette; 'jij' is Martijn "
+            f"zelf):\n{tekst}" if tekst else "Chats: geen nieuwe berichten in de afgelopen 24 uur.")
 
 
 def _crm(c, nu, horizon):
@@ -298,7 +298,7 @@ def systeem(c, s):
              '"taken": [{"titel": "concreet, begint met een werkwoord", "toelichting": "een zin: waarom, en uit welke mail, chat of '
              'afspraak", "prio": "hoog|middel|laag", "deadline": "JJJJ-MM-DD of null", "link": "optioneel, zoals bij de punten"}]}\n'
              f"Hooguit {hooguit} punten, het belangrijkste eerst. Gebruik de ID's uit de gegevens (mail #12, taak #7, kans #3, "
-             f"Signal-chat #5) voor de link.\n"
+             f"WhatsApp-chat #5, link /bram/signal/chat/5) voor de link.\n"
              f"Stel in 'taken' hooguit {TAKEN_MAX.get(s['lengte'], 3)} taken voor die Martijn zelf moet doen en die nog niet op het "
              "takenbord staan: iets wat hij toezegde of wat iemand hem vroeg (in een mail of Signal-bericht), voorbereiding voor een "
              "afspraak of vergadering, of een vervolgstap op een kans. Alleen wat echt uit de gegevens volgt. Niet: wat al bij "

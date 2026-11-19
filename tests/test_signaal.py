@@ -239,7 +239,7 @@ def test_schermen(schoon, container, monkeypatch):
     container["inbox"] = [env(dataMessage=dm("hallo", groupInfo={"groupId": "grp1"}))]
     r = schoon.post("/bram/signal/ophalen", headers=FORM, follow_redirects=True)
     assert "1 berichten" in r.text and "Fractie" in r.text
-    assert "Chats met meelezen (Bram en Iris): <b>0</b>" in r.text and "Zet bij Chats hieronder meelezen aan" in r.text
+    assert "Chats met meelezen (Bram en Iris), alle bronnen: <b>0</b>" in r.text and "Zet bij Chats hierboven meelezen aan" in r.text
     assert "1 keer iets van Signal" in r.text and "1 bericht in groep" in r.text
 
     # De container geeft regels als tekst, en de groepen lukken even niet: ophalen gaat door
@@ -334,8 +334,9 @@ def test_samenvatting_voor_iris(schoon, container):
         cid = c.execute("SELECT id FROM signal_chats").fetchone()["id"]
         c.execute("UPDATE signal_chats SET meelezen = true, domein = 'politiek' WHERE id = %s", (cid,))
         for i in range(5):
-            c.execute("INSERT INTO signal_berichten (chat_id, ts, van, van_mij, tekst, tijd) VALUES (%s, %s, 'Anna', false, %s, %s)",
-                      (cid, T0 + 30 + i, f"bericht {i}", nu - dt.timedelta(hours=30 - i * 10)))
+            t_ = nu - dt.timedelta(hours=30 - i * 10)
+            c.execute("INSERT INTO signal_berichten (chat_id, ts, van, van_mij, tekst, tijd, binnen) VALUES (%s, %s, 'Anna', false, %s, %s, %s)",
+                      (cid, T0 + 30 + i, f"bericht {i}", t_, t_))
         c.execute("INSERT INTO signal_voorstellen (chat_id, soort, titel) VALUES (%s, 'taak', 'Notulen sturen')", (cid,))
         t = verwerken.samenvatting(c, nu - dt.timedelta(hours=24), per_chat=2)
     assert f"Signal-chat #{cid}: Fractie (groep, politiek), 4 berichten, de laatste 2 hieronder" in t

@@ -593,7 +593,7 @@ async def koppel_terug(soort: str, code: str = "", state: str = "", error: str =
         opties = _neem_staat(c, state, soort)
     # Bram (mail) koppelt via dezelfde apps en hetzelfde terugkeeradres; het koppelverzoek zegt voor wie het is.
     voor_bram = bool(opties and opties.get("voor") == "bram")
-    scherm = "/bram/instellingen" if voor_bram else "/clara/koppelingen"
+    scherm = "/bram/instellingen" if voor_bram else "/bram/signal#teams" if opties and opties.get("voor") == "teams" else "/clara/koppelingen"
     if error:
         uitleg = error_description or error
         if "AADSTS65001" in uitleg or "AADSTS90094" in uitleg or "admin" in uitleg.lower():
@@ -606,6 +606,9 @@ async def koppel_terug(soort: str, code: str = "", state: str = "", error: str =
     if voor_bram:
         from ..bram import web as bram_web  # pylint: disable=import-outside-toplevel
         return await bram_web.koppeling_klaar(soort, code, opties)
+    if opties.get("voor") == "teams" and soort == "microsoft":
+        from ..signaal import web as signaal_web  # pylint: disable=import-outside-toplevel
+        return await signaal_web.teams_klaar(code)
     try:
         gegevens = await asyncio.to_thread(
             bronnen.google_code if soort == "google" else (lambda x: bronnen.ms_code(x, opties.get("lezen", False))), code)

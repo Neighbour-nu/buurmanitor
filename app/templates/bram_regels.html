@@ -98,6 +98,8 @@
           placeholder="bijv. .pdf, factuur (leeg: alle bijlagen)"></label>
         <label class="breed">doorsturen naar <input type="text" name="doorsturen" value="{{ a.doorsturen }}"
           placeholder="bijv. het inboxadres van je boekhouding (hooguit drie adressen, met komma's)"></label>
+        <label class="vink breed"><input type="checkbox" name="whatsapp" value="1" {{ 'checked' if a.whatsapp }}>
+          WhatsApp-export inlezen <span class="noot">(de .zip of .txt die je jezelf mailt via Exporteer chat; komt bij Post &gt; Chats)</span></label>
       </div>
       <p class="noot">In de map kun je <code>{jaar}</code>, <code>{maand}</code> en <code>{afzender}</code> gebruiken; mappen die er nog niet
         zijn, maakt Bram aan. Een link naar een map werkt ook voor een gedeelde drive, eventueel met een pad erachter

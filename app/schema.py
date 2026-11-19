@@ -735,6 +735,10 @@ MIGRATIES = [
     "ALTER TABLE signal_chats ADD COLUMN IF NOT EXISTS archief boolean NOT NULL DEFAULT false",
     # Waar de taak buiten Buurmanitor staat: afspraak (agenda), google_taak (Google Taken) of google_weg (in Google verwijderd)
     "ALTER TABLE takenbord ADD COLUMN IF NOT EXISTS agenda_soort text NOT NULL DEFAULT 'afspraak'",
+    # Waar een chat vandaan komt: signal, whatsapp (export ingelezen) of teams (Microsoft Teams)
+    "ALTER TABLE signal_chats ADD COLUMN IF NOT EXISTS bron text NOT NULL DEFAULT 'signal'",
+    # Wanneer een bericht in Buurmanitor kwam (bij een ingelezen export later dan het bericht zelf)
+    "ALTER TABLE signal_berichten ADD COLUMN IF NOT EXISTS binnen timestamptz NOT NULL DEFAULT now()",
     # Verwijderd van het scherm: niets meer bewaren en niet meer tonen, ook als er nieuwe berichten komen (terug te zetten).
     "ALTER TABLE signal_chats ADD COLUMN IF NOT EXISTS verborgen boolean NOT NULL DEFAULT false",
     "CREATE INDEX IF NOT EXISTS signal_berichten_zoek ON signal_berichten USING gin (to_tsvector('dutch', tekst))",

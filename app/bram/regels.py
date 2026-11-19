@@ -64,7 +64,8 @@ def uit_formulier(f):
          "taak": str(f.get("taak") or "") == "1", "taak_titel": str(f.get("taak_titel") or "").strip()[:160],
          "taak_prio": str(f.get("taak_prio") or "") if str(f.get("taak_prio") or "") in ("laag", "hoog") else "",
          "taak_dagen": int(f.get("taak_dagen")) if str(f.get("taak_dagen") or "").isdigit() and 0 < int(f.get("taak_dagen")) <= 365 else 0,
-         "taak_betaling": str(f.get("taak_betaling") or "") == "1"}
+         "taak_betaling": str(f.get("taak_betaling") or "") == "1",
+         "whatsapp": str(f.get("whatsapp") or "") == "1"}
     if a["verwijderen"]:  # naar de prullenbak: verplaatsen, archiveren en een label hebben dan geen zin meer
         a.update(map="", archiveren=False, label="", maken=False)
     if a["map"]:
@@ -82,7 +83,7 @@ def uit_formulier(f):
     if not a.get("taak"):
         for k in ("taak_titel", "taak_prio", "taak_dagen", "taak_betaling"):
             a.pop(k, None)
-    if not ({"gelezen", "archiveren", "map", "label", "drive", "doorsturen", "verwijderen", "taak"} & set(a)):
+    if not ({"gelezen", "archiveren", "map", "label", "drive", "doorsturen", "verwijderen", "taak", "whatsapp"} & set(a)):
         return v, a, "Kies minstens één actie."
     if not ({"drive", "doorsturen"} & set(a)):
         for k in ("bestandsnaam", "bijlage_filter"):
@@ -120,6 +121,8 @@ def beschrijf(v, a):
     if a.get("taak"):
         dan.append("taak maken" + (f' "{a["taak_titel"]}"' if a.get("taak_titel") else "")
                    + (" (betaling: bedrag, vervaldatum en betaallink zoeken)" if a.get("taak_betaling") else ""))
+    if a.get("whatsapp"):
+        dan.append("WhatsApp-export inlezen (Post > Chats)")
     if a.get("verwijderen"):
         dan.append("verwijderen (naar de prullenbak)")
     return " en ".join(als), ", ".join(dan)
@@ -131,7 +134,7 @@ def actieve(c, koppeling_id=None):
 
 
 def heeft_bijlage_acties(a):
-    return bool((a or {}).get("drive") or (a or {}).get("doorsturen"))
+    return bool((a or {}).get("drive") or (a or {}).get("doorsturen") or (a or {}).get("whatsapp"))
 
 
 def heeft_bijlagen_nodig(regel):
@@ -302,12 +305,16 @@ def bijlagen_verwerken(c, k, tok, b, regel):
     from . import sync  # pylint: disable=import-outside-toplevel
     a = regel["acties"] or {}
     alle = bronnen.gmail_bijlagen_data(tok, b["extern_id"]) if k["soort"] == "google" else bronnen.ms_bijlagen_data(tok, b["extern_id"])
+    wa = whatsapp_inlezen(c, alle) if a.get("whatsapp") else ""
+    if not (a.get("drive") or a.get("doorsturen")):
+        return wa, "", []
     gekozen = kies_bijlagen(alle, a.get("bijlage_filter"))
     te_groot = [x["naam"] for x in gekozen if x["data"] is None]
     gekozen = [x for x in gekozen if x["data"] is not None]
     if not gekozen:
-        return ("geen bijlagen om te verwerken" if not te_groot else f"bijlage te groot: {', '.join(te_groot)}"), "", []
-    gedaan, link, bestanden = [], "", []
+        gedaan = "geen bijlagen om te verwerken" if not te_groot else f"bijlage te groot: {', '.join(te_groot)}"
+        return ", ".join(x for x in (wa, gedaan) if x), "", []
+    gedaan, link, bestanden = ([wa] if wa else []), "", []
     if a.get("drive"):
         dk = c.execute("SELECT * FROM post_koppelingen WHERE id = %s", (a["drive"],)).fetchone()
         if not dk or dk["soort"] != "google":
@@ -347,6 +354,26 @@ def bijlagen_verwerken(c, k, tok, b, regel):
     if te_groot:
         gedaan.append(f"overgeslagen (te groot): {', '.join(te_groot)}")
     return ", ".join(gedaan), link, bestanden
+
+
+def whatsapp_inlezen(c, bijlagen):
+    """De .zip- en .txt-bijlagen inlezen als WhatsApp-export. Lukt het bij geen enkele, dan een RegelFout (de mail blijft staan)."""
+    from ..signaal import whatsapp  # pylint: disable=import-outside-toplevel
+    kandidaten = [x for x in bijlagen if x["naam"].lower().endswith((".zip", ".txt"))]
+    if not kandidaten:
+        raise RegelFout("Geen WhatsApp-export (.zip of .txt) bij deze mail.")
+    uit, fouten = [], []
+    for x in kandidaten:
+        if x["data"] is None:
+            fouten.append(f"{x['naam']} is te groot")
+            continue
+        try:
+            uit.append(whatsapp.importeer(c, x["naam"], x["data"]))
+        except whatsapp.Fout as e:
+            fouten.append(str(e))
+    if not uit:
+        raise RegelFout("WhatsApp-export niet ingelezen: " + " ".join(fouten)[:300])
+    return "WhatsApp ingelezen: " + "; ".join(uit) + (f" (mis: {'; '.join(fouten)})" if fouten else "")
 
 
 def taak_titel(sjabloon, b, g, betaling_):

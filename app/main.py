@@ -19,7 +19,7 @@ from .clara import sync as clara_sync, web as clara_web  # noqa: F401  (sync reg
 from .crm import relaties as crm_relaties, web as crm_web  # noqa: F401  (relaties registreert de planner-taak)
 from .overzichten import verzenden as overzichten_verzenden, web as overzichten_web  # noqa: F401  (verzenden registreert de planner-taak)
 from .advies import maken as advies_maken, web as advies_web  # noqa: F401  (maken registreert de planner-taak)
-from .signaal import verwerken as signaal_verwerken, web as signaal_web  # noqa: F401  (verwerken registreert de planner-taak)
+from .signaal import teams as signaal_teams, verwerken as signaal_verwerken, web as signaal_web  # noqa: F401  (planner-taken)
 from .taken import noor, web as taken_web
 from .jesse import luisteren as jesse_luisteren, web as jesse_web  # noqa: F401  (luisteren registreert de planner-taak)
 from .vera import nieuws as vera_nieuws, web as vera_web  # noqa: F401  (nieuws registreert de planner-taak)

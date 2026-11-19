@@ -1,26 +1,84 @@
 {% extends "base.html" %}
-{% block titel %}Signal · Post · Buurmanitor{% endblock %}
+{% block titel %}Chats · Post · Buurmanitor{% endblock %}
 {% block inhoud %}
-<h1>Signal</h1>
-<p class="motto">Bram leest mee in de chats die jij kiest, en stelt taken en afspraken voor. Hij stuurt nooit iets. <a href="/bram">Naar Post</a></p>
+<h1>Chats</h1>
+<p class="motto">Signal, WhatsApp en Teams. Bram en Iris lezen mee in de chats die jij kiest, en stellen taken en afspraken voor. Ze sturen nooit iets.
+  <a href="/bram">Naar Post</a></p>
 {% if melding %}<p class="item">{{ melding }}</p>{% endif %}
 {% if fout %}<p class="item urgent">{{ fout }}</p>{% endif %}
 
+<section class="kaart" id="voorstellen">
+  <h2>Voorstellen <span class="noot">({{ voorstellen | length }})</span></h2>
+  {% for v in voorstellen %}
+  <form method="post" action="/bram/signal/voorstel/{{ v.id }}" class="signvoorstel">
+    <div class="velden">
+      <span class="label">{{ '📅 afspraak' if v.soort == 'afspraak' else '✓ taak' }}</span>
+      <label class="breed">Titel <input type="text" name="titel" value="{{ v.titel }}"></label>
+      <label>Datum <input type="date" name="datum" value="{{ v.datum.isoformat() if v.datum else '' }}"></label>
+      <label>Van <input type="time" name="begintijd" value="{{ v.begintijd.strftime('%H:%M') if v.begintijd else '' }}"></label>
+      <label>Tot <input type="time" name="eindtijd" value="{{ v.eindtijd.strftime('%H:%M') if v.eindtijd else '' }}"></label>
+      {% if doelen %}<label>Agenda <select name="doel">{% set kies = doel_voor(doelen, v.domein) %}
+        {% for w, l, d in doelen %}<option value="{{ w }}" {{ 'selected' if w == kies }}>{{ l }}</option>{% endfor %}</select></label>{% endif %}
+    </div>
+    <p class="noot">Uit <a href="/bram/signal/chat/{{ v.chat_id }}">{{ chatnaam(v) }}</a>{% if v.locatie %} · {{ v.locatie }}{% endif %}: {{ v.toelichting }}</p>
+    <div class="knoppenrij">
+      <button class="knop {{ 'vol' if v.soort == 'taak' }}" name="actie" value="taak">Maak taak</button>
+      {% if doelen %}<button class="knop {{ 'vol' if v.soort == 'afspraak' }}" name="actie" value="afspraak">Zet in agenda</button>{% endif %}
+      <button class="knop" name="actie" value="weg">Niet nodig</button>
+    </div>
+  </form>
+  {% else %}<p class="noot">Geen open voorstellen. Bram kijkt in de chats met meelezen en voorstellen aan, zodra een gesprek tien minuten stil is (bij WhatsApp: na het inlezen).</p>{% endfor %}
+</section>
+
+<section class="kaart" id="chats">
+  <div class="adlkop"><h2>{{ "Verwijderde chats" if verborgen else "Chats" }} <span class="noot">({{ chats | length if verborgen else totaal }})</span></h2>
+    <form method="get" action="/bram/signal/zoek" class="inline zoekveld"><input type="search" name="q" placeholder="Zoek in het archief" aria-label="Zoek in het chatarchief">
+      <button class="knop klein" type="submit">Zoeken</button></form></div>
+  <p class="filters">{% for w, n in [('', 'Alle')] + bronnen %}<a href="/bram/signal?bron={{ w }}#chats" class="filter{{ ' aan' if bron == w }}">{{ n }}</a> {% endfor %}</p>
+  <p class="noot">Hier komen de chats bij zodra er een bericht in langskomt (of je een WhatsApp-export inleest). <b>Meelezen</b>: Bram en Iris lezen mee (het gaat naar Claude)
+    en de berichten komen in het archief. <b>Archief</b>: alleen bewaren op je eigen server, zonder dat Claude het ziet. Met geen
+    van beide onthoudt Buurmanitor alleen de naam en hoeveel berichten er waren. Zet je beide uit, dan wordt wat er bewaard was gewist.
+    Signal en Teams geven alleen berichten van na de koppeling; van WhatsApp komt mee wat in de export staat.</p>
+  {% for ch in chats %}
+  <form method="post" action="/bram/signal/chat/{{ ch.id }}" class="velden signchat{{ ' aan' if ch.meelezen or ch.archief }}" id="chat-{{ ch.id }}"
+    onsubmit="if (event.submitter && event.submitter.dataset.los) return true; const m = this.meelezen.checked || this.archief.checked; return m || {{ 'true' if not ch.bewaard else 'false' }} || confirm('Meelezen en archief allebei uit? Dan worden de {{ ch.bewaard }} bewaarde berichten van deze chat gewist.')">
+    <span class="chatnaam"><span class="bronlabel bron-{{ ch.bron }}">{{ bron_namen[ch.bron] }}</span> {{ '👥' if ch.soort == 'groep' else '👤' }} <b>{% if ch.meelezen or ch.archief or ch.bewaard %}<a href="/bram/signal/chat/{{ ch.id }}">{{ chatnaam(ch) }}</a>{% else %}{{ chatnaam(ch) }}{% endif %}</b>
+      <span class="noot">{{ ch.aantal }} berichten{% if ch.laatst %}, laatst {{ geleden(ch.laatst) }}{% endif %}{% if ch.bewaard %}, {{ ch.bewaard }} bewaard{% endif %}</span></span>
+    <label class="vink"><input type="checkbox" name="meelezen" value="1" {{ 'checked' if ch.meelezen }}
+      > meelezen</label>
+    <label class="vink"><input type="checkbox" name="archief" value="1" {{ 'checked' if ch.archief }}> archief</label>
+    <label class="vink"><input type="checkbox" name="voorstellen" value="1" {{ 'checked' if ch.voorstellen }}> voorstellen</label>
+    <label>Domein <select name="domein">{% for k, n in domeinen %}<option value="{{ k }}" {{ 'selected' if ch.domein == k }}>{{ n }}</option>{% endfor %}</select></label>
+    <label>Eigen naam <input type="text" name="eigen_naam" value="{{ ch.eigen_naam }}" placeholder="{{ ch.naam }}"></label>
+    {% if verborgen %}
+    <button class="knop klein vol" type="submit" formaction="/bram/signal/chat/{{ ch.id }}/terugzetten" data-los="1">Terugzetten</button>
+    {% else %}
+    <button class="knop klein" type="submit">Opslaan</button>
+    <button class="knop klein" type="submit" formaction="/bram/signal/chat/{{ ch.id }}/verwijderen" data-los="1" title="Chat verwijderen" aria-label="Chat verwijderen"
+      onclick="return confirm('{{ chatnaam(ch) | replace("'", "") | e }} verwijderen?{{ (' De ' ~ ch.bewaard ~ ' bewaarde berichten worden gewist.') if ch.bewaard }} Nieuwe berichten uit deze chat worden niet meer bewaard. In {{ bron_namen[ch.bron] }} zelf verandert niets.')">🗑</button>
+    {% endif %}
+  </form>
+  {% else %}<p class="noot">Nog geen chats{{ ' hier' if bron }}. Koppel Signal of Teams hieronder, of lees een WhatsApp-export in.</p>{% endfor %}
+  {% if not alle and not verborgen and totaal > chats | length %}<p><a href="/bram/signal?alle=1&amp;bron={{ bron }}#chats">Alle {{ totaal }} chats tonen</a></p>{% endif %}
+  {% if verborgen %}<p class="noot"><a href="/bram/signal#chats">Terug naar de chats</a></p>
+  {% elif n_verborgen %}<p class="noot"><a href="/bram/signal?verborgen=1#chats">Verwijderde chats ({{ n_verborgen }})</a></p>{% endif %}
+</section>
+
 {% if not actief %}
-<section class="kaart">
+<section class="kaart" id="signal">
   <h2>Signal staat nog niet aan</h2>
   <p>De Signal-container draait nog niet op de server. Werk Buurmanitor bij (die zet hem erbij) en ververs deze pagina:</p>
   <pre>bash ~/buurmanitor/app/deploy/bijwerken.sh</pre>
 </section>
 {% elif not nummer and not bereikbaar %}
-<section class="kaart">
+<section class="kaart" id="signal">
   <h2>Signal is nog niet bereikbaar</h2>
   <p>De Signal-container start na het bijwerken; de eerste keer duurt dat een minuut. Ververs deze pagina zo. Blijft dit staan, kijk dan op de server:</p>
   <pre>cd ~/buurmanitor && docker compose logs --tail=30 signal</pre>
 </section>
 {% elif not nummer %}
-<section class="kaart" id="koppelen">
-  <h2>Koppelen</h2>
+<section class="kaart" id="signal">
+  <h2>Signal koppelen</h2>
   <ol>
     <li>Open Signal op je telefoon: <b>Instellingen &gt; Gekoppelde apparaten &gt; Apparaat koppelen</b> (op de iPhone: het plusje).</li>
     <li>Scan deze code. Hij is maar kort geldig; ververs de pagina voor een nieuwe.</li>
@@ -43,15 +101,15 @@
     er vanaf nu binnenkomt. Je ziet Buurmanitor in Signal staan bij Gekoppelde apparaten en kunt hem daar altijd weghalen.</p>
 </section>
 {% else %}
-<section class="kaart">
-  <div class="adlkop"><h2>Gekoppeld met {{ nummer }}</h2>
+<section class="kaart" id="signal">
+  <div class="adlkop"><h2>Signal: gekoppeld met {{ nummer }}</h2>
     <form method="post" action="/bram/signal/ophalen" class="inline"><button class="knop klein" type="submit">Nu ophalen</button></form></div>
   {% if taak and taak.fout %}<p class="item urgent">Het ophalen ging {{ geleden(taak.laatst) if taak.laatst else '' }} mis: {{ taak.fout.splitlines()[0] }}</p>{% endif %}
   <p class="noot">{% if not planner_aan %}<b>De planner staat uit: berichten komen alleen binnen met Nu ophalen.</b>{% elif taak and taak.laatst %}Elke twee minuten opgehaald; laatst {{ geleden(taak.laatst) }}{% if taak.resultaat %}: {{ taak.resultaat }}{% endif %}.{% else %}Nog niet opgehaald; dat gebeurt binnen twee minuten, of nu met de knop.{% endif %}
     {% if not sleutel_ok %} Er is geen Claude-sleutel, dus Bram maakt nog geen voorstellen.{% endif %}</p>
   <details class="controle"{% if (taak and taak.fout) or not tellers.meelezen %} open{% endif %}><summary>Controle</summary>
     <ul class="noot">
-      <li>Chats met meelezen (Bram en Iris): <b>{{ tellers.meelezen }}</b>{% if not tellers.meelezen %}. <b>Zet bij Chats hieronder meelezen aan</b>, anders bewaren en lezen Bram en Iris niets.{% endif %}</li>
+      <li>Chats met meelezen (Bram en Iris), alle bronnen: <b>{{ tellers.meelezen }}</b>{% if not tellers.meelezen %}. <b>Zet bij Chats hierboven meelezen aan</b>, anders lezen Bram en Iris niets.{% endif %}</li>
       <li>Chats met alleen archief: {{ tellers.archief }}</li>
       <li>Bewaarde berichten: {{ tellers.bewaard }}, waarvan {{ tellers.dag }} in de afgelopen 24 uur (die ziet Iris){% if tellers.laatst %}; laatste {{ geleden(tellers.laatst) }}{% endif %}.</li>
       {% if controle %}<li>Laatst iets binnengekomen {{ geleden(controle.tijd) }}: {{ controle.ontvangen }} keer iets van Signal
@@ -60,70 +118,53 @@
       <li>Alleen berichten van na het koppelen, en van een chat pas vanaf het moment dat meelezen of archief aan staat.</li>
     </ul>
   </details>
-</section>
-
-<section class="kaart" id="voorstellen">
-  <h2>Voorstellen <span class="noot">({{ voorstellen | length }})</span></h2>
-  {% for v in voorstellen %}
-  <form method="post" action="/bram/signal/voorstel/{{ v.id }}" class="signvoorstel">
-    <div class="velden">
-      <span class="label">{{ '📅 afspraak' if v.soort == 'afspraak' else '✓ taak' }}</span>
-      <label class="breed">Titel <input type="text" name="titel" value="{{ v.titel }}"></label>
-      <label>Datum <input type="date" name="datum" value="{{ v.datum.isoformat() if v.datum else '' }}"></label>
-      <label>Van <input type="time" name="begintijd" value="{{ v.begintijd.strftime('%H:%M') if v.begintijd else '' }}"></label>
-      <label>Tot <input type="time" name="eindtijd" value="{{ v.eindtijd.strftime('%H:%M') if v.eindtijd else '' }}"></label>
-      {% if doelen %}<label>Agenda <select name="doel">{% set kies = doel_voor(doelen, v.domein) %}
-        {% for w, l, d in doelen %}<option value="{{ w }}" {{ 'selected' if w == kies }}>{{ l }}</option>{% endfor %}</select></label>{% endif %}
-    </div>
-    <p class="noot">Uit <a href="/bram/signal/chat/{{ v.chat_id }}">{{ chatnaam(v) }}</a>{% if v.locatie %} · {{ v.locatie }}{% endif %}: {{ v.toelichting }}</p>
-    <div class="knoppenrij">
-      <button class="knop {{ 'vol' if v.soort == 'taak' }}" name="actie" value="taak">Maak taak</button>
-      {% if doelen %}<button class="knop {{ 'vol' if v.soort == 'afspraak' }}" name="actie" value="afspraak">Zet in agenda</button>{% endif %}
-      <button class="knop" name="actie" value="weg">Niet nodig</button>
-    </div>
-  </form>
-  {% else %}<p class="noot">Geen open voorstellen. Bram kijkt in de chats met meelezen en voorstellen aan, zodra een gesprek tien minuten stil is.</p>{% endfor %}
-</section>
-
-<section class="kaart" id="chats">
-  <div class="adlkop"><h2>{{ "Verwijderde chats" if verborgen else "Chats" }} <span class="noot">({{ chats | length if verborgen else totaal }})</span></h2>
-    <form method="get" action="/bram/signal/zoek" class="inline zoekveld"><input type="search" name="q" placeholder="Zoek in het archief" aria-label="Zoek in het Signal-archief">
-      <button class="knop klein" type="submit">Zoeken</button></form></div>
-  <p class="noot">Hier komen de chats bij zodra er een bericht in langskomt. <b>Meelezen</b>: Bram en Iris lezen mee (het gaat naar Claude)
-    en de berichten komen in het archief. <b>Archief</b>: alleen bewaren op je eigen server, zonder dat Claude het ziet. Met geen
-    van beide onthoudt Buurmanitor alleen de naam en hoeveel berichten er waren. Zet je beide uit, dan wordt wat er bewaard was gewist.
-    Signal geeft alleen berichten van na de koppeling; oudere berichten komen niet mee.</p>
-  {% for ch in chats %}
-  <form method="post" action="/bram/signal/chat/{{ ch.id }}" class="velden signchat{{ ' aan' if ch.meelezen or ch.archief }}" id="chat-{{ ch.id }}"
-    onsubmit="if (event.submitter && event.submitter.dataset.los) return true; const m = this.meelezen.checked || this.archief.checked; return m || {{ 'true' if not ch.bewaard else 'false' }} || confirm('Meelezen en archief allebei uit? Dan worden de {{ ch.bewaard }} bewaarde berichten van deze chat gewist.')">
-    <span class="chatnaam">{{ '👥' if ch.soort == 'groep' else '👤' }} <b>{% if ch.meelezen or ch.archief or ch.bewaard %}<a href="/bram/signal/chat/{{ ch.id }}">{{ chatnaam(ch) }}</a>{% else %}{{ chatnaam(ch) }}{% endif %}</b>
-      <span class="noot">{{ ch.aantal }} berichten{% if ch.laatst %}, laatst {{ geleden(ch.laatst) }}{% endif %}{% if ch.bewaard %}, {{ ch.bewaard }} bewaard{% endif %}</span></span>
-    <label class="vink"><input type="checkbox" name="meelezen" value="1" {{ 'checked' if ch.meelezen }}
-      > meelezen</label>
-    <label class="vink"><input type="checkbox" name="archief" value="1" {{ 'checked' if ch.archief }}> archief</label>
-    <label class="vink"><input type="checkbox" name="voorstellen" value="1" {{ 'checked' if ch.voorstellen }}> voorstellen</label>
-    <label>Domein <select name="domein">{% for k, n in domeinen %}<option value="{{ k }}" {{ 'selected' if ch.domein == k }}>{{ n }}</option>{% endfor %}</select></label>
-    <label>Eigen naam <input type="text" name="eigen_naam" value="{{ ch.eigen_naam }}" placeholder="{{ ch.naam }}"></label>
-    {% if verborgen %}
-    <button class="knop klein vol" type="submit" formaction="/bram/signal/chat/{{ ch.id }}/terugzetten" data-los="1">Terugzetten</button>
-    {% else %}
-    <button class="knop klein" type="submit">Opslaan</button>
-    <button class="knop klein" type="submit" formaction="/bram/signal/chat/{{ ch.id }}/verwijderen" data-los="1" title="Chat verwijderen" aria-label="Chat verwijderen"
-      onclick="return confirm('{{ chatnaam(ch) | replace("'", "") | e }} verwijderen?{{ (' De ' ~ ch.bewaard ~ ' bewaarde berichten worden gewist.') if ch.bewaard }} Nieuwe berichten uit deze chat worden niet meer bewaard. In Signal zelf verandert niets.')">🗑</button>
-    {% endif %}
-  </form>
-  {% else %}<p class="noot">Nog geen chats. Stuur jezelf een berichtje of wacht tot er iets binnenkomt.</p>{% endfor %}
-  {% if not alle and not verborgen and totaal > chats | length %}<p><a href="/bram/signal?alle=1#chats">Alle {{ totaal }} chats tonen</a></p>{% endif %}
-  {% if verborgen %}<p class="noot"><a href="/bram/signal#chats">Terug naar de chats</a></p>
-  {% elif n_verborgen %}<p class="noot"><a href="/bram/signal?verborgen=1#chats">Verwijderde chats ({{ n_verborgen }})</a></p>{% endif %}
-</section>
-
-<section class="kaart">
-  <h2>Stoppen</h2>
-  <p class="noot">Ontkoppelen doe je in Signal op je telefoon (Gekoppelde apparaten, Buurmanitor, Ontkoppelen). Met de knop hieronder
-    wis je daarnaast alles wat Buurmanitor van Signal bewaarde.</p>
-  <form method="post" action="/bram/signal/vergeten"><button class="knop" type="submit"
-    onclick="return confirm('Alle chats, bewaarde berichten en voorstellen van Signal uit Buurmanitor wissen?')">Alles van Signal wissen</button></form>
+  <form method="post" action="/bram/signal/vergeten"><input type="hidden" name="bron" value="signal"><button class="knop klein" type="submit"
+    onclick="return confirm('Alle Signal-chats, bewaarde berichten en voorstellen uit Buurmanitor wissen? Ontkoppel Buurmanitor daarna ook in Signal op je telefoon (Gekoppelde apparaten).')">Alles van Signal wissen</button></form>
 </section>
 {% endif %}
+
+
+<section class="kaart" id="whatsapp">
+  <h2>WhatsApp inlezen</h2>
+  <p class="noot">Geen directe koppeling: je exporteert een chat op je telefoon en leest hem hier in. Dat kan elke dag opnieuw; wat er al
+    was, slaat Buurmanitor over. Een nieuwe chat komt in het archief (alleen op je server); zet meelezen aan als Bram en Iris mee mogen lezen.</p>
+  <form method="post" action="/bram/whatsapp/inlezen" enctype="multipart/form-data">
+    <div class="velden">
+      <label class="breed">Export (.zip of .txt, meerdere mag) <input type="file" name="bestanden" accept=".zip,.txt,text/plain,application/zip" multiple required></label>
+      <label>Naam van de chat <input type="text" name="chatnaam" placeholder="leeg: uit de bestandsnaam"></label>
+      <label>Jouw naam in WhatsApp <input type="text" name="eigen" value="{{ wa_naam }}" placeholder="zoals hij in de export staat"></label>
+    </div>
+    <p><button class="knop vol" type="submit">Inlezen</button></p>
+  </form>
+  <details><summary>Zo exporteer je een chat</summary>
+    <ul class="noot">
+      <li><b>iPhone</b>: open de chat, tik bovenaan op de naam, scroll naar <b>Exporteer chat</b>, kies <b>Zonder media</b> en bewaar of mail het zip-bestand.</li>
+      <li><b>Android</b>: open de chat, <b>Meer</b> (de drie puntjes) &gt; <b>Meer</b> &gt; <b>Chat exporteren</b> &gt; <b>Zonder media</b>.</li>
+      <li><b>Elke dag zonder uploaden</b>: mail de export naar jezelf met onderwerp <i>WhatsApp</i> en maak bij <a href="/bram/regels">Post &gt; Regels</a> een regel
+        (onderwerp bevat WhatsApp, met bijlage) met <b>WhatsApp-export inlezen</b>. Dan leest Bram hem in zodra de mail binnen is.</li>
+    </ul>
+  </details>
+  {% if wa_aantal %}<form method="post" action="/bram/signal/vergeten"><input type="hidden" name="bron" value="whatsapp"><button class="knop klein" type="submit"
+    onclick="return confirm('Alle {{ wa_aantal }} WhatsApp-chats met hun berichten en voorstellen uit Buurmanitor wissen?')">Alles van WhatsApp wissen</button></form>{% endif %}
+</section>
+
+<section class="kaart" id="teams">
+  {% if teams_account %}
+  <div class="adlkop"><h2>Teams: gekoppeld{{ ' met ' ~ teams_account if teams_account != 'ja' }}</h2>
+    <form method="post" action="/bram/teams/ophalen" class="inline"><button class="knop klein" type="submit">Nu ophalen</button></form></div>
+  {% if teams_taak and teams_taak.fout %}<p class="item urgent">Het ophalen ging {{ geleden(teams_taak.laatst) if teams_taak.laatst else '' }} mis: {{ teams_taak.fout.splitlines()[0] }}</p>{% endif %}
+  <p class="noot">{% if teams_taak and teams_taak.laatst %}Elke vijf minuten opgehaald; laatst {{ geleden(teams_taak.laatst) }}{% if teams_taak.resultaat %}: {{ teams_taak.resultaat }}{% endif %}.{% else %}Nog niet opgehaald; dat gebeurt binnen vijf minuten.{% endif %}
+    Alleen je chats (één op één, groepen en vergaderchats), niet de kanalen van een team.</p>
+  <form method="post" action="/bram/teams/ontkoppel"><button class="knop klein" type="submit"
+    onclick="return confirm('Teams ontkoppelen en alle Teams-chats, berichten en voorstellen uit Buurmanitor wissen?')">Ontkoppelen en wissen</button></form>
+  {% else %}
+  <h2>Teams koppelen</h2>
+  <p class="noot">Met je Microsoft-account van het werk. Buurmanitor vraagt alleen om je chats te lezen (Chat.Read), niet om te sturen.
+    Daarna kies je per chat of Bram en Iris meelezen. Laat jouw organisatie alleen goedgekeurde apps toe, dan vraagt Microsoft om
+    toestemming van de beheerder.</p>
+  <form method="post" action="/bram/teams/koppel"><button class="knop vol" type="submit"{{ ' disabled' if not ms_ok }}>Teams koppelen</button></form>
+  {% if not ms_ok %}<p class="noot">De Microsoft-app is nog niet ingesteld (clara.sh).</p>{% endif %}
+  {% endif %}
+</section>
+
 {% endblock %}

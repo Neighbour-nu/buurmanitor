@@ -1,12 +1,10 @@
 {% extends "base.html" %}
-{% block titel %}{{ chatnaam(ch) }} · Signal · Buurmanitor<form method="post" action="/bram/signal/chat/{{ ch.id }}/verwijderen"><button class="knop klein" type="submit"
-  onclick="return confirm('Deze chat verwijderen? De bewaarde berichten worden gewist en nieuwe berichten uit deze chat niet meer bewaard. In Signal zelf verandert niets.')">🗑 Chat verwijderen</button></form>
-{% endblock %}
+{% block titel %}{{ chatnaam(ch) }} · Chats · Buurmanitor{% endblock %}
 {% block inhoud %}
 <h1>{{ '👥' if ch.soort == 'groep' else '👤' }} {{ chatnaam(ch) }}</h1>
-<p class="motto"><a href="/bram/signal">Naar Signal</a> · {{ totaal }} berichten bewaard ·
+<p class="motto"><span class="bronlabel bron-{{ ch.bron }}">{{ bron_namen[ch.bron] }}</span> <a href="/bram/signal">Naar Chats</a> · {{ totaal }} berichten bewaard ·
   {% if ch.meelezen %}Bram en Iris lezen mee{% elif ch.archief %}alleen archief (Claude ziet dit niet){% else %}er komen geen nieuwe berichten bij{% endif %}</p>
-<form method="get" action="/bram/signal/zoek" class="zoekveld"><input type="search" name="q" placeholder="Zoek in het archief" aria-label="Zoek in het Signal-archief">
+<form method="get" action="/bram/signal/zoek" class="zoekveld"><input type="search" name="q" placeholder="Zoek in het archief" aria-label="Zoek in het chatarchief">
   <button class="knop klein" type="submit">Zoeken</button></form>
 <section class="kaart signberichten">
   {% if ouder %}<p class="noot"><a href="/bram/signal/chat/{{ ch.id }}?voor={{ ouder }}">Oudere berichten</a></p>{% endif %}
@@ -18,4 +16,6 @@
   {% else %}<p class="noot">Nog geen berichten bewaard{% if not ch.meelezen and not ch.archief %}; zet meelezen of archief aan om ze vanaf nu te bewaren{% endif %}.</p>{% endfor %}
   {% if voor %}<p class="noot"><a href="/bram/signal/chat/{{ ch.id }}">Naar de nieuwste berichten</a></p>{% endif %}
 </section>
+<form method="post" action="/bram/signal/chat/{{ ch.id }}/verwijderen"><button class="knop klein" type="submit"
+  onclick="return confirm('Deze chat verwijderen? De bewaarde berichten worden gewist en nieuwe berichten uit deze chat niet meer bewaard. In {{ bron_namen[ch.bron] }} zelf verandert niets.')">🗑 Chat verwijderen</button></form>
 {% endblock %}

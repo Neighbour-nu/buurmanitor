@@ -4,13 +4,14 @@ import datetime as dt
 import json
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from ..clara import sync as clara_sync, web as clara_web
 from ..kern import config, db, planner
 from ..kern.web import controleer_herkomst, ctx, templates
-from . import bron, verwerken
+from ..clara import kluis
+from . import bron, teams, verwerken, whatsapp
 
 router = APIRouter()
 DOMEINEN = config.DOMEINEN
@@ -27,7 +28,8 @@ chatnaam = verwerken.chatnaam
 
 
 @router.get("/bram/signal", response_class=HTMLResponse)
-def scherm(request: Request, melding: str = "", fout: str = "", alle: int = 0, verborgen: int = 0):
+def scherm(request: Request, melding: str = "", fout: str = "", alle: int = 0, verborgen: int = 0, bron_: str = Query("", alias="bron")):
+    bron_ = bron_ if bron_ in verwerken.BRONNEN else ""
     with db.pool.connection() as c:
         nummer = verwerken.instelling(c, "signal_nummer")
         bereikbaar = True
@@ -37,12 +39,16 @@ def scherm(request: Request, melding: str = "", fout: str = "", alle: int = 0, v
             except bron.SignalFout as e:
                 bereikbaar, fout = False, fout or str(e)
         chats = c.execute("""SELECT ch.*, (SELECT count(*) FROM signal_berichten b WHERE b.chat_id = ch.id) AS bewaard
-                             FROM signal_chats ch WHERE ch.verborgen = %s
+                             FROM signal_chats ch WHERE ch.verborgen = %s AND (%s = '' OR ch.bron = %s)
                              ORDER BY (ch.meelezen OR ch.archief) DESC, ch.laatst DESC NULLS LAST LIMIT %s""",
-                          (bool(verborgen), 500 if alle or verborgen else 60)).fetchall()
-        totaal = c.execute("SELECT count(*) AS n FROM signal_chats WHERE NOT verborgen").fetchone()["n"]
+                          (bool(verborgen), bron_, bron_, 500 if alle or verborgen else 60)).fetchall()
+        totaal = c.execute("SELECT count(*) AS n FROM signal_chats WHERE NOT verborgen AND (%s = '' OR bron = %s)", (bron_, bron_)).fetchone()["n"]
+        wa_aantal = c.execute("SELECT count(*) AS n FROM signal_chats WHERE bron = 'whatsapp'").fetchone()["n"]
+        teams_account = teams.gekoppeld(c)
+        teams_taak = c.execute("SELECT * FROM taken WHERE naam = 'teams'").fetchone()
+        wa_naam = verwerken.instelling(c, "whatsapp_naam", "")
         n_verborgen = c.execute("SELECT count(*) AS n FROM signal_chats WHERE verborgen").fetchone()["n"]
-        voorstellen = c.execute("""SELECT v.*, ch.naam, ch.eigen_naam, ch.sleutel, ch.domein FROM signal_voorstellen v
+        voorstellen = c.execute("""SELECT v.*, ch.naam, ch.eigen_naam, ch.sleutel, ch.domein, ch.bron FROM signal_voorstellen v
                                    JOIN signal_chats ch ON ch.id = v.chat_id WHERE v.status = 'open' ORDER BY v.datum NULLS LAST, v.id""").fetchall()
         taak = c.execute("SELECT * FROM taken WHERE naam = 'signal'").fetchone()
         try:
@@ -61,7 +67,9 @@ def scherm(request: Request, melding: str = "", fout: str = "", alle: int = 0, v
     return templates.TemplateResponse("bram_signal.html", ctx(
         request, "bram", actief=bron.actief(), bereikbaar=bereikbaar, nummer=nummer, controle=controle, tellers=tellers, chats=chats, totaal=totaal, alle=alle, verborgen=verborgen, n_verborgen=n_verborgen, voorstellen=voorstellen, taak=taak,
         doelen=doelen, doel_voor=clara_web._doel_voor, chatnaam=chatnaam, domeinen=DOMEINEN,  # pylint: disable=protected-access
-        sleutel_ok=bool(config.ANTHROPIC_API_KEY), planner_aan=config.PLANNER_AAN, tz=config.TZ, melding=melding, fout=fout))
+        sleutel_ok=bool(config.ANTHROPIC_API_KEY), planner_aan=config.PLANNER_AAN, tz=config.TZ, melding=melding, fout=fout,
+        bron=bron_, bronnen=list(verwerken.BRONNEN.items()), bron_namen=verwerken.BRONNEN, wa_aantal=wa_aantal, wa_naam=wa_naam,
+        teams_account=teams_account, teams_taak=teams_taak, ms_ok=bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET)))
 
 
 @router.get("/bram/signal/qr")
@@ -102,13 +110,92 @@ async def ophalen(request: Request):
 
 @router.post("/bram/signal/vergeten")
 async def vergeten(request: Request):
-    """Alles van Signal uit Buurmanitor wissen (chats, berichten, voorstellen). Ontkoppelen doe je in Signal op je telefoon."""
+    """Alles van één bron uit Buurmanitor wissen (chats, berichten, voorstellen). Signal ontkoppel je op je telefoon."""
     controleer_herkomst(request)
+    f = await request.form()
+    welke = str(f.get("bron") or "signal")
+    if welke not in ("signal", "whatsapp"):
+        raise HTTPException(400)
     with db.pool.connection() as c:
-        c.execute("DELETE FROM signal_chats")
-        c.execute("DELETE FROM instellingen WHERE sleutel IN ('signal_nummer', 'signal_groepen', 'signal_laatst')")
+        c.execute("DELETE FROM signal_chats WHERE bron = %s", (welke,))
+        if welke == "signal":
+            c.execute("DELETE FROM instellingen WHERE sleutel IN ('signal_nummer', 'signal_groepen', 'signal_laatst', 'signal_controle')")
+    if welke == "whatsapp":
+        return _terug("/bram/signal", melding="Alles van WhatsApp is uit Buurmanitor gewist.")
     return _terug("/bram/signal", melding="Alles van Signal is uit Buurmanitor gewist. Haal Buurmanitor nu ook weg in Signal op je telefoon "
                                           "(Instellingen > Gekoppelde apparaten), anders komen er nieuwe berichten binnen.")
+
+
+# ---------------------------------------------------------------- WhatsApp (export inlezen)
+
+@router.post("/bram/whatsapp/inlezen")
+async def whatsapp_inlezen(request: Request):
+    controleer_herkomst(request)
+    f = await request.form()
+    bestanden = [x for x in f.getlist("bestanden") if getattr(x, "filename", "")]
+    chatnaam_ = str(f.get("chatnaam") or "").strip()[:120]
+    eigen = str(f.get("eigen") or "").strip()[:200]
+    if not bestanden:
+        return _terug("/bram/signal#whatsapp", fout="Kies een export (.zip of .txt).")
+    gelezen = [(x.filename, await x.read(whatsapp.MAX_BYTES + 1)) for x in bestanden[:20]]
+
+    def doe():
+        uit, fouten = [], []
+        with db.pool.connection() as c:
+            if "eigen" in f:
+                verwerken.zet(c, "whatsapp_naam", eigen)
+            for naam, data in gelezen:
+                try:
+                    uit.append(whatsapp.importeer(c, naam, data, chatnaam_ if len(gelezen) == 1 else ""))
+                except whatsapp.Fout as e:
+                    fouten.append(str(e))
+        return uit, fouten
+    uit, fouten = await asyncio.to_thread(doe)
+    return _terug("/bram/signal?bron=whatsapp#chats", melding=" ".join(uit)[:900], fout=" ".join(fouten)[:600])
+
+
+# ---------------------------------------------------------------- Teams
+
+@router.post("/bram/teams/koppel")
+async def teams_koppel(request: Request):
+    controleer_herkomst(request)
+    if not (config.MS_CLIENT_ID and config.MS_CLIENT_SECRET):
+        return _terug("/bram/signal#teams", fout="De Microsoft-app is nog niet ingesteld (clara.sh).")
+    if not kluis.actief():
+        return _terug("/bram/signal#teams", fout="Er is nog geen kluissleutel. Draai op de server: bash ~/buurmanitor/app/deploy/clara.sh")
+    with db.pool.connection() as c:
+        staat = clara_web._nieuwe_staat(c, "microsoft", {"voor": "teams"})  # pylint: disable=protected-access
+    return RedirectResponse(teams.koppel_url(staat), status_code=303)
+
+
+async def teams_klaar(code):
+    """Het tweede deel van koppelen (vanuit /clara/koppel/microsoft/terug)."""
+    try:
+        gegevens = await asyncio.to_thread(teams.koppel_code, code)
+    except clara_web.bronnen.BronFout as e:
+        return _terug("/bram/signal#teams", fout=str(e)[:300])
+    with db.pool.connection() as c:
+        teams.bewaar(c, gegevens)
+    uitslag = await asyncio.to_thread(planner.draai, db.achtergrond, "teams", True)
+    return _terug("/bram/signal#teams", melding=f"Teams gekoppeld ({gegevens.get('account') or 'Microsoft'}). {uitslag or ''} "
+                                                "Nieuwe berichten komen vanaf nu binnen; kies daarna per chat of Bram en Iris meelezen.")
+
+
+@router.post("/bram/teams/ophalen")
+async def teams_ophalen(request: Request):
+    controleer_herkomst(request)
+    uitslag = await asyncio.to_thread(planner.draai, db.achtergrond, "teams", True)
+    return _terug("/bram/signal#teams", melding=uitslag or planner.BEZIG)
+
+
+@router.post("/bram/teams/ontkoppel")
+async def teams_ontkoppel(request: Request):
+    controleer_herkomst(request)
+    with db.pool.connection() as c:
+        teams.ontkoppel(c)
+        c.execute("DELETE FROM signal_chats WHERE bron = 'teams'")
+    return _terug("/bram/signal#teams", melding="Teams is ontkoppeld en alles van Teams is uit Buurmanitor gewist. Wil je de toestemming "
+                                                "ook bij Microsoft intrekken: myapps.microsoft.com, Apps beheren.")
 
 
 @router.post("/bram/signal/chat/{cid:int}")
@@ -189,7 +276,7 @@ def chat_scherm(request: Request, cid: int, voor: int = 0):
         totaal = c.execute("SELECT count(*) AS n FROM signal_berichten WHERE chat_id = %s", (cid,)).fetchone()["n"]
     ouder = berichten[PER_PAGINA - 1]["id"] if len(berichten) > PER_PAGINA else 0
     return templates.TemplateResponse("bram_signal_chat.html", ctx(
-        request, "bram", ch=ch, berichten=berichten[:PER_PAGINA][::-1], ouder=ouder, voor=voor, totaal=totaal, chatnaam=chatnaam, tz=config.TZ))
+        request, "bram", ch=ch, berichten=berichten[:PER_PAGINA][::-1], ouder=ouder, voor=voor, totaal=totaal, chatnaam=chatnaam, tz=config.TZ, bron_namen=verwerken.BRONNEN))
 
 
 @router.get("/bram/signal/zoek", response_class=HTMLResponse)
@@ -199,13 +286,14 @@ def zoeken(request: Request, q: str = ""):
     resultaten = []
     if q:
         with db.pool.connection() as c:
-            resultaten = c.execute("""SELECT b.*, ch.naam, ch.eigen_naam, ch.sleutel, ch.soort FROM signal_berichten b
+            resultaten = c.execute("""SELECT b.*, ch.naam, ch.eigen_naam, ch.sleutel, ch.soort, ch.bron FROM signal_berichten b
                                       JOIN signal_chats ch ON ch.id = b.chat_id
                                       WHERE to_tsvector('dutch', b.tekst) @@ websearch_to_tsquery('dutch', %s)
                                          OR b.tekst ILIKE %s OR b.van ILIKE %s
                                       ORDER BY b.tijd DESC LIMIT 200""",
                                    (q, "%" + q.replace("%", r"\%").replace("_", r"\_") + "%", q)).fetchall()
-    return templates.TemplateResponse("bram_signal_zoek.html", ctx(request, "bram", q=q, resultaten=resultaten, chatnaam=chatnaam, tz=config.TZ))
+    return templates.TemplateResponse("bram_signal_zoek.html", ctx(request, "bram", q=q, resultaten=resultaten, chatnaam=chatnaam, tz=config.TZ,
+                                                                        bron_namen=verwerken.BRONNEN))
 
 
 @router.post("/bram/signal/voorstel/{vid:int}")

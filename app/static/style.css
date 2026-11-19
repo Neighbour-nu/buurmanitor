@@ -896,3 +896,11 @@ form.les { align-items: center; border-bottom: 1px solid var(--lijn); padding-bo
 .adviestaak:last-child { border-bottom: 0; }
 .zoekveld { display: flex; gap: 6px; align-items: center; margin: 0 0 12px; }
 .zoekveld input[type=search] { flex: 1 1 200px; min-width: 0; max-width: 340px; }
+/* Chats: bron en filter */
+.filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.filters .filter { padding: 3px 10px; border: 1px solid var(--lijn); border-radius: 14px; text-decoration: none; font-size: 14px; color: inherit; }
+.filters .filter.aan { background: #1E4E9C; border-color: #1E4E9C; color: #fff; }
+.bronlabel { display: inline-block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding: 1px 6px;
+  border-radius: 4px; background: #E3ECFA; color: #1E4E9C; vertical-align: 1px; }
+.bronlabel.bron-whatsapp { background: #E1F5E8; color: #1B6B3A; }
+.bronlabel.bron-teams { background: #ECE8F8; color: #4B3C99; }
