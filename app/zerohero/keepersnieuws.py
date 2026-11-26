@@ -310,7 +310,17 @@ def nieuw_beeld(v, zonder_ai=False):
 
 # ---------------------------------------------------------------- Telegram
 
-KNOPPEN = lambda vid: [[("✅ Plaatsen", f"kn:{vid}:p"), ("👀 Ik kijk zelf", f"kn:{vid}:l")], [("❌ Niet plaatsen", f"kn:{vid}:n")]]  # noqa: E731
+# De bot: de ZEROHERO Doellijn-bot (ZEROHERO_TELEGRAM_BOT_TOKEN en _CHAT_ID in zerohero.env), anders die van Buurmanitor.
+BOT = telegram.registreer(telegram.Bot(os.environ.get("ZEROHERO_TELEGRAM_BOT_TOKEN") or kern_config.TELEGRAM_BOT_TOKEN,
+                                       os.environ.get("ZEROHERO_TELEGRAM_CHAT_ID") or kern_config.TELEGRAM_CHAT_ID, "zerohero"))
+
+
+def KNOPPEN(vid):  # noqa: N802
+    """Tikknoppen; kan Buurmanitor de tikken niet ophalen (webhook van n8n op dezelfde bot), dan linkknoppen naar de Doellijn."""
+    if BOT.status.get("conflict"):
+        return [[("✅ Plaatsen", f"{link(vid)}?snel=plaatsen"), ("👀 Ik kijk zelf", f"{link(vid)}?snel=concept")],
+                [("❌ Niet plaatsen", f"{link(vid)}?snel=afwijzen")]]
+    return [[("✅ Plaatsen", f"kn:{vid}:p"), ("👀 Ik kijk zelf", f"kn:{vid}:l")], [("❌ Niet plaatsen", f"kn:{vid}:n")]]
 
 
 def link(vid):
@@ -334,13 +344,13 @@ def bericht_tekst(v, slot=""):
 
 
 def melden(v):
-    if not telegram.actief():
+    if not BOT.actief():
         return q1("UPDATE nieuws_voorstellen SET status = 'verstuurd', fout = %s WHERE id = %s RETURNING *",
                   ("Telegram is niet ingesteld; het voorstel staat alleen in de Doellijn.", v["id"]))
     try:
-        foto = telegram.stuur_foto(bytes(v["beeld"]), f"🧤 <b>Keepersnieuws</b> · {telegram.e(CATEGORIEEN.get(v['categorie'], ''))}\n"
+        foto = BOT.stuur_foto(bytes(v["beeld"]), f"🧤 <b>Keepersnieuws</b> · {telegram.e(CATEGORIEEN.get(v['categorie'], ''))}\n"
                                    f"{telegram.e(v['titel'])}", bestandsnaam=f"keepersnieuws-{v['id']}.png") if v.get("beeld") else {}
-        tekst = telegram.stuur(bericht_tekst(v), KNOPPEN(v["id"]))
+        tekst = BOT.stuur(bericht_tekst(v), KNOPPEN(v["id"]))
         return q1("""UPDATE nieuws_voorstellen SET status = 'verstuurd', telegram_foto = %s, telegram_tekst = %s, fout = NULL
                      WHERE id = %s RETURNING *""", (foto.get("message_id"), tekst.get("message_id"), v["id"]))
     except telegram.TelegramFout as e:
@@ -538,7 +548,8 @@ def overzicht(request: Request, melding: str = "", fout: str = ""):
                    GROUP BY reden ORDER BY n DESC""")
     return templates.TemplateResponse("keepersnieuws.html", ctx(
         request, pagina="keepersnieuws", rijen=rijen, i=inst(), tel=tel, redenen=redenen, categorieen=CATEGORIEEN, redenen_namen=REDENEN,
-        statussen=STATUSSEN, aanbieder=ai_beeld.aanbieder(), telegram_actief=telegram.actief(), telegram_status=telegram.STATUS,
+        statussen=STATUSSEN, aanbieder=ai_beeld.aanbieder(), telegram_actief=BOT.actief(), telegram_status=BOT.status,
+        eigen_bot=bool(os.environ.get("ZEROHERO_TELEGRAM_BOT_TOKEN")),
         wp_actief=wp.wp_actief(), claude_actief=claude_api.actief(), vandaag=vandaag_gemaakt(), maand=kosten_maand(),
         budget_op=budget_op(), melding=melding, fout=fout))
 
@@ -572,14 +583,15 @@ def nu_zoeken(request: Request):
 
 
 @router.get("/keepersnieuws/{vid}", response_class=HTMLResponse)
-def voorstel(request: Request, vid: int, melding: str = "", fout: str = ""):
+def voorstel(request: Request, vid: int, melding: str = "", fout: str = "", snel: str = ""):
     v = q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (vid,))
     if not v:
         return RedirectResponse("/keepersnieuws")
     items = q("SELECT id, titel, url, bron, score FROM items WHERE id = ANY(%s) ORDER BY score DESC NULLS LAST", (v["item_ids"],))
     return templates.TemplateResponse("keepersnieuws_voorstel.html", ctx(
         request, pagina="keepersnieuws", v=_rij(v), items=items, categorieen=CATEGORIEEN, redenen=REDENEN, statussen=STATUSSEN,
-        aanbieder=ai_beeld.aanbieder(), melding=melding, fout=fout or (v["fout"] or "")))
+        aanbieder=ai_beeld.aanbieder(), melding=melding, fout=fout or (v["fout"] or ""),
+        snel=snel if snel in ("plaatsen", "concept", "afwijzen") and not v["besluit"] else ""))
 
 
 @router.get("/keepersnieuws/{vid}/beeld.png")
@@ -618,9 +630,9 @@ def voorstel_opslaan(request: Request, vid: int, titel: str = Form(...), intro: 
     else:
         uitslag = "Opgeslagen."
     v = q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (vid,))
-    if v["telegram_tekst"] and actie in ("plaatsen", "concept", "afwijzen") and telegram.actief():
+    if v["telegram_tekst"] and actie in ("plaatsen", "concept", "afwijzen") and BOT.actief():
         try:  # de knoppen in Telegram weghalen: het is al beslist
-            telegram.bewerk(v["telegram_tekst"], bericht_tekst(v, f"<i>Afgehandeld in de Doellijn: {telegram.e(uitslag)}</i>"), [])
+            BOT.bewerk(v["telegram_tekst"], bericht_tekst(v, f"<i>Afgehandeld in de Doellijn: {telegram.e(uitslag)}</i>"), [])
         except telegram.TelegramFout:
             pass
     if uitslag.startswith("Plaatsen lukte niet"):

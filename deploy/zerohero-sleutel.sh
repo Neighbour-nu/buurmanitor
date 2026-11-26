@@ -12,6 +12,7 @@
 #   bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh youtube        YouTube API-sleutel
 #   bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh wordpress      WordPress-gebruiker en applicatiewachtwoord
 #   bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh beeld          Sleutel voor AI-sfeerbeelden (OpenAI of Google Gemini)
+#   bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh telegram       De ZEROHERO Doellijn-bot voor keepersnieuws (token en chat-id)
 #
 # De waarden komen in ~/buurmanitor/zerohero.env (alleen leesbaar voor jou); daarna start Buurmanitor opnieuw.
 set -euo pipefail
@@ -44,6 +45,10 @@ case "${1:-}" in
   threads) geheim THREADS_TOKEN "Threads-token" ;;
   tickettailor) geheim TT_API_KEY "Ticket Tailor API-sleutel (begint met sk_)" ;;
   youtube) geheim YOUTUBE_API_KEY "YouTube API-sleutel" ;;
+  telegram)
+    echo "De token van je Doellijn-bot vind je bij @BotFather: /mybots, kies de bot, API Token."
+    geheim TELEGRAM_BOT_TOKEN "Token van de ZEROHERO Doellijn-bot"
+    gewoon TELEGRAM_CHAT_ID "Jouw chat-id (een getal; @userinfobot geeft het)" ;;
   beeld)
     echo "AI-sfeerbeelden bij keepersnieuws. Kies de beeldmaker:"
     echo "  1) OpenAI (platform.openai.com, API keys)   2) Google Gemini (aistudio.google.com, Get API key)"

@@ -8,6 +8,15 @@
   {{ geleden(v.aangemaakt) }}{% if v.besloten_via %}, besloten via {{ v.besloten_via }}{% endif %}{% if v.wp_link %} · <a href="{{ v.wp_link }}" target="_blank" rel="noopener">bekijk in WordPress of op de site</a>{% endif %}</p>
 {% if melding %}<p class="melding ok">{{ melding }}</p>{% endif %}
 {% if fout %}<p class="melding fout">⚠️ {{ fout }}</p>{% endif %}
+{% if snel in ('plaatsen', 'concept') %}
+<form method="post" action="/keepersnieuws/{{ v.id }}" class="melding herinnering">
+  <input type="hidden" name="titel" value="{{ v.titel or '' }}"><input type="hidden" name="intro" value="{{ v.intro or '' }}">
+  <input type="hidden" name="tekst" value="{{ v.tekst or '' }}"><input type="hidden" name="categorie" value="{{ v.categorie or 'groot' }}">
+  Je koos in Telegram: <b>{{ 'Plaatsen' if snel == 'plaatsen' else 'Ik kijk zelf (concept in WordPress)' }}</b>.
+  <button class="knop {{ 'knop-publiceer' if snel == 'plaatsen' }}" name="actie" value="{{ snel }}">{{ 'Ja, nu plaatsen' if snel == 'plaatsen' else 'Ja, als concept in WordPress' }}</button>
+</form>
+{% elif snel == 'afwijzen' %}<p class="melding herinnering">Je koos in Telegram: <b>Niet plaatsen</b>. Kies <a href="#afwijzen">onderaan</a> een reden en klik op Niet plaatsen.</p>
+{% endif %}
 {% if v.gevoelig %}<p class="melding herinnering">⚠️ Gevoelig onderwerp (overlijden, ziekte of iets persoonlijks): lees extra goed na of feiten, toon en kop kloppen voor je plaatst.</p>{% endif %}
 {% if v.oordeel %}<p class="noot">Buurmanitor: {{ v.oordeel }}</p>{% endif %}
 
@@ -36,7 +45,7 @@
       <button class="knop" name="actie" value="opslaan">{{ 'Opslaan en op de site bijwerken' if v.besluit == 'geplaatst' else 'Opslaan' }}</button>
     </div>
     {% if v.besluit != 'geplaatst' and v.besluit != 'afgewezen' %}
-    <fieldset class="keuzes"><legend>Niet plaatsen, omdat</legend>
+    <fieldset class="keuzes" id="afwijzen"><legend>Niet plaatsen, omdat</legend>
       {% for k, n in redenen.items() %}<label class="reden"><input type="radio" name="reden" value="{{ k }}"> {{ n }}</label>{% endfor %}
       <input name="toelichting" maxlength="500" placeholder="Toelichting (optioneel): daar leert Buurmanitor van">
       <button class="knop knop-weg" name="actie" value="afwijzen" formnovalidate>Niet plaatsen</button>

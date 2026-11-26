@@ -115,13 +115,18 @@ def test_beeldmaker_verzoek(monkeypatch):
 
 def test_telegram_alleen_eigen_chat(monkeypatch):
     gedaan = []
+    bot = telegram.Bot("9:z", "4242", "proef")
     monkeypatch.setitem(telegram.HANDLERS, "tst", lambda data, bericht: gedaan.append(data) or {"toast": "ok", "knoppen": []})
-    monkeypatch.setattr(telegram, "_vraag", lambda methode, data=None, timeout=30: gedaan.append(methode) or True)
-    assert telegram.verwerk({"callback_query": {"id": "1", "data": "tst:1", "message": {"message_id": 5, "chat": {"id": 999}}}}) == "niet van mij"
+    monkeypatch.setattr(bot, "_vraag", lambda methode, data=None, timeout=30: gedaan.append(methode) or True)
+    assert bot.verwerk({"callback_query": {"id": "1", "data": "tst:1", "message": {"message_id": 5, "chat": {"id": 999}}}}) == "niet van mij"
     assert not gedaan
-    assert telegram.verwerk({"callback_query": {"id": "1", "data": "tst:1", "message": {"message_id": 5, "chat": {"id": 4242}}}}) == "ok"
+    assert bot.verwerk({"callback_query": {"id": "1", "data": "tst:1", "message": {"message_id": 5, "chat": {"id": 4242}}}}) == "ok"
     assert gedaan == ["tst:1", "answerCallbackQuery", "editMessageReplyMarkup"]
-    assert telegram.markup([[("Ja", "x" * 80)]])["inline_keyboard"][0][0]["callback_data"] == "x" * 64
+    m = telegram.markup([[("Ja", "x" * 80), ("Open", "https://voorbeeld.nl/a")]])["inline_keyboard"][0]
+    assert m[0]["callback_data"] == "x" * 64 and m[1] == {"text": "Open", "url": "https://voorbeeld.nl/a"}
+    # één draad per token; een bot zonder token telt niet
+    assert telegram.registreer(telegram.Bot("", "1", "leeg")) and "" not in telegram.BOTS
+    assert kn.BOT.token == "123:abc" and kn.BOT.token in telegram.BOTS  # zonder ZEROHERO-bot: die van Buurmanitor
 
 
 # ---------------------------------------------------------------- met database
@@ -166,9 +171,9 @@ def nep(klant, monkeypatch):
         return json.dumps(ANTWOORD), {"input_tokens": 100, "output_tokens": 50, "zoekopdrachten": 1}, []
     monkeypatch.setattr(claude_api, "gesprek", gesprek)
     teller = iter(range(500, 600))
-    monkeypatch.setattr(telegram, "stuur_foto", lambda png, bijschrift="", knoppen=None, bestandsnaam="": n["telegram"].append(("foto", bijschrift)) or {"message_id": next(teller)})
-    monkeypatch.setattr(telegram, "stuur", lambda tekst, knoppen=None, antwoord_op=None: n["telegram"].append(("tekst", tekst, knoppen)) or {"message_id": next(teller)})
-    monkeypatch.setattr(telegram, "bewerk", lambda bid, tekst=None, knoppen=None: n["bewerkt"].append((bid, tekst, knoppen)))
+    monkeypatch.setattr(kn.BOT, "stuur_foto", lambda png, bijschrift="", knoppen=None, bestandsnaam="": n["telegram"].append(("foto", bijschrift)) or {"message_id": next(teller)})
+    monkeypatch.setattr(kn.BOT, "stuur", lambda tekst, knoppen=None, antwoord_op=None: n["telegram"].append(("tekst", tekst, knoppen)) or {"message_id": next(teller)})
+    monkeypatch.setattr(kn.BOT, "bewerk", lambda bid, tekst=None, knoppen=None: n["bewerkt"].append((bid, tekst, knoppen)))
 
     def nep_wp(methode, pad, data=None, **kw):
         n["wp"].append((methode, pad, data))
@@ -263,7 +268,7 @@ def test_scherm_aanpassen_concept_en_dagmaximum(nep, klant):
 def test_uit_en_zonder_telegram(nep, klant, monkeypatch):
     kn.zet("kn_aan", "0")
     assert kn.ronde() == "staat uit"
-    monkeypatch.setattr(telegram, "actief", lambda: False)
+    monkeypatch.setattr(kn.BOT, "actief", lambda: False)
     kn.zet("kn_aan", "1")
     kn.ronde()
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
@@ -298,3 +303,18 @@ def test_kosten_budget_en_beeldkeuze(nep, klant, monkeypatch):
     regel = next(x for x in kosten._onderdelen(kn.q, kn.q1("SELECT now() - interval '1 day' AS t")["t"], kn.q1("SELECT now() + interval '1 day' AS t")["t"])  # pylint: disable=protected-access
                  if x["naam"].startswith("Keepersnieuws"))
     assert regel["aantal"] == 2 and regel["dollar"] > 0.07
+
+
+def test_linkknoppen_als_n8n_de_bot_bezet(nep, klant, monkeypatch):
+    monkeypatch.setitem(kn.BOT.status, "conflict", True)
+    kn.ronde()
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
+    knoppen = nep["telegram"][1][2]
+    assert knoppen[0][0] == ("✅ Plaatsen", f"https://buurmanitor.neighbour.nu/zerohero/keepersnieuws/{v['id']}?snel=plaatsen")
+    r = klant.get(f"/zerohero/keepersnieuws/{v['id']}?snel=plaatsen", headers=KOP)
+    assert "Je koos in Telegram: <b>Plaatsen</b>" in r.text and "Ja, nu plaatsen" in r.text
+    r = klant.post(f"/zerohero/keepersnieuws/{v['id']}", headers=FORM, follow_redirects=True,
+                   data={"titel": v["titel"], "intro": v["intro"], "tekst": v["tekst"], "categorie": v["categorie"], "actie": "plaatsen"})
+    assert "Geplaatst op zerohero.one." in r.text
+    assert "Je koos in Telegram" not in klant.get(f"/zerohero/keepersnieuws/{v['id']}?snel=plaatsen", headers=KOP).text  # al besloten
+    assert "linkknoppen naar de Doellijn" in klant.get("/zerohero/keepersnieuws", headers=KOP).text
