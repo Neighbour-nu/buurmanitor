@@ -233,6 +233,9 @@ def test_ronde_voorstel_en_plaatsen_via_telegram(nep, klant):
     post = next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts")  # eerst als concept, zoals de blogs
     assert post["status"] == "draft" and post["categories"] == [31, 32] and post["featured_media"] == 55 and "zh-intro" in post["content"]
     assert next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts/777")["status"] == "publish"  # daarna publiceren
+    rm = next(d for m, p, d in nep["wp"] if p == "/rankmath/v1/updateMeta")  # Keepersnieuws als hoofdcategorie (breadcrumb)
+    assert rm["objectID"] == 777 and rm["meta"] == {"rank_math_primary_category": 31}
+    assert kn.taak_hoofdcategorie(None) == "1 van 1 berichten" and kn.taak_hoofdcategorie(None) == "niets te doen"
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (v["id"],))
     assert v["besluit"] == "geplaatst" and v["wp_post_id"] == 777 and v["besloten_via"] == "telegram"
     assert kn.inst()["kn_categorie_id"] == "31"

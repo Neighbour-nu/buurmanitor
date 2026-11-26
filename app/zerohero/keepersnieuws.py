@@ -64,7 +64,8 @@ REDENEN = {"geen_nieuws": "Geen echt nieuws", "niet_relevant": "Niet interessant
 STATUSSEN = {"bezig": "Wordt geschreven", "klaar": "Klaar", "verstuurd": "Wacht op jou", "geplaatst": "Geplaatst", "later": "Concept in WordPress",
              "afgewezen": "Niet geplaatst", "overgeslagen": "Geen keepersnieuws", "fout": "Mislukt"}
 STANDAARD = {"kn_aan": "1", "kn_drempel": "60", "kn_per_dag": "5", "kn_per_ronde": "2", "kn_richtlijnen": "", "kn_categorie_id": "",
-             "kn_zoeken": "2", "kn_budget": "15", "kn_ai_beeld": "1", "kn_voorselectie": "1", "kn_via_n8n": "0"}
+             "kn_zoeken": "2", "kn_budget": "15", "kn_ai_beeld": "1", "kn_voorselectie": "1", "kn_via_n8n": "0",
+             "kn_hoofdcat_klaar": "0"}
 _slot = threading.Lock()
 
 
@@ -492,6 +493,7 @@ def plaats(v, live=True):
             "status": "draft", "title": v["titel"], "content": inhoud_html(v), "excerpt": v["intro"] or "", "slug": _slug(v["titel"]),
             "categories": [categorie_id(), sport_categorie(v.get("sport"))], **({"featured_media": media_id} if media_id else {})})
         v = q1("UPDATE nieuws_voorstellen SET wp_post_id = %s, wp_link = %s WHERE id = %s RETURNING *", (p["id"], p.get("link"), v["id"]))
+        hoofdcategorie(p["id"])
         if media_id:
             try:
                 wp.beeld_in_artikel(p["id"])
@@ -510,6 +512,30 @@ def plaats(v, live=True):
             raise RuntimeError(f"{e}. Het bericht staat als concept in WordPress (bericht {pid}); publiceren lukte niet.") from None
     return q1("""UPDATE nieuws_voorstellen SET wp_link = %s, fout = NULL, bijgewerkt = now() WHERE id = %s RETURNING *""",
               ((p or {}).get("link") or v["wp_link"], v["id"]))
+
+
+def hoofdcategorie(post_id):
+    """Keepersnieuws als hoofdcategorie in Rank Math: dan staat er in de breadcrumb Home > Keepersnieuws (en niet de sport).
+    Niet erg als het niet lukt."""
+    try:
+        wp._wp("POST", "/rankmath/v1/updateMeta", data={"objectType": "post", "objectID": int(post_id),  # pylint: disable=protected-access
+                                                       "meta": {"rank_math_primary_category": categorie_id()}})
+        return True
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
+        return False
+
+
+@planner.taak("keepersnieuws_hoofdcategorie", elke=dt.timedelta(hours=6))
+def taak_hoofdcategorie(_c):
+    """Eenmalig voor berichten die er al stonden: de hoofdcategorie alsnog zetten."""
+    if inst().get("kn_hoofdcat_klaar") == "1" or not wp.wp_actief():
+        return "niets te doen"
+    rijen = q("SELECT wp_post_id FROM nieuws_voorstellen WHERE wp_post_id IS NOT NULL")
+    goed = sum(1 for r in rijen if hoofdcategorie(r["wp_post_id"]))
+    if goed == len(rijen):
+        zet("kn_hoofdcat_klaar", "1")
+    return f"{goed} van {len(rijen)} berichten"
 
 
 def besluit(vid, wat, via="scherm", reden=None, toelichting=None):
