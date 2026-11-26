@@ -187,7 +187,8 @@ if t:
     try:
         r = json.load(urllib.request.urlopen(f"https://api.telegram.org/bot{t}/getWebhookInfo", timeout=20))["result"]
         uit.update(webhook=r.get("url", ""), toegestaan=r.get("allowed_updates"), wachtend=r.get("pending_update_count", 0),
-                   laatste_fout=r.get("last_error_message", ""))
+                   laatste_fout=r.get("last_error_message", ""), fout_tijd=r.get("last_error_date") or 0,
+                   ip=bool(r.get("ip_address")))
     except Exception as e:
         uit["fout"] = str(e).replace(t, "...")
 try:
@@ -313,11 +314,28 @@ def toon_stand(i):
     if i.get("webhook"):
         toeg = i.get("toegestaan")
         print(f"   Telegram stuurt tikken op knoppen door: {'ja' if not toeg or 'callback_query' in toeg else 'nee'}")
+        print(f"   Updates die bij Telegram wachten op n8n: {i.get('wachtend', 0)}")
         if i.get("laatste_fout"):
-            print(f"   Laatste fout van Telegram bij de webhook: {i['laatste_fout']}")
+            wanneer = dt.datetime.fromtimestamp(i["fout_tijd"]).strftime("%d-%m %H:%M") if i.get("fout_tijd") else "onbekend"
+            print(f"   Laatste fout van Telegram bij de webhook ({wanneer}): {i['laatste_fout']}")
+        else:
+            print("   Telegram meldt geen fouten bij het afleveren aan n8n")
     print(f"   'n8n stuurt de tikken door' in de Doellijn: {'aan' if i.get('via_n8n') == '1' else 'uit'}")
     if i.get("laatst"):
         print(f"   Laatste tik via n8n ontvangen: {i['laatst'][:19].replace('T', ' ')} (UTC)")
+
+
+def n8n_log():
+    """De regels uit het log van n8n van het afgelopen uur die over Telegram, webhooks of fouten gaan."""
+    try:
+        uit = _draai(COCKPIT, ["logs", "--since", "60m", "--no-color", "n8n"])
+    except (Fout, subprocess.TimeoutExpired) as e:
+        print(f"   Log van n8n niet te lezen: {e}")
+        return
+    regels = [r for r in uit.splitlines() if any(w in r.lower() for w in ("telegram", "webhook", "error", "fout", "problem"))]
+    print(f"== Log van n8n (laatste uur, {len(regels)} relevante regels)")
+    for r in regels[-15:]:
+        print("   " + r[-220:])
 
 
 def sleutel_vragen():
@@ -408,6 +426,7 @@ def main(argv):
             terug()
         elif stap == "controle":
             toon_stand(app_info())
+            n8n_log()
         else:
             print(__doc__)
             return 1
