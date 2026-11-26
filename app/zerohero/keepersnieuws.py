@@ -23,6 +23,7 @@ Kosten in de hand
 import os
 import datetime as dt
 import html
+import io
 import json
 import re
 import threading
@@ -55,6 +56,8 @@ MIGRATIES = [
     "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS gevoelig boolean NOT NULL DEFAULT false",
     "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS wp_media_id int",
     "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS gearchiveerd timestamptz",
+    "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS beschrijving text",
+    "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS interne_links jsonb",
 ]
 SNEL = os.environ.get("ZEROHERO_KN_SNEL_MODEL", "claude-haiku-4-5")
 
@@ -163,9 +166,15 @@ Schrijfregels (ZEROHERO-stijl):
 - Alleen feiten die in de bronnen staan of die je met de zoekfunctie bevestigt. Twijfel je, laat het weg.
   Citaten alleen kort (onder 15 woorden), vertaald en met wie het zei; anders parafraseren.
 - Noem de bron in de tekst ("meldt De Telegraaf", "maakte de club bekend").
-- Kop: kort, feitelijk en prikkelend, met de naam van de keeper; geen vraag. Intro: één of twee zinnen met de kern.
-  Tekst: drie tot vijf korte alinea's (150 tot 300 woorden), met waar het past het keepersperspectief of een
-  Nederlandse haak. Geen tussenkoppen, geen hashtags.
+- Kop: hooguit 48 tekens (dan past hij met " - ZEROHERO" in Google), feitelijk en prikkelend, met de naam van de keeper
+  vooraan; geen vraag. Intro: één of twee zinnen met de kern.
+- Beschrijving (voor Google): 120 tot 155 tekens, met de naam van de keeper en de kern van het nieuws, in gewone taal,
+  geen clickbait en geen herhaling van de kop.
+- Tekst: drie tot vijf korte alinea's (150 tot 300 woorden), waar het past met een Nederlandse haak. Geen tussenkoppen,
+  geen hashtags. Eén alinea (de laatste of voorlaatste) is de keepersblik van ZEROHERO: wat dit nieuws vakinhoudelijk
+  betekent voor de keeper of het vak (zijn rol, zijn spel, de cijfers in context, wat het zegt over de positie).
+  Analyse op basis van de feiten; geen verzonnen meningen, citaten of feiten, en geen "wij" of "ik".
+  Bij overlijden en ernstige ziekte geen analyse, maar wat de keeper betekende.
 - Overlijden en ernstige ziekte: wel brengen, met respect en ingehouden. Bij overlijden: wie, wanneer, op welke leeftijd,
   en wat de keeper betekende (clubs, prestaties, wat hem of haar bijzonder maakte); sluit af met een korte, waardige zin.
   Geen speculatie over de oorzaak, alleen wat familie, club of bond naar buiten bracht. Geen dramatische kop: zakelijk
@@ -187,7 +196,7 @@ Het beeld (beeld_scene, in het Engels): een sfeerbeeld dat past bij de sport én
 
 Antwoord ALLEEN met precies één JSON-object (de berichten samen zijn één verhaal; geen tekst ervoor of erna):
 {"geschikt": true/false, "oordeel": "een zin: waarom wel of niet, met het leerpunt uit eerdere besluiten als dat meespeelt",
- "categorie": "transfer|prestatie|statistiek|groot|memoriam", "gevoelig": true/false, "titel": "...", "intro": "...", "tekst": "alinea's gescheiden door een lege regel",
+ "categorie": "transfer|prestatie|statistiek|groot|memoriam", "gevoelig": true/false, "titel": "hooguit 48 tekens", "beschrijving": "120 tot 155 tekens", "intro": "...", "tekst": "alinea's gescheiden door een lege regel",
  "kernzin": "de sterkste zin van hooguit 12 woorden, voor het beeld", "keepers": ["..."], "sport": "voetbal|handbal|hockey|ijshockey|waterpolo",
  "beeld_scene": "Engelse beschrijving van het sfeerbeeld volgens de regels hierboven",
  "bronnen": [{"titel": "...", "url": "..."}]}"""
@@ -210,6 +219,14 @@ def _schoon(t, n):
     return t[:n]
 
 
+def kort_af(t, n):
+    """Inkorten op een woordgrens, zonder half woord. Pure functie."""
+    t = re.sub(r"\s+", " ", str(t or "")).strip()
+    if len(t) <= n:
+        return t
+    return t[:n - 1].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+
+
 def schoon_antwoord(j):
     """Het JSON-antwoord van Claude nalopen. Pure functie."""
     if not isinstance(j, dict):
@@ -222,6 +239,7 @@ def schoon_antwoord(j):
     return {"geschikt": geschikt, "oordeel": _schoon(j.get("oordeel"), 400), "categorie": cat,
             "gevoelig": bool(j.get("gevoelig")) or cat == "memoriam", "titel": _schoon(j.get("titel"), 160),
             "intro": _schoon(j.get("intro"), 400), "tekst": tekst[:6000], "kernzin": _schoon(j.get("kernzin"), 120),
+            "beschrijving": kort_af(_schoon(j.get("beschrijving") or j.get("intro"), 400), 155),
             "keepers": [_schoon(k, 80) for k in (j.get("keepers") or []) if str(k).strip()][:5],
             "sport": str(j.get("sport") or "")[:20].lower(), "beeld_scene": str(j.get("beeld_scene") or "")[:800], "bronnen": bronnen}
 
@@ -312,9 +330,9 @@ def maak_voorstel(verhaal):
             a["bronnen"] = [{"titel": x.get("bron") or x.get("titel") or "Bron", "url": x["url"]} for x in verhaal.get("leden") or [] if x.get("url")][:3]
         status = "klaar" if a["geschikt"] else "overgeslagen"
         v = q1("""UPDATE nieuws_voorstellen SET status = %s, categorie = %s, titel = %s, intro = %s, tekst = %s, kernzin = %s,
-                  beeld_scene = %s, bronnen = %s, oordeel = %s, keepers = %s, sport = coalesce(nullif(%s, ''), sport), gevoelig = %s,
+                  beschrijving = %s, beeld_scene = %s, bronnen = %s, oordeel = %s, keepers = %s, sport = coalesce(nullif(%s, ''), sport), gevoelig = %s,
                   tokens_in = %s, tokens_out = %s, zoekopdrachten = %s, bijgewerkt = now() WHERE id = %s RETURNING *""",
-               (status, a["categorie"], a["titel"], a["intro"], a["tekst"], a["kernzin"], a["beeld_scene"], json.dumps(a["bronnen"]),
+               (status, a["categorie"], a["titel"], a["intro"], a["tekst"], a["kernzin"], a["beschrijving"], a["beeld_scene"], json.dumps(a["bronnen"]),
                 a["oordeel"], a["keepers"] or list(verhaal.get("keepers") or []), a["sport"], a["gevoelig"], usage.get("input_tokens"),
                 usage.get("output_tokens"), usage.get("zoekopdrachten"), v["id"]))
     except Exception as e:  # noqa: BLE001
@@ -495,6 +513,15 @@ def inhoud_html(v):
     for a in re.split(r"\n\s*\n", v.get("tekst") or ""):
         if a.strip():
             delen.append(f"<!-- wp:paragraph -->\n<p>{e(a.strip())}</p>\n<!-- /wp:paragraph -->")
+    il = v.get("interne_links") or {}
+    meer = []
+    if il.get("lees_ook"):
+        meer.append(f'Lees ook: <a href="{html.escape(il["lees_ook"]["url"])}">{e(il["lees_ook"]["titel"])}</a>.')
+    links = [f'<a href="{html.escape(x["url"])}">{e(x["tekst"])}</a>' for x in (il.get("sport"), il.get("alles")) if x]
+    if links:
+        meer.append("Meer lezen: " + " · ".join(links))
+    if meer:
+        delen.append(f'<!-- wp:paragraph {{"className":"zh-meer"}} -->\n<p class="zh-meer">{" ".join(meer)}</p>\n<!-- /wp:paragraph -->')
     bronnen = ", ".join(f'<a href="{html.escape(b["url"])}" target="_blank" rel="noopener">{e(b["titel"] or "bron")}</a>'
                         for b in (v.get("bronnen") or [])[:4])
     if bronnen:
@@ -507,26 +534,94 @@ def _slug(t):
     return s[:70] or "keepersnieuws"
 
 
+SPORTKEEPERS = {"voetbal": "voetbalkeepers", "handbal": "handbalkeepers", "hockey": "hockeykeepers",
+                "ijshockey": "ijshockeygoalies", "waterpolo": "waterpolokeepers"}
+
+
+def _webp(png):
+    """Het beeld als WebP: een tiende van de PNG, voor een snellere pagina."""
+    from PIL import Image  # pylint: disable=import-outside-toplevel
+    uit = io.BytesIO()
+    Image.open(io.BytesIO(png)).convert("RGB").save(uit, "WEBP", quality=82, method=4)
+    return uit.getvalue()
+
+
+def upload_beeld(v):
+    media_id, _ = wp.upload(_webp(bytes(v["beeld"])), f"{_slug(v['titel'])}.webp", alt=v["titel"] or "", mime="image/webp",
+                            bijschrift="Beeld: ZEROHERO" + (" (AI-sfeerbeeld)" if (v["beeld_bron"] or "").startswith("ai") else ""))
+    return media_id
+
+
+def interne_links(v):
+    """Links naar eigen pagina's voor onder het bericht: de sportcategorie, al het keepersnieuws en (als die er is) een
+    eerder ZEROHERO-stuk over dezelfde keeper. Niet erg als iets niet lukt."""
+    uit = {}
+    kn_id = categorie_id()
+    try:
+        c = wp._wp("GET", f"/wp/v2/categories/{kn_id}?_fields=link")  # pylint: disable=protected-access
+        if (c or {}).get("link"):
+            uit["alles"] = {"tekst": "al het keepersnieuws", "url": c["link"]}
+        sport = (v.get("sport") or "").lower()
+        if sport in SPORTKEEPERS:
+            c = wp._wp("GET", f"/wp/v2/categories/{sport_categorie(sport)}?_fields=link")  # pylint: disable=protected-access
+            if (c or {}).get("link"):
+                uit["sport"] = {"tekst": f"alles over {SPORTKEEPERS[sport]}", "url": c["link"]}
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
+    from urllib.parse import urlencode  # pylint: disable=import-outside-toplevel
+    for keeper in (v.get("keepers") or [])[:2]:
+        try:
+            rijen = wp._wp("GET", "/wp/v2/posts?" + urlencode({  # pylint: disable=protected-access
+                "search": keeper, "per_page": 3, "categories_exclude": kn_id, "_fields": "id,link,title"}))
+        except Exception:  # noqa: BLE001
+            continue
+        for r in rijen if isinstance(rijen, list) else []:
+            titel = re.sub(r"<[^>]+>", "", html.unescape((r.get("title") or {}).get("rendered", ""))).strip()
+            if r.get("link") and titel and r.get("id") != v.get("wp_post_id"):
+                uit["lees_ook"] = {"titel": titel[:150], "url": r["link"]}
+                break
+        if "lees_ook" in uit:
+            break
+    return uit
+
+
+def seo_meta(post_id, v):
+    """Rank Math: Keepersnieuws als hoofdcategorie (breadcrumb), de zoekbeschrijving en de keeper als focuswoord."""
+    meta = {"rank_math_primary_category": categorie_id()}
+    if v.get("beschrijving"):
+        meta["rank_math_description"] = v["beschrijving"]
+    if v.get("keepers"):
+        meta["rank_math_focus_keyword"] = v["keepers"][0]
+    try:
+        wp._wp("POST", "/rankmath/v1/updateMeta", data={"objectType": "post", "objectID": int(post_id), "meta": meta})  # pylint: disable=protected-access
+        return True
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
+        return False
+
+
 def plaats(v, live=True):
     """In WordPress zetten (live of als concept), met het beeld als uitgelicht beeld. Geeft de bijgewerkte rij.
     Eerst als concept (zoals de blogs), daarna pas publiceren: elke stap wordt meteen bewaard, zodat opnieuw proberen
     geen dubbel beeld of dubbel bericht maakt."""
     if not wp.wp_actief():
         raise RuntimeError("De Doellijn heeft geen WordPress-gegevens (deploy/zerohero-sleutel.sh wordpress).")
+    if v.get("interne_links") is None:
+        v = q1("UPDATE nieuws_voorstellen SET interne_links = %s WHERE id = %s RETURNING *", (json.dumps(interne_links(v)), v["id"]))
     if not v["wp_post_id"]:
         media_id = v.get("wp_media_id")
         if v.get("beeld") is None and not media_id:  # het beeld wordt pas gemaakt als het bericht ook echt naar de site gaat
             v = nieuw_beeld(v)
         if v.get("beeld") and not media_id:
-            media_id, _ = wp.upload(bytes(v["beeld"]), f"{_slug(v['titel'])}.png", alt=v["titel"] or "",
-                                    bijschrift="Beeld: ZEROHERO" + (" (AI-sfeerbeeld)" if (v["beeld_bron"] or "").startswith("ai") else ""))
+            media_id = upload_beeld(v)
             v = q1("UPDATE nieuws_voorstellen SET wp_media_id = %s WHERE id = %s RETURNING *", (media_id, v["id"]))
         p = wp._wp("POST", "/wp/v2/posts", data={  # pylint: disable=protected-access
             "status": "draft", "title": v["titel"], "content": inhoud_html(v), "excerpt": v["intro"] or "", "slug": _slug(v["titel"]),
             "categories": [categorie_id(), sport_categorie(v.get("sport"))], **({"featured_media": media_id} if media_id else {})})
         v = q1("UPDATE nieuws_voorstellen SET wp_post_id = %s, wp_link = %s WHERE id = %s RETURNING *", (p["id"], p.get("link"), v["id"]))
-        hoofdcategorie(p["id"])  # het uitgelichte beeld toont de site-template boven de tekst, dus niet ook in de tekst
+        # het uitgelichte beeld toont de site-template boven de tekst, dus niet ook in de tekst
     pid = int(v["wp_post_id"])
+    seo_meta(pid, v)
     try:
         p = wp._wp("POST", f"/wp/v2/posts/{pid}", data={  # pylint: disable=protected-access
             "status": "publish" if live else "draft", "title": v["titel"], "content": inhoud_html(v), "excerpt": v["intro"] or ""})
@@ -772,7 +867,8 @@ def beeld_png(vid: int):
 
 @router.post("/keepersnieuws/{vid}")
 def voorstel_opslaan(request: Request, vid: int, titel: str = Form(...), intro: str = Form(""), tekst: str = Form(""),
-                     categorie: str = Form("groot"), actie: str = Form("opslaan"), reden: str = Form(""), toelichting: str = Form("")):
+                     categorie: str = Form("groot"), actie: str = Form("opslaan"), reden: str = Form(""), toelichting: str = Form(""),
+                     beschrijving: str = Form(None)):
     """Aanpassen en daarna eventueel plaatsen, als concept zetten of afwijzen."""
     controleer_herkomst(request)
     v = q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (vid,))
@@ -780,10 +876,13 @@ def voorstel_opslaan(request: Request, vid: int, titel: str = Form(...), intro: 
         raise HTTPException(404)
     if v["status"] in ("bezig",):
         return _terug(f"/keepersnieuws/{vid}", fout="Dit voorstel wordt nog geschreven.")
-    gewijzigd = (titel.strip(), intro.strip(), tekst.strip()) != (v["titel"] or "", v["intro"] or "", v["tekst"] or "")
-    v = q1("""UPDATE nieuws_voorstellen SET titel = %s, intro = %s, tekst = %s, categorie = %s, bijgewerkt = now() WHERE id = %s RETURNING *""",
+    beschrijving = v["beschrijving"] if beschrijving is None else kort_af(_schoon(beschrijving, 400), 155)
+    gewijzigd = ((titel.strip(), intro.strip(), tekst.strip(), beschrijving or "")
+                 != (v["titel"] or "", v["intro"] or "", v["tekst"] or "", v["beschrijving"] or ""))
+    v = q1("""UPDATE nieuws_voorstellen SET titel = %s, intro = %s, tekst = %s, categorie = %s, beschrijving = %s, bijgewerkt = now()
+              WHERE id = %s RETURNING *""",
            (_schoon(titel, 160) or v["titel"], _schoon(intro, 400), "\n\n".join(_schoon(a, 1500) for a in re.split(r"\n\s*\n", tekst) if a.strip()),
-            categorie if categorie in CATEGORIEEN else v["categorie"], vid))
+            categorie if categorie in CATEGORIEEN else v["categorie"], beschrijving or None, vid))
     if gewijzigd and v["wp_post_id"] and v["besluit"] == "geplaatst" and actie == "opslaan":
         try:
             plaats(v, live=True)
@@ -837,7 +936,7 @@ def beeld_opnieuw(request: Request, vid: int, soort: str = Form("ai"), scene: st
     v = nieuw_beeld(v, zonder_ai=(soort == "huisstijl"))
     if v["wp_post_id"] and v["beeld"] is not None:
         try:
-            media_id, _ = wp.upload(bytes(v["beeld"]), f"{_slug(v['titel'])}.png", alt=v["titel"] or "")
+            media_id = upload_beeld(v)
             wp.zet_uitgelicht(v["wp_post_id"], media_id)  # de site-template toont het boven de tekst
         except Exception as e:  # noqa: BLE001
             return _terug(f"/keepersnieuws/{vid}", fout=f"Nieuw beeld gemaakt, maar WordPress bijwerken lukte niet: {str(e)[:150]}")

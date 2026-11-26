@@ -49,7 +49,10 @@
     <ul class="bronnenlijst">{% for b in v.bronnen %}<li><a href="{{ b.url }}" target="_blank" rel="noopener">{{ b.titel }}</a></li>{% endfor %}</ul>{% endif %}
   </div>
   <form method="post" action="/keepersnieuws/{{ v.id }}" class="artikelformulier">
-    <label>Kop<input name="titel" maxlength="160" value="{{ v.titel or '' }}" required></label>
+    <label>Kop <span class="noot">({{ (v.titel or '') | length }} tekens; tip: hooguit 48, dan past hij in Google)</span>
+      <input name="titel" maxlength="160" value="{{ v.titel or '' }}" required></label>
+    <label>Beschrijving voor Google <span class="noot">({{ (v.beschrijving or '') | length }} tekens; hooguit 155)</span>
+      <textarea name="beschrijving" rows="2" maxlength="155">{{ v.beschrijving or '' }}</textarea></label>
     <label>Intro<textarea name="intro" rows="2">{{ v.intro or '' }}</textarea></label>
     <label>Tekst (een lege regel tussen alinea's)<textarea name="tekst" rows="14">{{ v.tekst or '' }}</textarea></label>
     <label>Soort<select name="categorie">{% for k, n in categorieen.items() %}<option value="{{ k }}" {{ 'selected' if v.categorie == k }}>{{ n }}</option>{% endfor %}</select></label>

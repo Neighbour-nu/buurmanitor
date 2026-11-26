@@ -39,7 +39,7 @@ FORM = KOP | {"Origin": "https://buurmanitor.neighbour.nu"}
 ANTWOORD = {"geschikt": True, "oordeel": "Officiële transfer van een Nederlandse keeper.", "categorie": "transfer",
             "titel": "Bart Verbruggen tekent bij Ajax — voor vier jaar", "intro": "De keeper keert terug naar Nederland.",
             "tekst": "Ajax heeft Bart Verbruggen vastgelegd, meldt de club.\n\nHij tekent voor vier jaar.", "kernzin": "Terug in Nederland",
-            "keepers": ["Bart Verbruggen"], "sport": "voetbal", "beeld_scene": "an empty goal in a stadium at night",
+            "keepers": ["Bart Verbruggen"], "sport": "voetbal", "beschrijving": "Ajax haalt Bart Verbruggen terug naar Nederland.", "beeld_scene": "an empty goal in a stadium at night",
             "bronnen": [{"titel": "Ajax.nl", "url": "https://www.ajax.nl/nieuws"}, {"titel": "kwaad", "url": "javascript:alert(1)"}]}
 
 
@@ -200,6 +200,11 @@ def nep(klant, monkeypatch):
         n["wp"].append((methode, pad, data))
         if pad.startswith("/wp/v2/categories?"):
             return []
+        if pad.startswith("/wp/v2/categories/"):
+            cid = pad.split("/")[4].split("?")[0]
+            return {"link": f"https://zerohero.one/category/c{cid}/"}
+        if pad.startswith("/wp/v2/posts?"):  # zoeken naar een eerder stuk over de keeper
+            return [{"id": 12, "link": "https://zerohero.one/top-5-keepers/", "title": {"rendered": "Top 5 keepers &amp; meer"}}]
         if pad == "/wp/v2/categories":
             return {"id": 31}
         if pad.startswith("/wp/v2/posts"):
@@ -234,8 +239,14 @@ def test_ronde_voorstel_en_plaatsen_via_telegram(nep, klant):
     post = next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts")  # eerst als concept, zoals de blogs
     assert post["status"] == "draft" and post["categories"] == [31, 32] and post["featured_media"] == 55 and "zh-intro" in post["content"]
     assert next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts/777")["status"] == "publish"  # daarna publiceren
-    rm = next(d for m, p, d in nep["wp"] if p == "/rankmath/v1/updateMeta")  # Keepersnieuws als hoofdcategorie (breadcrumb)
-    assert rm["objectID"] == 777 and rm["meta"] == {"rank_math_primary_category": 31}
+    rm = next(d for m, p, d in nep["wp"] if p == "/rankmath/v1/updateMeta")  # hoofdcategorie (breadcrumb), beschrijving en focuswoord
+    assert rm["objectID"] == 777 and rm["meta"] == {"rank_math_primary_category": 31, "rank_math_focus_keyword": "Bart Verbruggen",
+                                                    "rank_math_description": "Ajax haalt Bart Verbruggen terug naar Nederland."}
+    # interne links onder het bericht en het beeld als WebP
+    inhoud = next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts")["content"]
+    assert 'Lees ook: <a href="https://zerohero.one/top-5-keepers/">Top 5 keepers &amp; meer</a>.' in inhoud
+    assert '<a href="https://zerohero.one/category/c32/">alles over voetbalkeepers</a> · <a href="https://zerohero.one/category/c31/">al het keepersnieuws</a>' in inhoud
+    assert next(x for x in nep["wp"] if x[0] == "upload")[1].endswith(".webp")
     assert kn.taak_hoofdcategorie(None) == "1 van 1 berichten" and kn.taak_hoofdcategorie(None) == "niets te doen"
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (v["id"],))
     assert v["besluit"] == "geplaatst" and v["wp_post_id"] == 777 and v["besloten_via"] == "telegram"
@@ -517,3 +528,12 @@ def test_archiveren(nep, klant):
     # gearchiveerd telt nog mee: hetzelfde nieuws komt niet opnieuw
     assert kn.ronde() == "geen nieuw keepersnieuws boven de drempel"
     assert klant.post(f"/zerohero/keepersnieuws/{v['id']}/archief", headers=KOP).status_code == 403  # zonder herkomst
+
+
+def test_kort_af_en_beschrijving():
+    assert kn.kort_af("kort", 155) == "kort"
+    lang = "woord " * 60
+    k = kn.kort_af(lang, 155)
+    assert len(k) <= 155 and k.endswith("woord…")
+    assert kn.schoon_antwoord(ANTWOORD | {"beschrijving": ""})["beschrijving"] == "De keeper keert terug naar Nederland."  # dan de intro
+    assert "hooguit 48 tekens" in kn.SYSTEEM and "keepersblik" in kn.SYSTEEM
