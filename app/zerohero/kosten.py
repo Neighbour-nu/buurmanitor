@@ -61,6 +61,17 @@ def _onderdelen(q, van, tot):
                     coalesce(sum(zoekopdrachten), 0) AS zoek FROM advies_gesprekken WHERE aangemaakt >= %s AND aangemaakt < %s""", p)[0]
     uit.append({"naam": "Adviseur (analyses en gesprekken)", "eenheid": "analyses en gesprekken", "aantal": a["n"] + g["n"],
                 "dollar": dollar(a["tin"], a["tout"], "sonnet", a["zoek"]) + dollar(g["tin"], g["tout"], "sonnet", g["zoek"]), "geschat": False})
+    if _tabel_bestaat(q, "nieuws_voorstellen"):
+        from .ai_beeld import PRIJS  # pylint: disable=import-outside-toplevel
+        from .keepersnieuws import SNEL  # pylint: disable=import-outside-toplevel
+        k = q("""SELECT count(*) AS n, coalesce(sum(tokens_in), 0) AS tin, coalesce(sum(tokens_out), 0) AS tout,
+                        coalesce(sum(tokens_in_snel), 0) AS sin, coalesce(sum(tokens_out_snel), 0) AS sout,
+                        coalesce(sum(zoekopdrachten), 0) AS zoek, coalesce(sum((beelden->>'openai')::int), 0) AS bo,
+                        coalesce(sum((beelden->>'google')::int), 0) AS bg
+                 FROM nieuws_voorstellen WHERE aangemaakt >= %s AND aangemaakt < %s""", p)[0]
+        uit.append({"naam": "Keepersnieuws (voorselectie, schrijven, AI-beelden)", "eenheid": "voorstellen", "aantal": k["n"],
+                    "dollar": dollar(k["sin"], k["sout"], SNEL) + dollar(k["tin"], k["tout"], "sonnet", k["zoek"])
+                    + k["bo"] * PRIJS["openai"] + k["bg"] * PRIJS["google"], "geschat": True})
     s = q("""SELECT (SELECT count(*) FROM ssi_screenshots WHERE moment >= %s AND moment < %s) AS n""", p)[0]["n"]
     uit.append({"naam": "Screenshots lezen (SSI, profielbezoekers)", "eenheid": "screenshots", "aantal": s, "dollar": s * SCREENSHOT, "geschat": True})
     return uit

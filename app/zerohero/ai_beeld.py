@@ -6,7 +6,9 @@
 - Nooit een herkenbaar persoon, logo, clubembleem, rugnummer of tekst in het AI-beeld: het blijft een sfeerbeeld (een
   doel, handschoenen, een leeg stadion, een bal in het net). Zo is er geen gedoe met rechten of met een nepfoto van
   een echte keeper.
-- Daaroverheen: een donker verloop, de groene hoekhaken, het woordmerk, het label (KEEPERSNIEUWS · TRANSFER) en de kop.
+- Daaroverheen: een donker verloop, de groene hoekhaken, het woordmerk, het sporticoon van ZEROHERO rechtsboven, het
+  label (KEEPERSNIEUWS · VOETBAL) en de kop. Het huisstijlbeeld krijgt hetzelfde sporticoon.
+- PRIJS: wat één beeld ongeveer kost (dollar), voor het maandbudget. Een schatting; de echte prijs staat bij de aanbieder.
 """
 import base64
 import io
@@ -23,6 +25,12 @@ OPENAI_KEY = os.environ.get("ZEROHERO_OPENAI_API_KEY", "").strip()
 GEMINI_KEY = os.environ.get("ZEROHERO_GEMINI_API_KEY", "").strip()
 OPENAI_MODEL = os.environ.get("ZEROHERO_BEELD_MODEL_OPENAI", "gpt-image-1")
 GEMINI_MODEL = os.environ.get("ZEROHERO_BEELD_MODEL_GEMINI", "gemini-2.5-flash-image")
+
+PRIJS = {"openai": float(os.environ.get("ZEROHERO_BEELD_PRIJS_OPENAI", "0.07")),
+         "google": float(os.environ.get("ZEROHERO_BEELD_PRIJS_GOOGLE", "0.04"))}
+ICONEN = os.path.join(os.path.dirname(__file__), "fonts", "sport")
+SPORTNAMEN = {"voetbal": "voetbal", "handbal": "handbal", "hockey": "hockey", "veldhockey": "hockey", "ijshockey": "ijshockey",
+              "waterpolo": "waterpolo"}
 
 REGELS = ("Photorealistic editorial sports photograph, cinematic light, shallow depth of field, landscape 3:2. "
           "Strictly NO recognizable people: no faces, at most a silhouette or hands in gloves seen from behind or cropped. "
@@ -83,7 +91,34 @@ def _vullend(img, b, h):
     return img.crop((x, y, x + b, y + h))
 
 
-def samenstellen(achtergrond, kop, label="", sport=""):
+def sport_van(sport):
+    return SPORTNAMEN.get((sport or "").strip().lower().replace("-", ""), "")
+
+
+def icoon(img, sport, grootte=190):
+    """Het witte sporticoon van ZEROHERO rechtsboven, binnen de hoekhaken (niets als de sport onbekend is)."""
+    s = sport_van(sport)
+    pad = os.path.join(ICONEN, f"{s}.png") if s else ""
+    if not pad or not os.path.exists(pad):
+        return img
+    ic = Image.open(pad).convert("RGBA")
+    ic.thumbnail((grootte, grootte), Image.LANCZOS)
+    alfa = ic.getchannel("A").point(lambda a: int(a * 0.92))
+    ic.putalpha(alfa)
+    img = img.convert("RGBA")
+    img.alpha_composite(ic, (hs.B - 150 - ic.width, 120 + (grootte - ic.height) // 2))
+    return img.convert("RGB")
+
+
+def huisstijl(kernzin, sport):
+    """Het gewone huisstijlbeeld, met het sporticoon erbij."""
+    img = icoon(Image.open(io.BytesIO(hs.maak_beeld(kernzin, None, sport_van(sport) or sport))), sport)
+    uit = io.BytesIO()
+    img.save(uit, "PNG", optimize=True)
+    return uit.getvalue()
+
+
+def samenstellen(achtergrond, kop, sport=""):
     """Huisstijl over een sfeerbeeld: 1800 x 1200 PNG."""
     B, H = hs.B, hs.H
     img = _vullend(Image.open(io.BytesIO(achtergrond)).convert("RGB"), B, H)
@@ -96,9 +131,12 @@ def samenstellen(achtergrond, kop, label="", sport=""):
     d = ImageDraw.Draw(img)
     hs._hoekjes(d)  # pylint: disable=protected-access
     hs._woordmerk(img)  # pylint: disable=protected-access
-    # Label
+    img = icoon(img, sport)
+    d = ImageDraw.Draw(img)
+    # Label: alleen KEEPERSNIEUWS en de sport
     fl = hs._font("BarlowCondensed-SemiBold.woff", 46)  # pylint: disable=protected-access
-    tekst = "KEEPERSNIEUWS" + (f" · {label.upper()}" if label else "") + (f" · {sport.upper()}" if sport else "")
+    naam = sport_van(sport) or (sport or "")
+    tekst = "KEEPERSNIEUWS" + (f" · {naam.upper()}" if naam else "")
     # Kop: zo groot als past, onderaan
     vak_l, vak_r, onder = 150, B - 150, H - 170
     for grootte in (104, 96, 88, 80, 72, 64, 56):
@@ -116,15 +154,15 @@ def samenstellen(achtergrond, kop, label="", sport=""):
     return uit.getvalue()
 
 
-def maak(kop, scene, label="", sport="", kernzin=""):
-    """(png, bron, fout): het samengestelde AI-beeld, of anders het huisstijlbeeld met de reden waarom."""
-    if aanbieder():
+def maak(kop, scene, sport="", kernzin="", ai=True):
+    """(png, bron, fout): het samengestelde AI-beeld, of anders (of met ai=False) het huisstijlbeeld met de reden waarom."""
+    if aanbieder() and ai:
         try:
-            return samenstellen(sfeerbeeld(scene), kop, label, sport), f"ai-{aanbieder()}", ""
+            return samenstellen(sfeerbeeld(scene), kop, sport), f"ai-{aanbieder()}", ""
         except BeeldFout as e:
             fout = str(e)
         except Exception as e:  # noqa: BLE001  (een onleesbaar beeld en dergelijke)
             fout = f"Het AI-beeld lukte niet: {str(e)[:150]}"
     else:
         fout = ""
-    return hs.maak_beeld(kernzin or kop, None, sport), "huisstijl", fout
+    return huisstijl(kernzin or kop, sport), "huisstijl", fout

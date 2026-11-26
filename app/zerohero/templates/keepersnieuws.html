@@ -11,6 +11,7 @@
 {% if not wp_actief %}<p class="melding fout">⚠️ Er zijn geen WordPress-gegevens: <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh wordpress</code></p>{% endif %}
 {% if not telegram_actief %}<p class="melding herinnering">Telegram is niet ingesteld: voorstellen staan dan alleen hieronder.</p>
 {% elif telegram_status.fout %}<p class="melding fout">⚠️ Telegram: {{ telegram_status.fout }}</p>{% endif %}
+{% if budget_op %}<p class="melding herinnering">Het maandbudget voor keepersnieuws is op: er komen tot de volgende maand geen nieuwe voorstellen. Verhoog het bij Instellingen als je wilt.</p>{% endif %}
 {% if not aanbieder %}<p class="melding herinnering">Nog geen AI-beeldmaker: de berichten krijgen het huisstijlbeeld. Een sleutel instellen:
   <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh beeld</code></p>{% endif %}
 
@@ -22,7 +23,7 @@
     <span class="kn-regel"><span class="badge kn-status-{{ v.status }}">{{ statussen.get(v.status, v.status) }}</span>
       {% if v.categorie %}<span class="badge">{{ categorieen.get(v.categorie, v.categorie) }}</span>{% endif %}
       {% if v.sport %}<span class="badge">{{ v.sport }}</span>{% endif %}
-      <span class="tijd">{{ geleden(v.aangemaakt) }}</span></span>
+      <span class="tijd">{{ geleden(v.aangemaakt) }}{% if v.kosten >= 0.005 %} · € {{ '%.2f' | format(v.kosten) | replace('.', ',') }}{% endif %}</span></span>
     <b>{{ v.titel or ('Nieuws over ' ~ (v.keepers | join(', ')) if v.keepers else 'Voorstel ' ~ v.id) }}</b>
     <span class="noot">{% if v.status == 'overgeslagen' %}{{ v.oordeel }}{% elif v.besluit == 'afgewezen' and v.reden %}Reden: {{ redenen_namen.get(v.reden, v.reden) }}{% if v.toelichting %}, {{ v.toelichting }}{% endif %}{% elif v.fout %}{{ v.fout }}{% else %}{{ v.intro }}{% endif %}</span>
   </span>
@@ -40,11 +41,17 @@
     <label>Hooguit per dag<input type="number" name="kn_per_dag" min="0" max="20" value="{{ i.kn_per_dag }}"></label>
     <label>Hooguit per kwartier<input type="number" name="kn_per_ronde" min="1" max="5" value="{{ i.kn_per_ronde }}"></label>
     <label>Zoekopdrachten om feiten te controleren<input type="number" name="kn_zoeken" min="0" max="5" value="{{ i.kn_zoeken }}"></label>
+    <label>Maandbudget in euro (0 = geen grens)<input type="text" inputmode="decimal" name="kn_budget" value="{{ i.kn_budget }}"></label>
+    <label class="reden"><span><input type="checkbox" name="kn_voorselectie" value="1" {{ 'checked' if i.kn_voorselectie == '1' }}> Eerst een goedkope voorselectie</span></label>
+    <label class="reden"><span><input type="checkbox" name="kn_ai_beeld" value="1" {{ 'checked' if i.kn_ai_beeld == '1' }}> AI-sfeerbeelden (anders het gratis huisstijlbeeld)</span></label>
     <label class="breed">Jouw richtlijnen (gaan voor alles)
       <textarea name="kn_richtlijnen" rows="4" placeholder="Bijvoorbeeld: transfers alleen als het officieel is. Meer handbal en hockey. Geen jeugdkeepers onder de 18.">{{ i.kn_richtlijnen }}</textarea></label>
     <button class="knop" type="submit">Opslaan</button>
   </form>
-  <p class="noot">Vandaag {{ vandaag }} van de {{ i.kn_per_dag }} voorstellen gemaakt. Beeld: {{ {'openai': 'AI-sfeerbeeld van OpenAI', 'google': 'AI-sfeerbeeld van Google'}.get(aanbieder, 'huisstijlbeeld') }}.</p>
+  <p class="noot"><b>Kosten deze maand: € {{ '%.2f' | format(maand[0]) | replace('.', ',') }}</b>{% if i.kn_budget not in ('', '0') %} van € {{ i.kn_budget }}{% endif %},
+    {{ maand[1] }} voorstellen{% if maand[1] %} (gemiddeld € {{ '%.2f' | format(maand[0] / maand[1]) | replace('.', ',') }}){% endif %}. Een schatting
+    op basis van tokens, zoekopdrachten en beelden; de echte bedragen staan bij Anthropic en de beeldmaker.
+    Vandaag {{ vandaag }} van de {{ i.kn_per_dag }} voorstellen gemaakt. Beeld: {{ {'openai': 'AI-sfeerbeeld van OpenAI', 'google': 'AI-sfeerbeeld van Google'}.get(aanbieder, 'huisstijlbeeld') }}.</p>
   <form method="post" action="/keepersnieuws/zoek"><button class="knop" type="submit" {{ 'disabled' if not claude_actief }}>Nu naar het nieuws kijken</button></form>
   {% if tel %}
   <h3 class="kleinkop">Jouw besluiten per soort</h3>

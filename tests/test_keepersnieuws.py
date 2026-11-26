@@ -69,9 +69,15 @@ def test_inhoud_en_telegramtekst():
 def test_beeld_samenstellen_en_terugval(monkeypatch):
     b = io.BytesIO()
     Image.new("RGB", (1536, 1024), (40, 90, 60)).save(b, "PNG")
-    png = ai_beeld.samenstellen(b.getvalue(), "Verbruggen houdt drie penalty's tegen", "Unieke prestatie", "voetbal")
+    png = ai_beeld.samenstellen(b.getvalue(), "Verbruggen houdt drie penalty's tegen", "voetbal")
     img = Image.open(io.BytesIO(png))
     assert img.size == (1800, 1200)
+    # het sporticoon rechtsboven: daar staat nu wit, zonder sport niet
+    hoek = (1800 - 150 - 190, 120, 1800 - 150, 310)
+    wit = lambda i: sum(1 for p in i.crop(hoek).getdata() if min(p[:3]) > 200)  # noqa: E731
+    zonder = Image.open(io.BytesIO(ai_beeld.samenstellen(b.getvalue(), "Kop", "")))
+    assert wit(img) > 2000 and wit(zonder) < 50
+    assert ai_beeld.sport_van("IJshockey") == "ijshockey" and ai_beeld.sport_van("veldhockey") == "hockey" and ai_beeld.sport_van("korfbal") == ""
     # zonder sleutel: het huisstijlbeeld, zonder foutmelding
     png, bron, fout = ai_beeld.maak("Kop", "scene")
     assert bron == "huisstijl" and not fout and Image.open(io.BytesIO(png)).size == (1800, 1200)
@@ -139,9 +145,18 @@ def nep(klant, monkeypatch):
             (9004, 'Blog', 'https://blog.nl/4', 'Iets kleins', now(), 'voetbal', ARRAY['Iemand'], 20, 'Klein.', 'nieuw')
             RETURNING 1""")
     n = {"claude": [], "telegram": [], "wp": [], "bewerkt": []}
-    antwoorden = [dict(ANTWOORD), ANTWOORD | {"geschikt": False, "oordeel": "Te klein nieuws.", "titel": "Shoot-outs", "keepers": ["Anne Veenendaal"]}]
-    monkeypatch.setattr(claude_api, "gesprek", lambda s, berichten, **kw: n["claude"].append(berichten[-1]["content"]) or (
-        json.dumps(antwoorden[(len(n["claude"]) - 1) % 2]), {"input_tokens": 100, "output_tokens": 50, "zoekopdrachten": 1}, []))
+    n["snel"] = []
+
+    def gesprek(s, berichten, **kw):
+        vraag = berichten[-1]["content"]
+        if s == kn.VOORSELECTIE:  # de goedkope voorselectie: het hockeybericht is te klein
+            n["snel"].append(kw.get("model"))
+            klein = "Veenendaal" in vraag
+            return (json.dumps({"geschikt": not klein, "categorie": "statistiek" if klein else "transfer",
+                                "oordeel": "Te klein nieuws." if klein else "Officieel."}), {"input_tokens": 1000, "output_tokens": 40}, [])
+        n["claude"].append(vraag)
+        return json.dumps(ANTWOORD), {"input_tokens": 100, "output_tokens": 50, "zoekopdrachten": 1}, []
+    monkeypatch.setattr(claude_api, "gesprek", gesprek)
     teller = iter(range(500, 600))
     monkeypatch.setattr(telegram, "stuur_foto", lambda png, bijschrift="", knoppen=None, bestandsnaam="": n["telegram"].append(("foto", bijschrift)) or {"message_id": next(teller)})
     monkeypatch.setattr(telegram, "stuur", lambda tekst, knoppen=None, antwoord_op=None: n["telegram"].append(("tekst", tekst, knoppen)) or {"message_id": next(teller)})
@@ -172,7 +187,8 @@ def test_ronde_voorstel_en_plaatsen_via_telegram(nep, klant):
     assert v["telegram_foto"] == 500 and v["telegram_tekst"] == 501 and v["tokens_in"] == 100
     assert nep["telegram"][1][2] == kn.KNOPPEN(v["id"]) and "Bart Verbruggen tekent bij Ajax, voor vier jaar" in nep["telegram"][1][1]
     over = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'overgeslagen'")
-    assert over["oordeel"] == "Te klein nieuws." and over["item_ids"] == [ids[9003]]
+    assert over["oordeel"] == "Te klein nieuws." and over["item_ids"] == [ids[9003]] and over["tokens_in_snel"] == 1000
+    assert len(nep["claude"]) == 1 and nep["snel"] == [kn.SNEL, kn.SNEL]  # het schrijfmodel alleen voor het geschikte verhaal
     assert "Iets kleins" not in "".join(nep["claude"])  # onder de drempel
     assert kn.ronde() == "geen nieuw keepersnieuws boven de drempel"  # niets dubbel
     # Plaatsen in Telegram: live in de categorie Keepersnieuws, met het beeld
@@ -244,3 +260,33 @@ def test_uit_en_zonder_telegram(nep, klant, monkeypatch):
     kn.ronde()
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
     assert v["fout"].startswith("Telegram is niet ingesteld") and not nep["telegram"]
+
+
+def test_kosten_budget_en_beeldkeuze(nep, klant, monkeypatch):
+    monkeypatch.setattr(ai_beeld, "OPENAI_KEY", "sk-x")
+    b = io.BytesIO()
+    Image.new("RGB", (1536, 1024), (40, 90, 60)).save(b, "PNG")
+    monkeypatch.setattr(ai_beeld, "sfeerbeeld", lambda scene: b.getvalue())
+    kn.ronde()
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
+    assert v["beeld_bron"] == "ai-openai" and v["beelden"] == {"openai": 1}
+    euro, aantal = kn.kosten_maand()
+    assert aantal == 2 and 0.05 < euro < 0.2  # twee voorselecties, één bericht, één beeld
+    r = klant.get("/zerohero/keepersnieuws", headers=KOP)
+    assert "Kosten deze maand: € " in r.text and "van € 15" in r.text
+    # AI-beelden uit: het huisstijlbeeld, en geen extra kosten
+    kn.zet("kn_ai_beeld", "0")
+    v = kn.nieuw_beeld(v)
+    assert v["beeld_bron"] == "huisstijl" and v["beelden"] == {"openai": 1}
+    # budget op: geen nieuwe voorstellen, en een nieuw beeld wordt huisstijl
+    kn.zet("kn_ai_beeld", "1")
+    kn.zet("kn_budget", "0.01")
+    assert kn.ronde().startswith("maandbudget op")
+    v = kn.nieuw_beeld(v)
+    assert v["beeld_bron"] == "huisstijl" and "maandbudget is op" in v["beeld_fout"]
+    assert "Het maandbudget voor keepersnieuws is op" in klant.get("/zerohero/keepersnieuws", headers=KOP).text
+    # in het kostenoverzicht van het dashboard
+    from app.zerohero import kosten  # pylint: disable=import-outside-toplevel
+    regel = next(x for x in kosten._onderdelen(kn.q, kn.q1("SELECT now() - interval '1 day' AS t")["t"], kn.q1("SELECT now() + interval '1 day' AS t")["t"])  # pylint: disable=protected-access
+                 if x["naam"].startswith("Keepersnieuws"))
+    assert regel["aantal"] == 2 and regel["dollar"] > 0.07

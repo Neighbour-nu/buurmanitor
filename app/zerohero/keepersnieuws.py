@@ -12,8 +12,15 @@ Route
    Keepersnieuws), Ik kijk zelf (concept in WordPress) of Niet plaatsen (met een reden). Op de pagina Keepersnieuws in
    de Doellijn kan hetzelfde, en kun je de tekst eerst aanpassen.
 
-Hooguit kn_per_dag voorstellen per dag en kn_per_ronde per keer, zodat het overzichtelijk (en betaalbaar) blijft.
+Kosten in de hand
+- Eerst een snelle, goedkope voorselectie (Haiku, zonder zoeken): is dit keepersnieuws? Alleen dan schrijft het
+  schrijfmodel met zoekopdrachten het bericht en komt er een AI-beeld bij.
+- Grenzen: hooguit kn_per_dag voorstellen per dag, kn_per_ronde per kwartier, kn_zoeken zoekopdrachten per bericht.
+- Maandbudget (kn_budget, euro): is het op, dan stopt Buurmanitor met voorstellen tot de volgende maand. Een nieuw
+  AI-beeld wordt dan een huisstijlbeeld. De kosten zijn een schatting op basis van tokens, zoekopdrachten en beelden.
+- AI-beelden kunnen uit (kn_ai_beeld): dan altijd het (gratis) huisstijlbeeld.
 """
+import os
 import datetime as dt
 import html
 import json
@@ -42,7 +49,11 @@ MIGRATIES = [
         besluit text, reden text, toelichting text, besloten_op timestamptz, besloten_via text,
         wp_post_id int, wp_link text, fout text, tokens_in int, tokens_out int, zoekopdrachten int)""",
     "CREATE INDEX IF NOT EXISTS nieuws_voorstellen_items ON nieuws_voorstellen USING gin (item_ids)",
+    "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS tokens_in_snel int",
+    "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS tokens_out_snel int",
+    "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS beelden jsonb NOT NULL DEFAULT '{}'",
 ]
+SNEL = os.environ.get("ZEROHERO_KN_SNEL_MODEL", "claude-haiku-4-5")
 
 CATEGORIEEN = {"transfer": "Transfer", "prestatie": "Unieke prestatie", "statistiek": "Record of statistiek", "groot": "Groot in het nieuws"}
 REDENEN = {"geen_nieuws": "Geen echt nieuws", "niet_relevant": "Niet interessant voor ZEROHERO", "klopt_niet": "Klopt niet of te dun",
@@ -50,7 +61,7 @@ REDENEN = {"geen_nieuws": "Geen echt nieuws", "niet_relevant": "Niet interessant
 STATUSSEN = {"bezig": "Wordt geschreven", "klaar": "Klaar", "verstuurd": "Wacht op jou", "geplaatst": "Geplaatst", "later": "Concept in WordPress",
              "afgewezen": "Niet geplaatst", "overgeslagen": "Geen keepersnieuws", "fout": "Mislukt"}
 STANDAARD = {"kn_aan": "1", "kn_drempel": "60", "kn_per_dag": "5", "kn_per_ronde": "2", "kn_richtlijnen": "", "kn_categorie_id": "",
-             "kn_zoeken": "2"}
+             "kn_zoeken": "2", "kn_budget": "15", "kn_ai_beeld": "1", "kn_voorselectie": "1"}
 _slot = threading.Lock()
 
 
@@ -184,14 +195,69 @@ def schoon_antwoord(j):
             "sport": str(j.get("sport") or "")[:20].lower(), "beeld_scene": str(j.get("beeld_scene") or "")[:800], "bronnen": bronnen}
 
 
+# ---------------------------------------------------------------- kosten
+
+def kosten_voorstel(v, k=None):
+    """Geschatte kosten van één voorstel in euro: tokens (snel en schrijven), zoekopdrachten en AI-beelden."""
+    from . import kosten  # pylint: disable=import-outside-toplevel
+    dollar = (kosten.dollar(v.get("tokens_in_snel"), v.get("tokens_out_snel"), SNEL)
+              + kosten.dollar(v.get("tokens_in"), v.get("tokens_out"), claude_api.SCHRIJFMODEL, v.get("zoekopdrachten") or 0)
+              + sum(ai_beeld.PRIJS.get(a, 0.07) * int(n) for a, n in (v.get("beelden") or {}).items()))
+    return dollar * (k if k is not None else kosten.koers(q))
+
+
+def kosten_maand():
+    """(euro deze maand, aantal voorstellen) sinds de eerste van de maand."""
+    from . import kosten  # pylint: disable=import-outside-toplevel
+    k = kosten.koers(q)
+    rijen = q("""SELECT tokens_in, tokens_out, tokens_in_snel, tokens_out_snel, zoekopdrachten, beelden FROM nieuws_voorstellen
+                 WHERE aangemaakt >= date_trunc('month', now() AT TIME ZONE 'Europe/Amsterdam') AT TIME ZONE 'Europe/Amsterdam'""")
+    return sum(kosten_voorstel(r, k) for r in rijen), len(rijen)
+
+
+def budget_op(i=None):
+    i = i or inst()
+    try:
+        budget = float(str(i["kn_budget"]).replace(",", "."))
+    except ValueError:
+        budget = float(STANDAARD["kn_budget"])
+    return budget > 0 and kosten_maand()[0] >= budget
+
+
 # ---------------------------------------------------------------- een voorstel maken
+
+VOORSELECTIE = """Je bent de eindredacteur van ZEROHERO, een platform over keepers en goalies (voetbal, handbal, hockey, ijshockey,
+waterpolo). Beoordeel snel of dit nieuws in de sectie Keepersnieuws hoort: een keeper wisselt van club (transfer), levert een
+unieke prestatie, haalt een record of statistische mijlpaal, of is om een andere reden groot in het nieuws. Niet: de keeper
+is bijzaak, voorbeschouwingen, geruchten zonder betrouwbare bron, oud nieuws, gevoelige onderwerpen (ziekte, overlijden).
+Houd rekening met wat Martijn eerder besliste en met zijn richtlijnen.
+Antwoord ALLEEN met JSON: {"geschikt": true/false, "categorie": "transfer|prestatie|statistiek|groot", "oordeel": "een zin waarom"}"""
+
+
+def voorselectie(verhaal, leer):
+    """Snelle, goedkope beoordeling (zonder zoeken). Geeft (geschikt, categorie, oordeel, usage)."""
+    tekst, usage, _ = claude_api.gesprek(VOORSELECTIE, [{"role": "user", "content": _vraag(verhaal, leer).replace(
+        "Beoordeel en schrijf. Controleer met de zoekfunctie het kernfeit (wie, welke club, welk cijfer) als dat kan.", "Beoordeel.")}],
+        model=SNEL, max_tokens=400, timeout=120)
+    j = claude_api.json_uit(tekst)
+    return bool(j.get("geschikt")), (j.get("categorie") if j.get("categorie") in CATEGORIEEN else None), _schoon(j.get("oordeel"), 400), usage
+
+
 
 def maak_voorstel(verhaal):
     """Schrijven, beeld maken en (als het geschikt is) via Telegram melden. Geeft de rij terug."""
     v = q1("""INSERT INTO nieuws_voorstellen (item_ids, keepers, sport, score) VALUES (%s, %s, %s, %s) RETURNING *""",
            (verhaal["ids"], list(verhaal.get("keepers") or []), verhaal.get("sport"), verhaal.get("score")))
     try:
-        tekst, usage, bronnen = claude_api.gesprek(SYSTEEM, [{"role": "user", "content": _vraag(verhaal, leerstof())}],
+        leer = leerstof()
+        if inst()["kn_voorselectie"] == "1":
+            geschikt, cat, oordeel, u = voorselectie(verhaal, leer)
+            v = q1("""UPDATE nieuws_voorstellen SET tokens_in_snel = %s, tokens_out_snel = %s, categorie = %s, oordeel = %s
+                      WHERE id = %s RETURNING *""", (u.get("input_tokens"), u.get("output_tokens"), cat, oordeel, v["id"]))
+            if not geschikt:
+                return q1("""UPDATE nieuws_voorstellen SET status = 'overgeslagen', titel = %s, bijgewerkt = now() WHERE id = %s RETURNING *""",
+                          ((verhaal.get("titel") or "")[:160], v["id"]))
+        tekst, usage, bronnen = claude_api.gesprek(SYSTEEM, [{"role": "user", "content": _vraag(verhaal, leer)}],
                                                    max_tokens=6000, zoeken=_getal(inst(), "kn_zoeken"), timeout=300)
         a = schoon_antwoord(claude_api.json_uit(tekst))
         gezien = {b["url"] for b in a["bronnen"]}
@@ -216,14 +282,18 @@ def maak_voorstel(verhaal):
 
 
 def nieuw_beeld(v, zonder_ai=False):
-    if zonder_ai:
-        from .beeld import maak_beeld  # pylint: disable=import-outside-toplevel
-        png, bron, fout = maak_beeld(v["kernzin"] or v["titel"] or "", None, v["sport"] or ""), "huisstijl", ""
-    else:
-        png, bron, fout = ai_beeld.maak(v["titel"] or "", v["beeld_scene"] or "", CATEGORIEEN.get(v["categorie"], ""), v["sport"] or "",
-                                        v["kernzin"] or "")
-    return q1("UPDATE nieuws_voorstellen SET beeld = %s, beeld_bron = %s, beeld_fout = %s, bijgewerkt = now() WHERE id = %s RETURNING *",
-              (png, bron, fout or None, v["id"]))
+    """Een beeld maken: AI-sfeerbeeld met huisstijl, of het huisstijlbeeld (als AI uit staat, gevraagd is of het budget op is)."""
+    i = inst()
+    ai = not zonder_ai and i["kn_ai_beeld"] == "1" and bool(ai_beeld.aanbieder())
+    melding = ""
+    if ai and budget_op(i):
+        ai, melding = False, "Het maandbudget is op, dus het huisstijlbeeld."
+    png, bron, fout = ai_beeld.maak(v["titel"] or "", v["beeld_scene"] or "", v["sport"] or "", v["kernzin"] or "", ai=ai)
+    beelden = dict(v.get("beelden") or {})
+    if bron.startswith("ai-"):
+        beelden[bron[3:]] = int(beelden.get(bron[3:], 0)) + 1
+    return q1("""UPDATE nieuws_voorstellen SET beeld = %s, beeld_bron = %s, beeld_fout = %s, beelden = %s, bijgewerkt = now()
+                 WHERE id = %s RETURNING *""", (png, bron, (fout or melding) or None, json.dumps(beelden), v["id"]))
 
 
 # ---------------------------------------------------------------- Telegram
@@ -411,6 +481,8 @@ def ronde(forceer=False):
         ruimte = min(_getal(i, "kn_per_ronde"), _getal(i, "kn_per_dag") - vandaag_gemaakt())
         if ruimte <= 0:
             return "dagmaximum bereikt"
+        if budget_op(i):
+            return f"maandbudget op (€ {kosten_maand()[0]:.2f} van € {i['kn_budget']})"
         gemaakt = []
         for verhaal in kandidaten(i)[:ruimte]:
             gemaakt.append(maak_voorstel(verhaal))
@@ -437,6 +509,7 @@ def _terug(pad, melding="", fout=""):
 
 def _rij(v):
     v = dict(v)
+    v["kosten"] = kosten_voorstel(v)
     v["bronnen"] = v.get("bronnen") or []
     v["heeft_beeld"] = v.pop("beeld", None) is not None
     return v
@@ -453,14 +526,22 @@ def overzicht(request: Request, melding: str = "", fout: str = ""):
     return templates.TemplateResponse("keepersnieuws.html", ctx(
         request, pagina="keepersnieuws", rijen=rijen, i=inst(), tel=tel, redenen=redenen, categorieen=CATEGORIEEN, redenen_namen=REDENEN,
         statussen=STATUSSEN, aanbieder=ai_beeld.aanbieder(), telegram_actief=telegram.actief(), telegram_status=telegram.STATUS,
-        wp_actief=wp.wp_actief(), claude_actief=claude_api.actief(), vandaag=vandaag_gemaakt(), melding=melding, fout=fout))
+        wp_actief=wp.wp_actief(), claude_actief=claude_api.actief(), vandaag=vandaag_gemaakt(), maand=kosten_maand(),
+        budget_op=budget_op(), melding=melding, fout=fout))
 
 
 @router.post("/keepersnieuws/instellingen")
 def instellingen_opslaan(request: Request, kn_aan: str = Form(""), kn_drempel: int = Form(60), kn_per_dag: int = Form(5),
-                         kn_per_ronde: int = Form(2), kn_richtlijnen: str = Form(""), kn_zoeken: int = Form(2)):
+                         kn_per_ronde: int = Form(2), kn_richtlijnen: str = Form(""), kn_zoeken: int = Form(2), kn_budget: str = Form("15"),
+                         kn_ai_beeld: str = Form(""), kn_voorselectie: str = Form("")):
     controleer_herkomst(request)
     zet("kn_aan", "1" if kn_aan else "0")
+    zet("kn_ai_beeld", "1" if kn_ai_beeld else "0")
+    zet("kn_voorselectie", "1" if kn_voorselectie else "0")
+    try:
+        zet("kn_budget", f"{max(0.0, min(500.0, float(kn_budget.replace(',', '.')))):g}")
+    except ValueError:
+        pass
     zet("kn_drempel", max(0, min(100, kn_drempel)))
     zet("kn_per_dag", max(0, min(20, kn_per_dag)))
     zet("kn_per_ronde", max(1, min(5, kn_per_ronde)))
