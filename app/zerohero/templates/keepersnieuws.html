@@ -23,6 +23,7 @@
     <span class="kn-regel"><span class="badge kn-status-{{ v.status }}">{{ statussen.get(v.status, v.status) }}</span>
       {% if v.categorie %}<span class="badge">{{ categorieen.get(v.categorie, v.categorie) }}</span>{% endif %}
       {% if v.sport %}<span class="badge">{{ v.sport }}</span>{% endif %}
+      {% if v.gevoelig %}<span class="badge badge-gevoelig">gevoelig</span>{% endif %}
       <span class="tijd">{{ geleden(v.aangemaakt) }}{% if v.kosten >= 0.005 %} · € {{ '%.2f' | format(v.kosten) | replace('.', ',') }}{% endif %}</span></span>
     <b>{{ v.titel or ('Nieuws over ' ~ (v.keepers | join(', ')) if v.keepers else 'Voorstel ' ~ v.id) }}</b>
     <span class="noot">{% if v.status == 'overgeslagen' %}{{ v.oordeel }}{% elif v.besluit == 'afgewezen' and v.reden %}Reden: {{ redenen_namen.get(v.reden, v.reden) }}{% if v.toelichting %}, {{ v.toelichting }}{% endif %}{% elif v.fout %}{{ v.fout }}{% else %}{{ v.intro }}{% endif %}</span>

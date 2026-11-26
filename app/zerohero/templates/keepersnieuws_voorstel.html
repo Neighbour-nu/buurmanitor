@@ -8,6 +8,7 @@
   {{ geleden(v.aangemaakt) }}{% if v.besloten_via %}, besloten via {{ v.besloten_via }}{% endif %}{% if v.wp_link %} · <a href="{{ v.wp_link }}" target="_blank" rel="noopener">bekijk in WordPress of op de site</a>{% endif %}</p>
 {% if melding %}<p class="melding ok">{{ melding }}</p>{% endif %}
 {% if fout %}<p class="melding fout">⚠️ {{ fout }}</p>{% endif %}
+{% if v.gevoelig %}<p class="melding herinnering">⚠️ Gevoelig onderwerp (overlijden, ziekte of iets persoonlijks): lees extra goed na of feiten, toon en kop kloppen voor je plaatst.</p>{% endif %}
 {% if v.oordeel %}<p class="noot">Buurmanitor: {{ v.oordeel }}</p>{% endif %}
 
 <div class="kn-werk">

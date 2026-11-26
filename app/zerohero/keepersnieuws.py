@@ -52,10 +52,12 @@ MIGRATIES = [
     "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS tokens_in_snel int",
     "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS tokens_out_snel int",
     "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS beelden jsonb NOT NULL DEFAULT '{}'",
+    "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS gevoelig boolean NOT NULL DEFAULT false",
 ]
 SNEL = os.environ.get("ZEROHERO_KN_SNEL_MODEL", "claude-haiku-4-5")
 
-CATEGORIEEN = {"transfer": "Transfer", "prestatie": "Unieke prestatie", "statistiek": "Record of statistiek", "groot": "Groot in het nieuws"}
+CATEGORIEEN = {"transfer": "Transfer", "prestatie": "Unieke prestatie", "statistiek": "Record of statistiek", "groot": "Groot in het nieuws",
+               "memoriam": "In memoriam"}
 REDENEN = {"geen_nieuws": "Geen echt nieuws", "niet_relevant": "Niet interessant voor ZEROHERO", "klopt_niet": "Klopt niet of te dun",
            "oud": "Te laat, al oud nieuws", "dubbel": "Al eerder gebracht", "tekst": "Tekst of kop niet goed", "beeld": "Beeld niet goed"}
 STATUSSEN = {"bezig": "Wordt geschreven", "klaar": "Klaar", "verstuurd": "Wacht op jou", "geplaatst": "Geplaatst", "later": "Concept in WordPress",
@@ -137,8 +139,9 @@ Wat in de sectie hoort (categorie):
 - transfer: een keeper verruilt van club, tekent bij, wordt verhuurd, of een grote transfer is officieel.
 - prestatie: een unieke prestatie (wedstrijd beslist, penalty's gestopt, historische clean sheet, eerste keer ooit).
 - statistiek: een record of mijlpaal in cijfers (aantal clean sheets, reddingspercentage, wedstrijden, jubileum).
-- groot: een keeper is om een andere reden groot in het nieuws (blessure van een sleutelkeeper, selectie, afscheid,
-  ophef, prijs). Geen roddel of privézaken.
+- groot: een keeper is om een andere reden groot in het nieuws (blessure of ernstige ziekte van een bekende keeper,
+  selectie, afscheid, ophef, prijs). Geen roddel of privézaken.
+- memoriam: een bekende (oud-)keeper is overleden. Dat is nieuws voor ZEROHERO en hoort er altijd bij.
 Niet: berichten waarin de keeper bijzaak is, voorbeschouwingen zonder nieuws, gokken, geruchten zonder betrouwbare bron,
 en verhalen die al ouder zijn dan een paar dagen.
 
@@ -153,11 +156,18 @@ Schrijfregels (ZEROHERO-stijl):
 - Kop: kort, feitelijk en prikkelend, met de naam van de keeper; geen vraag. Intro: één of twee zinnen met de kern.
   Tekst: drie tot vijf korte alinea's (150 tot 300 woorden), met waar het past het keepersperspectief of een
   Nederlandse haak. Geen tussenkoppen, geen hashtags.
-- Gevoelige onderwerpen (ziekte, overlijden, depressie, verslaving): niet zelf schrijven, zet geschikt op false.
+- Overlijden en ernstige ziekte: wel brengen, met respect en ingehouden. Bij overlijden: wie, wanneer, op welke leeftijd,
+  en wat de keeper betekende (clubs, prestaties, wat hem of haar bijzonder maakte); sluit af met een korte, waardige zin.
+  Geen speculatie over de oorzaak, alleen wat familie, club of bond naar buiten bracht. Geen dramatische kop: zakelijk
+  en waardig ("Oud-keeper Jan Jansen (78) overleden"). Bij ziekte: alleen wat de keeper of de club zelf meldde.
+- Zelfdoding, depressie of verslaving: geen methode, omstandigheden of plaats; geen simpele oorzaak; noem depressie een
+  ziekte; zet aan het eind: "Denk je aan zelfdoding? Praat erover: bel 113 of 0800-0113, of chat via 113.nl."
+- Zet "gevoelig" op true bij overlijden, ernstige ziekte en de onderwerpen hierboven, zodat Martijn extra goed kijkt.
+- Beeld bij gevoelig nieuws: ingetogen en stil (een leeg doel in avondlicht, handschoenen op het gras), geen dramatiek.
 
 Antwoord ALLEEN met JSON:
 {"geschikt": true/false, "oordeel": "een zin: waarom wel of niet, met het leerpunt uit eerdere besluiten als dat meespeelt",
- "categorie": "transfer|prestatie|statistiek|groot", "titel": "...", "intro": "...", "tekst": "alinea's gescheiden door een lege regel",
+ "categorie": "transfer|prestatie|statistiek|groot|memoriam", "gevoelig": true/false, "titel": "...", "intro": "...", "tekst": "alinea's gescheiden door een lege regel",
  "kernzin": "de sterkste zin van hooguit 12 woorden, voor het beeld", "keepers": ["..."], "sport": "voetbal|handbal|hockey|ijshockey|waterpolo",
  "beeld_scene": "Engelse beschrijving van een sfeerbeeld zonder herkenbare personen, tekst, logo's of nummers, passend bij sport en nieuws",
  "bronnen": [{"titel": "...", "url": "..."}]}"""
@@ -189,7 +199,8 @@ def schoon_antwoord(j):
     bronnen = [{"titel": _schoon(b.get("titel"), 150), "url": str(b.get("url"))[:500]} for b in (j.get("bronnen") or [])
                if isinstance(b, dict) and str(b.get("url") or "").startswith(("http://", "https://"))][:6]
     geschikt = bool(j.get("geschikt")) and bool(str(j.get("titel") or "").strip()) and bool(tekst)
-    return {"geschikt": geschikt, "oordeel": _schoon(j.get("oordeel"), 400), "categorie": cat, "titel": _schoon(j.get("titel"), 160),
+    return {"geschikt": geschikt, "oordeel": _schoon(j.get("oordeel"), 400), "categorie": cat,
+            "gevoelig": bool(j.get("gevoelig")) or cat == "memoriam", "titel": _schoon(j.get("titel"), 160),
             "intro": _schoon(j.get("intro"), 400), "tekst": tekst[:6000], "kernzin": _schoon(j.get("kernzin"), 120),
             "keepers": [_schoon(k, 80) for k in (j.get("keepers") or []) if str(k).strip()][:5],
             "sport": str(j.get("sport") or "")[:20].lower(), "beeld_scene": str(j.get("beeld_scene") or "")[:800], "bronnen": bronnen}
@@ -228,10 +239,11 @@ def budget_op(i=None):
 
 VOORSELECTIE = """Je bent de eindredacteur van ZEROHERO, een platform over keepers en goalies (voetbal, handbal, hockey, ijshockey,
 waterpolo). Beoordeel snel of dit nieuws in de sectie Keepersnieuws hoort: een keeper wisselt van club (transfer), levert een
-unieke prestatie, haalt een record of statistische mijlpaal, of is om een andere reden groot in het nieuws. Niet: de keeper
-is bijzaak, voorbeschouwingen, geruchten zonder betrouwbare bron, oud nieuws, gevoelige onderwerpen (ziekte, overlijden).
+unieke prestatie, haalt een record of statistische mijlpaal, of is om een andere reden groot in het nieuws (ook een
+ernstige blessure of ziekte van een bekende keeper). Het overlijden van een bekende (oud-)keeper hoort er altijd bij
+(categorie memoriam). Niet: de keeper is bijzaak, voorbeschouwingen, geruchten zonder betrouwbare bron, oud nieuws, roddel.
 Houd rekening met wat Martijn eerder besliste en met zijn richtlijnen.
-Antwoord ALLEEN met JSON: {"geschikt": true/false, "categorie": "transfer|prestatie|statistiek|groot", "oordeel": "een zin waarom"}"""
+Antwoord ALLEEN met JSON: {"geschikt": true/false, "categorie": "transfer|prestatie|statistiek|groot|memoriam", "oordeel": "een zin waarom"}"""
 
 
 def voorselectie(verhaal, leer):
@@ -266,10 +278,10 @@ def maak_voorstel(verhaal):
             a["bronnen"] = [{"titel": x.get("bron") or x.get("titel") or "Bron", "url": x["url"]} for x in verhaal.get("leden") or [] if x.get("url")][:3]
         status = "klaar" if a["geschikt"] else "overgeslagen"
         v = q1("""UPDATE nieuws_voorstellen SET status = %s, categorie = %s, titel = %s, intro = %s, tekst = %s, kernzin = %s,
-                  beeld_scene = %s, bronnen = %s, oordeel = %s, keepers = %s, sport = coalesce(nullif(%s, ''), sport),
+                  beeld_scene = %s, bronnen = %s, oordeel = %s, keepers = %s, sport = coalesce(nullif(%s, ''), sport), gevoelig = %s,
                   tokens_in = %s, tokens_out = %s, zoekopdrachten = %s, bijgewerkt = now() WHERE id = %s RETURNING *""",
                (status, a["categorie"], a["titel"], a["intro"], a["tekst"], a["kernzin"], a["beeld_scene"], json.dumps(a["bronnen"]),
-                a["oordeel"], a["keepers"] or list(verhaal.get("keepers") or []), a["sport"], usage.get("input_tokens"),
+                a["oordeel"], a["keepers"] or list(verhaal.get("keepers") or []), a["sport"], a["gevoelig"], usage.get("input_tokens"),
                 usage.get("output_tokens"), usage.get("zoekopdrachten"), v["id"]))
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
@@ -309,14 +321,15 @@ def bericht_tekst(v, slot=""):
     """De tekst van het Telegram-bericht (HTML). Pure functie."""
     e = telegram.e
     bronnen = " · ".join(f'<a href="{html.escape(b["url"])}">{e(b["titel"] or "bron")}</a>' for b in (v.get("bronnen") or [])[:4])
-    delen = [f"<b>{e(v['titel'])}</b>", f"<i>{e(v['intro'])}</i>" if v.get("intro") else "", e(v.get("tekst") or ""),
+    delen = ["⚠️ <b>Gevoelig onderwerp</b>: lees extra goed na voor je plaatst." if v.get("gevoelig") else "",
+             f"<b>{e(v['titel'])}</b>", f"<i>{e(v['intro'])}</i>" if v.get("intro") else "", e(v.get("tekst") or ""),
              f"Bronnen: {bronnen}" if bronnen else "",
              f"<i>{e(CATEGORIEEN.get(v.get('categorie'), ''))} · {e(v.get('sport') or '')} · score {v.get('score') or '?'}. {e(v.get('oordeel') or '')}</i>",
              f'<a href="{link(v["id"])}">Aanpassen in de Doellijn</a>', slot]
     tekst = "\n\n".join(d for d in delen if d)
     if len(tekst) > 4000:  # te lang voor Telegram: de tekst inkorten, de rest staat in de Doellijn
         kort = e((v.get("tekst") or "")[:2500].rsplit(" ", 1)[0]) + " (...)"
-        tekst = "\n\n".join(d for d in delen[:2] + [kort] + delen[3:] if d)
+        tekst = "\n\n".join(d for d in delen[:3] + [kort] + delen[4:] if d)
     return tekst
 
 

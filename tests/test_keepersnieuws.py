@@ -52,6 +52,11 @@ def test_schoon_antwoord():
     assert not kn.schoon_antwoord(ANTWOORD | {"geschikt": False})["geschikt"]
     with pytest.raises(ValueError):
         kn.schoon_antwoord([1])
+    m = kn.schoon_antwoord(ANTWOORD | {"categorie": "memoriam", "titel": "Oud-keeper Jan Jansen (78) overleden"})
+    assert m["geschikt"] and m["categorie"] == "memoriam" and m["gevoelig"]  # overlijden is altijd gevoelig
+    assert not kn.schoon_antwoord(ANTWOORD)["gevoelig"] and kn.schoon_antwoord(ANTWOORD | {"gevoelig": True})["gevoelig"]
+    assert "Het overlijden van een bekende (oud-)keeper hoort er altijd bij" in kn.VOORSELECTIE and "memoriam" in kn.SYSTEEM
+    assert "113" in kn.SYSTEEM and "niet zelf schrijven" not in kn.SYSTEEM
 
 
 def test_inhoud_en_telegramtekst():
@@ -62,6 +67,9 @@ def test_inhoud_en_telegramtekst():
     t = kn.bericht_tekst(v, "slot")
     assert t.startswith("<b>Kop &lt;b&gt;</b>") and "Unieke prestatie · hockey · score 81" in t and t.endswith("slot")
     assert "/zerohero/keepersnieuws/7" in t
+    assert kn.bericht_tekst(v | {"gevoelig": True}).startswith("⚠️ <b>Gevoelig onderwerp</b>")
+    lang = kn.bericht_tekst(v | {"tekst": "woord " * 1500, "gevoelig": True})
+    assert lang.startswith("⚠️") and "<b>Kop &lt;b&gt;</b>" in lang
     lang = kn.bericht_tekst(v | {"tekst": "woord " * 1500})
     assert len(lang) <= 4096 and "(...)" in lang
 
