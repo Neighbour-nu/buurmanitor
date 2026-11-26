@@ -74,6 +74,25 @@ MIGRATIES = [
     "ALTER TABLE concepten ADD COLUMN IF NOT EXISTS controle_fout text",
     "ALTER TABLE concepten ADD COLUMN IF NOT EXISTS instructie text",
     "ALTER TABLE concepten ADD COLUMN IF NOT EXISTS gepubliceerd_op timestamptz",
+    # Dubbele berichten (hetzelfde bericht via een andere feed): dezelfde kop zonder bronnaam, of dezelfde link.
+    # doellijn_kop() doet in SQL wat titel_sleutel() hieronder in Python doet. items_uniek laat van elk bericht alleen
+    # het eerste exemplaar van de afgelopen week zien; de Ochtendbriefing in n8n leest daaruit.
+    r"""CREATE OR REPLACE FUNCTION doellijn_kop(t text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
+        SELECT CASE WHEN length(k) >= 20 THEN k END FROM (
+          SELECT btrim(regexp_replace(regexp_replace(btrim(lower(coalesce(t, ''))), '\s+[-|–—]\s+[^-|–—]{2,40}$', ''),
+                                      '[^0-9a-zà-ÿ]+', ' ', 'g')) AS k) x $$""",
+    "CREATE INDEX IF NOT EXISTS items_kop ON items (doellijn_kop(titel))",
+    "CREATE INDEX IF NOT EXISTS items_url ON items (url)",
+    """CREATE OR REPLACE VIEW items_uniek AS
+        SELECT i.* FROM items i WHERE NOT EXISTS (
+          SELECT 1 FROM items o WHERE o.id <> i.id AND o.binnen > i.binnen - interval '7 days'
+            AND (o.binnen < i.binnen OR (o.binnen = i.binnen AND o.id < i.id))
+            AND (o.url = i.url OR doellijn_kop(o.titel) = doellijn_kop(i.titel)))""",
+    """DO $$ DECLARE r record; BEGIN
+        FOR r IN SELECT DISTINCT grantee FROM information_schema.role_table_grants
+                 WHERE table_name = 'items' AND privilege_type = 'SELECT' AND grantee NOT IN (current_user, 'PUBLIC') LOOP
+          EXECUTE format('GRANT SELECT ON items_uniek TO %I', r.grantee);
+        END LOOP; END $$""",
 ]
 
 

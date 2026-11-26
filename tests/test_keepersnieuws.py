@@ -466,3 +466,16 @@ def test_zelfde_bericht_via_andere_feed_niet_opnieuw(nep, klant):
             (9011, 'Google News', 'https://news.google.com/y', 'New series spotlights the NHL goalie mental health crisis - ESPN', now(), 'ijshockey', '{}', 80, 'Serie.', 'nieuw')
             RETURNING 1""")
     assert not any(9011 in [lid.get("miniflux_id") for lid in v["leden"]] for v in kn.kandidaten())
+
+
+def test_items_uniek_voor_de_ochtendbriefing(nep, klant):
+    from app.zerohero.main import titel_sleutel  # pylint: disable=import-outside-toplevel
+    for t in ("New series spotlights the NHL goalie mental health crisis - NHL.com", "Zó hield Bijlów de nul! | NOS", "Kort", ""):
+        assert (kn.q1("SELECT doellijn_kop(%s) AS k", (t,))["k"] or "") == titel_sleutel({"titel": t})
+    kn.q("""INSERT INTO items (miniflux_id, bron, url, titel, binnen, score, status) VALUES
+            (9020, 'NHL', 'https://nhl.com/a', 'New series spotlights the NHL goalie mental health crisis', now() - interval '2 days', 70, 'nieuw'),
+            (9021, 'GN', 'https://news.google.com/b', 'New series spotlights the NHL goalie mental health crisis - ESPN', now(), 70, 'nieuw'),
+            (9022, 'X', 'https://nhl.com/a', 'Totaal andere kop over dezelfde link hier', now(), 70, 'nieuw'),
+            (9023, 'Y', 'https://y.nl/c', 'Een heel ander bericht over een keeper', now(), 70, 'nieuw') RETURNING 1""")
+    uniek = {r["miniflux_id"] for r in kn.q("SELECT miniflux_id FROM items_uniek WHERE miniflux_id BETWEEN 9020 AND 9029")}
+    assert uniek == {9020, 9023}
