@@ -12,7 +12,7 @@
 {% if not telegram_actief %}<p class="melding herinnering">Telegram is niet ingesteld: voorstellen staan dan alleen hieronder. Je ZEROHERO Doellijn-bot instellen:
   <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh telegram</code></p>
 {% elif telegram_status.conflict and i.kn_via_n8n != '1' %}<p class="melding herinnering">Telegram: {{ telegram_status.fout }} Wil je gewone tikknoppen? Laat n8n de tikken doorsturen met <code>bash ~/buurmanitor/app/deploy/n8n-telegram.sh</code> op de server.</p>
-{% elif telegram_status.fout %}<p class="melding fout">⚠️ Telegram: {{ telegram_status.fout }}</p>{% endif %}
+{% elif telegram_status.fout and not (telegram_status.conflict and i.kn_via_n8n == '1') %}<p class="melding fout">⚠️ Telegram: {{ telegram_status.fout }}</p>{% endif %}
 {% if budget_op %}<p class="melding herinnering">Het maandbudget voor keepersnieuws is op: er komen tot de volgende maand geen nieuwe voorstellen. Verhoog het bij Instellingen als je wilt.</p>{% endif %}
 {% if not aanbieder %}<p class="melding herinnering">Nog geen AI-beeldmaker: de berichten krijgen het huisstijlbeeld. Een sleutel instellen:
   <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh beeld</code></p>{% endif %}
@@ -58,6 +58,7 @@
     op basis van tokens, zoekopdrachten en beelden; de echte bedragen staan bij Anthropic en de beeldmaker.
     Vandaag {{ vandaag }} van de {{ i.kn_per_dag }} voorstellen gemaakt. Beeld: {{ {'openai': 'AI-sfeerbeeld van OpenAI', 'google': 'AI-sfeerbeeld van Google'}.get(aanbieder, 'huisstijlbeeld') }}.</p>
   <form method="post" action="/keepersnieuws/zoek"><button class="knop" type="submit" {{ 'disabled' if not claude_actief }}>Nu naar het nieuws kijken</button></form>
+  {% if rijen | selectattr('status', 'equalto', 'fout') | list %}<form method="post" action="/keepersnieuws/opnieuw"><button class="knop" type="submit" {{ 'disabled' if not claude_actief }}>Mislukte voorstellen opnieuw proberen</button></form>{% endif %}
   {% if tel %}
   <h3 class="kleinkop">Jouw besluiten per soort</h3>
   <table class="tabel"><tr><th>Soort</th><th>Geplaatst</th><th>Zelf bekeken</th><th>Niet geplaatst</th></tr>

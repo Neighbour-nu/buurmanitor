@@ -120,13 +120,30 @@ def gesprek(system, berichten, model=None, max_tokens=16000, zoeken=0, timeout=6
     return tekst, usage, bronnen
 
 
-def json_uit(tekst, eerste_sleutel=None):
-    """Haalt het JSON-object uit een antwoord (ook als er tekst omheen staat)."""
+def json_uit(tekst, eerste_sleutel=None, alle=False):
+    """Haalt het JSON-object uit een antwoord (ook als er tekst omheen staat, of als Claude er meer dan één gaf).
+    Met eerste_sleutel: het eerste object met die sleutel. alle=True: een lijst met alle losse objecten."""
     t = tekst.replace("```json", "").replace("```", "")
-    start = t.find('{"' + eerste_sleutel) if eerste_sleutel else -1
-    if start < 0:
-        start = t.find("{")
-    eind = t.rfind("}")
-    if start < 0 or eind <= start:
+    start = t.find("{")
+    if start < 0 or t.rfind("}") <= start:
         raise ValueError("Geen JSON in het antwoord van Claude.")
-    return json.loads(t[start:eind + 1])
+    dec, objecten, pos, fout = json.JSONDecoder(), [], start, None
+    while pos >= 0:
+        try:
+            o, eind = dec.raw_decode(t, pos)
+        except ValueError as e:
+            if not objecten and fout is None:
+                fout = e  # het eerste object is kapot (bijvoorbeeld afgebroken): dat moet de aanroeper weten
+                break
+            pos = t.find("{", pos + 1)
+            continue
+        if isinstance(o, dict):
+            objecten.append(o)
+        pos = t.find("{", eind)
+    if not objecten:
+        raise fout or ValueError("Geen JSON in het antwoord van Claude.")
+    if alle:
+        return objecten
+    if eerste_sleutel:
+        return next((o for o in objecten if eerste_sleutel in o), objecten[0])
+    return objecten[0]

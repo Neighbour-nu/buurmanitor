@@ -165,7 +165,7 @@ Schrijfregels (ZEROHERO-stijl):
 - Zet "gevoelig" op true bij overlijden, ernstige ziekte en de onderwerpen hierboven, zodat Martijn extra goed kijkt.
 - Beeld bij gevoelig nieuws: ingetogen en stil (een leeg doel in avondlicht, handschoenen op het gras), geen dramatiek.
 
-Antwoord ALLEEN met JSON:
+Antwoord ALLEEN met precies één JSON-object (de berichten samen zijn één verhaal; geen tekst ervoor of erna):
 {"geschikt": true/false, "oordeel": "een zin: waarom wel of niet, met het leerpunt uit eerdere besluiten als dat meespeelt",
  "categorie": "transfer|prestatie|statistiek|groot|memoriam", "gevoelig": true/false, "titel": "...", "intro": "...", "tekst": "alinea's gescheiden door een lege regel",
  "kernzin": "de sterkste zin van hooguit 12 woorden, voor het beeld", "keepers": ["..."], "sport": "voetbal|handbal|hockey|ijshockey|waterpolo",
@@ -243,7 +243,8 @@ unieke prestatie, haalt een record of statistische mijlpaal, of is om een andere
 ernstige blessure of ziekte van een bekende keeper). Het overlijden van een bekende (oud-)keeper hoort er altijd bij
 (categorie memoriam). Niet: de keeper is bijzaak, voorbeschouwingen, geruchten zonder betrouwbare bron, oud nieuws, roddel.
 Houd rekening met wat Martijn eerder besliste en met zijn richtlijnen.
-Antwoord ALLEEN met JSON: {"geschikt": true/false, "categorie": "transfer|prestatie|statistiek|groot|memoriam", "oordeel": "een zin waarom"}"""
+De berichten gaan samen over één verhaal: beoordeel dat verhaal als geheel.
+Antwoord ALLEEN met precies één JSON-object: {"geschikt": true/false, "categorie": "transfer|prestatie|statistiek|groot|memoriam", "oordeel": "een zin waarom"}"""
 
 
 def voorselectie(verhaal, leer):
@@ -251,8 +252,20 @@ def voorselectie(verhaal, leer):
     tekst, usage, _ = claude_api.gesprek(VOORSELECTIE, [{"role": "user", "content": _vraag(verhaal, leer).replace(
         "Beoordeel en schrijf. Controleer met de zoekfunctie het kernfeit (wie, welke club, welk cijfer) als dat kan.", "Beoordeel.")}],
         model=SNEL, max_tokens=400, timeout=120)
-    j = claude_api.json_uit(tekst)
-    return bool(j.get("geschikt")), (j.get("categorie") if j.get("categorie") in CATEGORIEEN else None), _schoon(j.get("oordeel"), 400), usage
+    return (*samenvoegen_selectie(claude_api.json_uit(tekst, alle=True)), usage)
+
+
+def samenvoegen_selectie(objecten):
+    """Soms beoordeelt het snelle model elk bericht apart: dan telt het als geschikt als er één geschikt is. Pure functie."""
+    objecten = [o for o in objecten if "geschikt" in o] or objecten
+    j = next((o for o in objecten if o.get("geschikt") is True), objecten[0])
+    return bool(j.get("geschikt") is True), (j.get("categorie") if j.get("categorie") in CATEGORIEEN else None), _schoon(j.get("oordeel"), 400)
+
+
+def kies_antwoord(objecten):
+    """Het antwoord uit de JSON-objecten van Claude: het laatste volledige (na het zoeken schrijft hij soms opnieuw). Pure functie."""
+    met = [o for o in objecten if "geschikt" in o] or objecten
+    return next((o for o in reversed(met) if o.get("tekst") and o.get("titel")), met[-1])
 
 
 
@@ -271,7 +284,7 @@ def maak_voorstel(verhaal):
                           ((verhaal.get("titel") or "")[:160], v["id"]))
         tekst, usage, bronnen = claude_api.gesprek(SYSTEEM, [{"role": "user", "content": _vraag(verhaal, leer)}],
                                                    max_tokens=6000, zoeken=_getal(inst(), "kn_zoeken"), timeout=300)
-        a = schoon_antwoord(claude_api.json_uit(tekst))
+        a = schoon_antwoord(kies_antwoord(claude_api.json_uit(tekst, alle=True)))
         gezien = {b["url"] for b in a["bronnen"]}
         a["bronnen"] += [b for b in bronnen if b["url"] not in gezien][:4]
         if not a["bronnen"]:
@@ -604,6 +617,17 @@ def nu_zoeken(request: Request):
                                             "in Telegram en hieronder.")
 
 
+@router.post("/keepersnieuws/opnieuw")
+def alles_opnieuw(request: Request):
+    """Alle mislukte voorstellen van de laatste 36 uur opnieuw: ze tellen dan weer mee bij de volgende ronde."""
+    controleer_herkomst(request)
+    n = len(q("""DELETE FROM nieuws_voorstellen WHERE status = 'fout' AND aangemaakt > now() - interval '36 hours' RETURNING 1"""))
+    if n:
+        threading.Thread(target=ronde, kwargs={"forceer": True}, name="keepersnieuws", daemon=True).start()
+    return _terug("/keepersnieuws", melding=f"{n} mislukte voorstel(len) worden opnieuw geprobeerd (binnen de grenzen per ronde en per dag)."
+                  if n else "Er zijn geen recente mislukte voorstellen.")
+
+
 @router.get("/keepersnieuws/{vid}", response_class=HTMLResponse)
 def voorstel(request: Request, vid: int, melding: str = "", fout: str = "", snel: str = ""):
     v = q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (vid,))
@@ -660,6 +684,24 @@ def voorstel_opslaan(request: Request, vid: int, titel: str = Form(...), intro: 
     if uitslag.startswith("Plaatsen lukte niet"):
         return _terug(f"/keepersnieuws/{vid}", fout=uitslag)
     return _terug(f"/keepersnieuws/{vid}", melding=uitslag)
+
+
+@router.post("/keepersnieuws/{vid}/opnieuw")
+def opnieuw(request: Request, vid: int):
+    """Een mislukt voorstel opnieuw laten schrijven (met dezelfde berichten)."""
+    controleer_herkomst(request)
+    v = q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (vid,))
+    if not v or v["status"] != "fout":
+        return _terug(f"/keepersnieuws/{vid}" if v else "/keepersnieuws", fout="Alleen een mislukt voorstel kan opnieuw.")
+    rijen = q("SELECT * FROM items WHERE id = ANY(%s) ORDER BY score DESC NULLS LAST", (v["item_ids"],))
+    if not rijen:
+        return _terug(f"/keepersnieuws/{vid}", fout="De berichten van dit voorstel zijn er niet meer.")
+    verhaal = clusteren([dict(r) for r in rijen])[0]
+    verhaal["ids"] = [r["id"] for r in rijen]
+    verhaal["leden"] = [dict(r) for r in rijen]
+    q("DELETE FROM nieuws_voorstellen WHERE id = %s RETURNING 1", (vid,))
+    threading.Thread(target=maak_voorstel, args=(verhaal,), name="keepersnieuws-opnieuw", daemon=True).start()
+    return _terug("/keepersnieuws", melding="Het voorstel wordt opnieuw geschreven. Het komt over een paar minuten in Telegram en hieronder.")
 
 
 @router.post("/keepersnieuws/{vid}/beeld")

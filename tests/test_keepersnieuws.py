@@ -60,6 +60,21 @@ def test_schoon_antwoord():
     assert "113" in kn.SYSTEEM and "niet zelf schrijven" not in kn.SYSTEEM
 
 
+def test_json_met_meer_objecten():
+    from app.zerohero import claude_api  # pylint: disable=import-outside-toplevel
+    twee = '{\n  "geschikt": false,\n  "categorie": "groot",\n  "oordeel": "Bericht 1"\n}\n\n{\n  "geschikt": true,\n  "categorie": "transfer",\n  "oordeel": "Bericht 2"\n}'
+    assert claude_api.json_uit(twee)["oordeel"] == "Bericht 1"  # vroeger: "Extra data"
+    assert kn.samenvoegen_selectie(claude_api.json_uit(twee, alle=True)) == (True, "transfer", "Bericht 2")
+    assert kn.samenvoegen_selectie([{"geschikt": False, "categorie": "x", "oordeel": "Nee"}]) == (False, None, "Nee")
+    tekst = 'Ik zoek het even na. {"geschikt": true, "titel": "Kort"} En nu het echte: {"geschikt": true, "titel": "T", "tekst": "A"} {naam}'
+    assert kn.kies_antwoord(claude_api.json_uit(tekst, alle=True))["tekst"] == "A"
+    assert claude_api.json_uit('x {"titels": [1]} {"a": 1}', "a") == {"a": 1}
+    with pytest.raises(ValueError):  # afgebroken: de aanroeper moet het weten (en kan laten repareren)
+        claude_api.json_uit('{"a": {"b": 1}, "c": [1, 2')
+    with pytest.raises(ValueError):
+        claude_api.json_uit("geen json")
+
+
 def test_inhoud_en_telegramtekst():
     v = {"id": 7, "titel": "Kop <b>", "intro": "Intro", "tekst": "Een.\n\nTwee & drie.", "bronnen": [{"titel": "Bron", "url": "https://x.nl/a?b=1&c=2"}],
          "categorie": "prestatie", "sport": "hockey", "score": 81, "oordeel": "Uniek."}
@@ -341,4 +356,27 @@ def test_tikken_via_n8n(nep, klant, monkeypatch):
     assert kn.q1("SELECT besluit FROM nieuws_voorstellen WHERE id = %s", (v["id"],))["besluit"] == "later"
     assert beantwoord[0][0] == "answerCallbackQuery" and beantwoord[0][1]["text"] == "Staat als concept in WordPress."
     assert klant.post("/intern/telegram", json={"update_id": 2}, headers={"X-Doellijn-Secret": "conceptgeheim"}).json()["verwerkt"] is False
-    assert "met tikknoppen die n8n doorstuurt" in klant.get("/zerohero/keepersnieuws", headers=KOP).text
+    monkeypatch.setitem(kn.BOT.status, "fout", "Op deze bot staat een webhook")
+    pagina = klant.get("/zerohero/keepersnieuws", headers=KOP).text
+    assert "met tikknoppen die n8n doorstuurt" in pagina and "Op deze bot staat een webhook" not in pagina
+
+
+def test_mislukt_opnieuw(nep, klant, monkeypatch):
+    import threading  # pylint: disable=import-outside-toplevel
+    from app.zerohero import claude_api  # pylint: disable=import-outside-toplevel
+    echt = claude_api.gesprek
+    monkeypatch.setattr(claude_api, "gesprek", lambda s, b, **kw: ("Geen JSON", {}, []) if s == kn.SYSTEEM else echt(s, b, **kw))
+    kn.ronde()
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'fout'")
+    assert v and "Opnieuw proberen" in klant.get(f"/zerohero/keepersnieuws/{v['id']}", headers=KOP).text
+    assert "Mislukte voorstellen opnieuw proberen" in klant.get("/zerohero/keepersnieuws", headers=KOP).text
+    monkeypatch.setattr(claude_api, "gesprek", echt)
+    r = klant.post(f"/zerohero/keepersnieuws/{v['id']}/opnieuw", headers=FORM, follow_redirects=True)
+    assert "wordt opnieuw geschreven" in r.text
+    for th in threading.enumerate():
+        if th.name == "keepersnieuws-opnieuw":
+            th.join(20)
+    nieuw = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
+    assert nieuw and sorted(nieuw["item_ids"]) == sorted(v["item_ids"]) and not kn.q1("SELECT 1 AS x FROM nieuws_voorstellen WHERE id = %s", (v["id"],))
+    r = klant.post("/zerohero/keepersnieuws/opnieuw", headers=FORM, follow_redirects=True)
+    assert r.status_code == 200 and "geen recente mislukte" in r.text
