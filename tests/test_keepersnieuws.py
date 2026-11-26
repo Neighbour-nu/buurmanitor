@@ -81,11 +81,11 @@ def test_inhoud_en_telegramtekst():
     h = kn.inhoud_html(v)
     assert '<p class="zh-intro"><strong>Intro</strong></p>' in h and "<p>Twee &amp; drie.</p>" in h and "https://x.nl/a?b=1&amp;c=2" in h
     t = kn.bericht_tekst(v, "slot")
-    assert t.startswith("<b>Kop &lt;b&gt;</b>") and "Unieke prestatie · hockey · score 81" in t and t.endswith("slot")
+    assert t.startswith("🧤 <b>Keepersnieuws</b> · Unieke prestatie\n\n<b>Kop &lt;b&gt;</b>") and "hockey · score 81" in t and t.endswith("slot")
     assert "/zerohero/keepersnieuws/7" in t
-    assert kn.bericht_tekst(v | {"gevoelig": True}).startswith("⚠️ <b>Gevoelig onderwerp</b>")
+    assert kn.bericht_tekst(v | {"gevoelig": True}).startswith("🧤 <b>Keepersnieuws</b> · Unieke prestatie\n\n⚠️ <b>Gevoelig onderwerp</b>")
     lang = kn.bericht_tekst(v | {"tekst": "woord " * 1500, "gevoelig": True})
-    assert lang.startswith("⚠️") and "<b>Kop &lt;b&gt;</b>" in lang
+    assert "⚠️ <b>Gevoelig" in lang and "<b>Kop &lt;b&gt;</b>" in lang
     lang = kn.bericht_tekst(v | {"tekst": "woord " * 1500})
     assert len(lang) <= 4096 and "(...)" in lang
 
@@ -219,16 +219,17 @@ def test_ronde_voorstel_en_plaatsen_via_telegram(nep, klant):
     assert kn.ronde() == "1 voorgesteld, 1 geen keepersnieuws"
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
     ids = {r["miniflux_id"]: r["id"] for r in kn.q("SELECT id, miniflux_id FROM items WHERE miniflux_id >= 9000")}
-    assert sorted(v["item_ids"]) == sorted([ids[9001], ids[9002]]) and v["categorie"] == "transfer" and "—" not in v["titel"] and v["beeld_bron"] == "huisstijl"
-    assert v["telegram_foto"] == 500 and v["telegram_tekst"] == 501 and v["tokens_in"] == 100
-    assert nep["telegram"][1][2] == kn.KNOPPEN(v["id"]) and "Bart Verbruggen tekent bij Ajax, voor vier jaar" in nep["telegram"][1][1]
+    assert sorted(v["item_ids"]) == sorted([ids[9001], ids[9002]]) and v["categorie"] == "transfer" and "—" not in v["titel"] and v["beeld"] is None  # nog geen beeld
+    assert v["telegram_foto"] is None and v["telegram_tekst"] == 500 and v["tokens_in"] == 100
+    assert len(nep["telegram"]) == 1 and nep["telegram"][0][0] == "tekst"  # één bericht per nieuws, zonder foto
+    assert nep["telegram"][0][2] == kn.KNOPPEN(v["id"]) and "Bart Verbruggen tekent bij Ajax, voor vier jaar" in nep["telegram"][0][1]
     over = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'overgeslagen'")
     assert over["oordeel"] == "Te klein nieuws." and over["item_ids"] == [ids[9003]] and over["tokens_in_snel"] == 1000
     assert len(nep["claude"]) == 1 and nep["snel"] == [kn.SNEL, kn.SNEL]  # het schrijfmodel alleen voor het geschikte verhaal
     assert "Iets kleins" not in "".join(nep["claude"])  # onder de drempel
     assert kn.ronde() == "geen nieuw keepersnieuws boven de drempel"  # niets dubbel
     # Plaatsen in Telegram: live in de categorie Keepersnieuws, met het beeld
-    uit = kn.op_knop(f"kn:{v['id']}:p", {"message_id": 501})
+    uit = kn.op_knop(f"kn:{v['id']}:p", {"message_id": 500})
     assert uit["toast"] == "Geplaatst op zerohero.one." and uit["knoppen"] == [] and "✅ <b>Geplaatst</b>" in uit["tekst"]
     post = next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts")  # eerst als concept, zoals de blogs
     assert post["status"] == "draft" and post["categories"] == [31, 32] and post["featured_media"] == 55 and "zh-intro" in post["content"]
@@ -238,6 +239,7 @@ def test_ronde_voorstel_en_plaatsen_via_telegram(nep, klant):
     assert kn.taak_hoofdcategorie(None) == "1 van 1 berichten" and kn.taak_hoofdcategorie(None) == "niets te doen"
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (v["id"],))
     assert v["besluit"] == "geplaatst" and v["wp_post_id"] == 777 and v["besloten_via"] == "telegram"
+    assert v["beeld_bron"] == "huisstijl" and any(x[0] == "upload" for x in nep["wp"])  # het beeld kwam bij het plaatsen
     assert kn.inst()["kn_categorie_id"] == "31"
     assert kn.op_knop(f"kn:{v['id']}:n", {})["toast"] == "Dit voorstel is al afgehandeld."
     # en de pagina's
@@ -255,7 +257,7 @@ def test_niet_plaatsen_met_reden_en_leren(nep, klant):
     uit = kn.op_knop(f"kn:{v['id']}:n", {})
     assert [r[0][1] for r in uit["knoppen"]][:2] == [f"kn:{v['id']}:r:geen_nieuws", f"kn:{v['id']}:r:niet_relevant"]
     kn.op_knop(f"kn:{v['id']}:r:oud", {})
-    assert kn.op_antwoord(501, "Transfers pas als het officieel is") == "Dank je, je toelichting is bewaard. Daar leer ik van."
+    assert kn.op_antwoord(500, "Transfers pas als het officieel is") == "Dank je, je toelichting is bewaard. Daar leer ik van."
     assert kn.op_antwoord(12345, "iets") is None
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (v["id"],))
     assert (v["besluit"], v["reden"], v["toelichting"]) == ("afgewezen", "oud", "Transfers pas als het officieel is")
@@ -309,7 +311,14 @@ def test_kosten_budget_en_beeldkeuze(nep, klant, monkeypatch):
     monkeypatch.setattr(ai_beeld, "sfeerbeeld", lambda scene, sport="": b.getvalue())
     kn.ronde()
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
-    assert v["beeld_bron"] == "ai-openai" and v["beelden"] == {"openai": 1}
+    assert v["beeld"] is None and v["beelden"] == {}  # geen beeld (en geen kosten) voor het plaatsen
+    # Plaatsen in Telegram met een AI-beeld: de tik krijgt meteen antwoord, het bericht wordt bijgewerkt als het klaar is
+    monkeypatch.setattr(kn, "_achtergrond", lambda f: f())
+    uit = kn.op_knop(f"kn:{v['id']}:p", {"message_id": 500})
+    assert uit["toast"] == "Even geduld: beeld maken en plaatsen." and uit["knoppen"] == [] and "⏳ <b>Bezig</b>" in uit["tekst"]
+    assert nep["bewerkt"][-1][0] == 500 and "✅ <b>Geplaatst</b>" in nep["bewerkt"][-1][1] and nep["bewerkt"][-1][2] == []
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (v["id"],))
+    assert v["beeld_bron"] == "ai-openai" and v["beelden"] == {"openai": 1} and v["besluit"] == "geplaatst"
     euro, aantal = kn.kosten_maand()
     assert aantal == 2 and 0.05 < euro < 0.2  # twee voorselecties, één bericht, één beeld
     r = klant.get("/zerohero/keepersnieuws", headers=KOP)
@@ -336,7 +345,7 @@ def test_linkknoppen_als_n8n_de_bot_bezet(nep, klant, monkeypatch):
     monkeypatch.setitem(kn.BOT.status, "conflict", True)
     kn.ronde()
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
-    knoppen = nep["telegram"][1][2]
+    knoppen = nep["telegram"][0][2]
     assert knoppen[0][0] == ("✅ Plaatsen", f"https://buurmanitor.neighbour.nu/zerohero/keepersnieuws/{v['id']}?snel=plaatsen")
     r = klant.get(f"/zerohero/keepersnieuws/{v['id']}?snel=plaatsen", headers=KOP)
     assert "Je koos in Telegram: <b>Plaatsen</b>" in r.text and "Ja, nu plaatsen" in r.text
@@ -354,10 +363,10 @@ def test_tikken_via_n8n(nep, klant, monkeypatch):
     kn.zet("kn_via_n8n", "1")
     kn.ronde()
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
-    assert nep["telegram"][1][2] == [[("✅ Plaatsen", f"kn:{v['id']}:p"), ("👀 Ik kijk zelf", f"kn:{v['id']}:l")], [("❌ Niet plaatsen", f"kn:{v['id']}:n")]]
+    assert nep["telegram"][0][2] == [[("✅ Plaatsen", f"kn:{v['id']}:p"), ("👀 Ik kijk zelf", f"kn:{v['id']}:l")], [("❌ Niet plaatsen", f"kn:{v['id']}:n")]]
     beantwoord = []
     monkeypatch.setattr(kn.BOT, "_vraag", lambda methode, data=None, timeout=30: beantwoord.append((methode, data)) or True)
-    update = {"update_id": 1, "callback_query": {"id": "cq1", "data": f"kn:{v['id']}:l", "message": {"message_id": 501, "chat": {"id": 4242}}}}
+    update = {"update_id": 1, "callback_query": {"id": "cq1", "data": f"kn:{v['id']}:l", "message": {"message_id": 500, "chat": {"id": 4242}}}}
     assert klant.post("/intern/telegram", json=update).status_code == 403  # zonder geheim
     r = klant.post("/intern/telegram", json=[{"body": update}], headers={"X-Doellijn-Secret": "conceptgeheim"})
     assert r.json() == {"ok": True, "verwerkt": True}

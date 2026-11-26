@@ -290,7 +290,8 @@ def kies_antwoord(objecten):
 
 
 def maak_voorstel(verhaal):
-    """Schrijven, beeld maken en (als het geschikt is) via Telegram melden. Geeft de rij terug."""
+    """Schrijven en (als het geschikt is) via Telegram melden. Geeft de rij terug. Het beeld komt pas bij plaatsen
+    (of als Martijn er in de Doellijn om vraagt): voor wat niet geplaatst wordt, kost een beeld alleen geld."""
     v = q1("""INSERT INTO nieuws_voorstellen (item_ids, keepers, sport, score) VALUES (%s, %s, %s, %s) RETURNING *""",
            (verhaal["ids"], list(verhaal.get("keepers") or []), verhaal.get("sport"), verhaal.get("score")))
     try:
@@ -322,7 +323,6 @@ def maak_voorstel(verhaal):
                   (str(e)[:400], v["id"]))
     if v["status"] != "klaar":
         return v
-    v = nieuw_beeld(v)
     return melden(v)
 
 
@@ -365,15 +365,16 @@ def bericht_tekst(v, slot=""):
     """De tekst van het Telegram-bericht (HTML). Pure functie."""
     e = telegram.e
     bronnen = " · ".join(f'<a href="{html.escape(b["url"])}">{e(b["titel"] or "bron")}</a>' for b in (v.get("bronnen") or [])[:4])
-    delen = ["⚠️ <b>Gevoelig onderwerp</b>: lees extra goed na voor je plaatst." if v.get("gevoelig") else "",
+    delen = [f"🧤 <b>Keepersnieuws</b> · {e(CATEGORIEEN.get(v.get('categorie'), ''))}",
+             "⚠️ <b>Gevoelig onderwerp</b>: lees extra goed na voor je plaatst." if v.get("gevoelig") else "",
              f"<b>{e(v['titel'])}</b>", f"<i>{e(v['intro'])}</i>" if v.get("intro") else "", e(v.get("tekst") or ""),
              f"Bronnen: {bronnen}" if bronnen else "",
-             f"<i>{e(CATEGORIEEN.get(v.get('categorie'), ''))} · {e(v.get('sport') or '')} · score {v.get('score') or '?'}. {e(v.get('oordeel') or '')}</i>",
+             f"<i>{e(v.get('sport') or 'sport onbekend')} · score {v.get('score') or '?'}. {e(v.get('oordeel') or '')}</i>",
              f'<a href="{link(v["id"])}">Aanpassen in de Doellijn</a>', slot]
     tekst = "\n\n".join(d for d in delen if d)
     if len(tekst) > 4000:  # te lang voor Telegram: de tekst inkorten, de rest staat in de Doellijn
         kort = e((v.get("tekst") or "")[:2500].rsplit(" ", 1)[0]) + " (...)"
-        tekst = "\n\n".join(d for d in delen[:3] + [kort] + delen[4:] if d)
+        tekst = "\n\n".join(d for d in delen[:4] + [kort] + delen[5:] if d)
     return tekst
 
 
@@ -381,12 +382,10 @@ def melden(v):
     if not BOT.actief():
         return q1("UPDATE nieuws_voorstellen SET status = 'verstuurd', fout = %s WHERE id = %s RETURNING *",
                   ("Telegram is niet ingesteld; het voorstel staat alleen in de Doellijn.", v["id"]))
-    try:
-        foto = BOT.stuur_foto(bytes(v["beeld"]), f"🧤 <b>Keepersnieuws</b> · {telegram.e(CATEGORIEEN.get(v['categorie'], ''))}\n"
-                                   f"{telegram.e(v['titel'])}", bestandsnaam=f"keepersnieuws-{v['id']}.png") if v.get("beeld") else {}
+    try:  # één bericht met de tekst en de knoppen; het beeld komt pas bij plaatsen
         tekst = BOT.stuur(bericht_tekst(v), KNOPPEN(v["id"]))
-        return q1("""UPDATE nieuws_voorstellen SET status = 'verstuurd', telegram_foto = %s, telegram_tekst = %s, fout = NULL
-                     WHERE id = %s RETURNING *""", (foto.get("message_id"), tekst.get("message_id"), v["id"]))
+        return q1("""UPDATE nieuws_voorstellen SET status = 'verstuurd', telegram_tekst = %s, fout = NULL
+                     WHERE id = %s RETURNING *""", (tekst.get("message_id"), v["id"]))
     except telegram.TelegramFout as e:
         return q1("UPDATE nieuws_voorstellen SET status = 'verstuurd', fout = %s WHERE id = %s RETURNING *",
                   (f"Telegram lukte niet: {e}", v["id"]))
@@ -414,6 +413,34 @@ def op_knop(data, bericht):
                 "knoppen": []}
     if v["besluit"] in ("geplaatst",):
         return {"toast": "Staat al op de site.", "knoppen": []}
+    if v["beeld"] is None and beeld_duurt(v):
+        # Een AI-beeld duurt even: de tik meteen beantwoorden en het bericht bijwerken als alles klaar is.
+        bid = bericht.get("message_id") or v["telegram_tekst"]
+
+        def klaar():
+            uit = na_tik(vid, actie)
+            try:
+                BOT.bewerk(bid, uit["tekst"], uit["knoppen"])
+            except telegram.TelegramFout:
+                pass
+        _achtergrond(klaar)
+        bezig = "beeld maken en plaatsen" if actie == "p" else "beeld maken en als concept in WordPress zetten"
+        return {"toast": f"Even geduld: {bezig}.", "tekst": bericht_tekst(v, f"⏳ <b>Bezig</b>: {bezig}..."), "knoppen": []}
+    return na_tik(vid, actie)
+
+
+def _achtergrond(functie):
+    threading.Thread(target=functie, name="keepersnieuws-plaatsen", daemon=True).start()
+
+
+def beeld_duurt(v):
+    """Wordt het een AI-beeld (dat duurt een halve minuut), of het snelle huisstijlbeeld?"""
+    i = inst()
+    return v["beeld"] is None and not v.get("wp_media_id") and i["kn_ai_beeld"] == "1" and bool(ai_beeld.aanbieder()) and not budget_op(i)
+
+
+def na_tik(vid, actie):
+    """Plaatsen (p) of als concept (l) na een tik in Telegram; geeft toast, tekst en knoppen voor het bericht."""
     uitslag = besluit(vid, "geplaatst" if actie == "p" else "later", via="telegram")
     v = q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (vid,))
     if v["fout"] and not v["wp_post_id"]:
@@ -488,6 +515,8 @@ def plaats(v, live=True):
         raise RuntimeError("De Doellijn heeft geen WordPress-gegevens (deploy/zerohero-sleutel.sh wordpress).")
     if not v["wp_post_id"]:
         media_id = v.get("wp_media_id")
+        if v.get("beeld") is None and not media_id:  # het beeld wordt pas gemaakt als het bericht ook echt naar de site gaat
+            v = nieuw_beeld(v)
         if v.get("beeld") and not media_id:
             media_id, _ = wp.upload(bytes(v["beeld"]), f"{_slug(v['titel'])}.png", alt=v["titel"] or "",
                                     bijschrift="Beeld: ZEROHERO" + (" (AI-sfeerbeeld)" if (v["beeld_bron"] or "").startswith("ai") else ""))
