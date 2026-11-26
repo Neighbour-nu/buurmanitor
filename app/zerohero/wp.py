@@ -3,6 +3,7 @@ import base64
 import json
 import os
 import re
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -16,6 +17,50 @@ def wp_actief():
     return bool(WP_USER and WP_APP_PASSWORD)
 
 
+class WpFout(urllib.error.HTTPError):
+    """Een fout van WordPress, met de stap en de melding van WordPress erbij (blijft een HTTPError met .code)."""
+
+    def __init__(self, e, methode, pad, inhoud):
+        super().__init__(e.url, e.code, e.reason, e.headers, None)
+        self.methode, self.pad, self.melding = methode, pad, melding_uit(inhoud)
+
+    def __str__(self):
+        return f"WordPress gaf {self.code} bij {stap(self.methode, self.pad)}" + (f": {self.melding}" if self.melding else "")
+
+
+def stap(methode, pad):
+    """Een leesbare naam voor een WordPress-aanroep. Pure functie."""
+    p = pad.split("?")[0]
+    if p == "/wp/v2/media":
+        return "het beeld uploaden"
+    if p.startswith("/wp/v2/media/"):
+        return "de beschrijving van het beeld"
+    if p == "/wp/v2/posts":
+        return "het bericht aanmaken" if methode == "POST" else "berichten opvragen"
+    if p.startswith("/wp/v2/posts/"):
+        return "het bericht bijwerken of publiceren" if methode == "POST" else "het bericht opvragen"
+    if p.startswith("/wp/v2/categories"):
+        return "de categorie"
+    return f"{methode} {p}"
+
+
+def melding_uit(inhoud):
+    """De melding uit een foutantwoord van WordPress (JSON of HTML), kort en zonder opmaak. Pure functie."""
+    tekst = (inhoud or b"").decode("utf-8", "replace") if isinstance(inhoud, (bytes, bytearray)) else str(inhoud or "")
+    try:
+        j = json.loads(tekst)
+    except ValueError:
+        j = None
+    delen = []
+    if isinstance(j, dict):
+        delen = [str(j.get("message") or ""), str(((j.get("data") or {}).get("error") or {}).get("message") or "")
+                 if isinstance(j.get("data"), dict) and isinstance(j["data"].get("error"), dict) else "", str(j.get("code") or "")]
+    else:
+        delen = [tekst]
+    schoon = [re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", d)).strip() for d in delen]
+    return " · ".join(d for d in schoon if d)[:300]
+
+
 def _wp(methode, pad, data=None, headers=None, ruw=False, timeout=60):
     token = base64.b64encode(f"{WP_USER}:{WP_APP_PASSWORD}".encode()).decode()
     h = {"Authorization": "Basic " + token, "User-Agent": UA}
@@ -25,14 +70,24 @@ def _wp(methode, pad, data=None, headers=None, ruw=False, timeout=60):
         data = json.dumps(data).encode()
         h["Content-Type"] = "application/json"
     req = urllib.request.Request(WP_URL + "/wp-json" + pad, data=data, headers=h, method=methode)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read() or b"null")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read() or b"null")
+    except urllib.error.HTTPError as e:
+        try:
+            inhoud = e.read()[:20000]
+        except Exception:  # noqa: BLE001
+            inhoud = b""
+        raise WpFout(e, methode, pad, inhoud) from None
 
 
 def upload(png_of_jpg, bestandsnaam, alt="", bijschrift="", mime="image/png"):
     m = _wp("POST", "/wp/v2/media", data=png_of_jpg, ruw=True,
             headers={"Content-Type": mime, "Content-Disposition": f'attachment; filename="{bestandsnaam}"'})
-    _wp("POST", f"/wp/v2/media/{m['id']}", data={"alt_text": alt[:250], "caption": bijschrift})
+    try:  # alt-tekst en bijschrift: fijn, maar niet nodig om verder te kunnen
+        _wp("POST", f"/wp/v2/media/{m['id']}", data={"alt_text": alt[:250], "caption": bijschrift})
+    except WpFout:
+        pass
     return m["id"], m.get("source_url", "")
 
 

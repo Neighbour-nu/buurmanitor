@@ -223,8 +223,9 @@ def test_ronde_voorstel_en_plaatsen_via_telegram(nep, klant):
     # Plaatsen in Telegram: live in de categorie Keepersnieuws, met het beeld
     uit = kn.op_knop(f"kn:{v['id']}:p", {"message_id": 501})
     assert uit["toast"] == "Geplaatst op zerohero.one." and uit["knoppen"] == [] and "✅ <b>Geplaatst</b>" in uit["tekst"]
-    post = next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts")
-    assert post["status"] == "publish" and post["categories"] == [31] and post["featured_media"] == 55 and "zh-intro" in post["content"]
+    post = next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts")  # eerst als concept, zoals de blogs
+    assert post["status"] == "draft" and post["categories"] == [31] and post["featured_media"] == 55 and "zh-intro" in post["content"]
+    assert next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts/777")["status"] == "publish"  # daarna publiceren
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (v["id"],))
     assert v["besluit"] == "geplaatst" and v["wp_post_id"] == 777 and v["besloten_via"] == "telegram"
     assert kn.inst()["kn_categorie_id"] == "31"
@@ -380,3 +381,40 @@ def test_mislukt_opnieuw(nep, klant, monkeypatch):
     assert nieuw and sorted(nieuw["item_ids"]) == sorted(v["item_ids"]) and not kn.q1("SELECT 1 AS x FROM nieuws_voorstellen WHERE id = %s", (v["id"],))
     r = klant.post("/zerohero/keepersnieuws/opnieuw", headers=FORM, follow_redirects=True)
     assert r.status_code == 200 and "geen recente mislukte" in r.text
+
+
+def test_wordpress_fout_bij_publiceren(nep, klant, monkeypatch):
+    """Een plugin geeft een 500 bij publiceren: staat het toch live, dan is het goed; anders een duidelijke melding,
+    en opnieuw proberen maakt geen tweede beeld of bericht."""
+    import io as _io  # pylint: disable=import-outside-toplevel
+    import urllib.error  # pylint: disable=import-outside-toplevel
+    from app.zerohero import wp  # pylint: disable=import-outside-toplevel
+    kn.ronde()
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
+    staat = {"live": False, "geplaatst": 0}
+    oud = wp._wp
+
+    def fout_bij_publiceren(methode, pad, data=None, **kw):
+        if pad == "/wp/v2/posts/777" and methode == "POST" and (data or {}).get("status") == "publish":
+            staat["geplaatst"] += 1
+            e = urllib.error.HTTPError("https://x", 500, "Internal Server Error", {}, None)
+            raise wp.WpFout(e, methode, pad, b'{"code":"internal_server_error","message":"<p>Er is een kritieke fout opgetreden.</p>",'
+                                                b'"data":{"status":500,"error":{"message":"Uncaught Error in plugin-x.php"}}}')
+        if pad.startswith("/wp/v2/posts/777?context=edit"):
+            return {"id": 777, "status": "publish" if staat["live"] else "draft", "link": "https://zerohero.one/x"}
+        return oud(methode, pad, data, **kw)
+    monkeypatch.setattr(wp, "_wp", fout_bij_publiceren)
+    uitslag = kn.besluit(v["id"], "geplaatst", via="telegram")
+    assert uitslag.startswith("Plaatsen lukte niet: WordPress gaf 500 bij het bericht bijwerken of publiceren: Er is een kritieke fout")
+    assert "plugin-x.php" in kn.q1("SELECT fout FROM nieuws_voorstellen WHERE id = %s", (v["id"],))["fout"]
+    staat["live"] = True  # de volgende keer staat hij (ondanks de fout) toch live
+    assert kn.besluit(v["id"], "geplaatst") == "Geplaatst op zerohero.one."
+    assert sum(1 for x in nep["wp"] if x[0] == "upload") == 1 and sum(1 for m, p, d in nep["wp"] if p == "/wp/v2/posts") == 1
+    assert staat["geplaatst"] == 2
+
+
+def test_wp_melding_uit():
+    from app.zerohero import wp  # pylint: disable=import-outside-toplevel
+    assert wp.melding_uit(b'{"code":"rest_x","message":"Mag niet."}') == "Mag niet. \u00b7 rest_x"
+    assert wp.melding_uit(b"<html><body><h1>Fout</h1>  boom</body></html>") == "Fout boom"
+    assert wp.stap("POST", "/wp/v2/media") == "het beeld uploaden"

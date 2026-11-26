@@ -53,6 +53,7 @@ MIGRATIES = [
     "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS tokens_out_snel int",
     "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS beelden jsonb NOT NULL DEFAULT '{}'",
     "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS gevoelig boolean NOT NULL DEFAULT false",
+    "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS wp_media_id int",
 ]
 SNEL = os.environ.get("ZEROHERO_KN_SNEL_MODEL", "claude-haiku-4-5")
 
@@ -450,28 +451,39 @@ def _slug(t):
 
 
 def plaats(v, live=True):
-    """In WordPress zetten (live of als concept), met het beeld als uitgelicht beeld. Geeft de bijgewerkte rij."""
+    """In WordPress zetten (live of als concept), met het beeld als uitgelicht beeld. Geeft de bijgewerkte rij.
+    Eerst als concept (zoals de blogs), daarna pas publiceren: elke stap wordt meteen bewaard, zodat opnieuw proberen
+    geen dubbel beeld of dubbel bericht maakt."""
     if not wp.wp_actief():
         raise RuntimeError("De Doellijn heeft geen WordPress-gegevens (deploy/zerohero-sleutel.sh wordpress).")
-    status = "publish" if live else "draft"
-    if v["wp_post_id"]:
-        p = wp._wp("POST", f"/wp/v2/posts/{int(v['wp_post_id'])}", data={  # pylint: disable=protected-access
-            "status": status, "title": v["titel"], "content": inhoud_html(v), "excerpt": v["intro"] or ""})
-    else:
-        media_id = None
-        if v.get("beeld"):
+    if not v["wp_post_id"]:
+        media_id = v.get("wp_media_id")
+        if v.get("beeld") and not media_id:
             media_id, _ = wp.upload(bytes(v["beeld"]), f"{_slug(v['titel'])}.png", alt=v["titel"] or "",
                                     bijschrift="Beeld: ZEROHERO" + (" (AI-sfeerbeeld)" if (v["beeld_bron"] or "").startswith("ai") else ""))
+            v = q1("UPDATE nieuws_voorstellen SET wp_media_id = %s WHERE id = %s RETURNING *", (media_id, v["id"]))
         p = wp._wp("POST", "/wp/v2/posts", data={  # pylint: disable=protected-access
-            "status": status, "title": v["titel"], "content": inhoud_html(v), "excerpt": v["intro"] or "", "slug": _slug(v["titel"]),
+            "status": "draft", "title": v["titel"], "content": inhoud_html(v), "excerpt": v["intro"] or "", "slug": _slug(v["titel"]),
             "categories": [categorie_id()], **({"featured_media": media_id} if media_id else {})})
+        v = q1("UPDATE nieuws_voorstellen SET wp_post_id = %s, wp_link = %s WHERE id = %s RETURNING *", (p["id"], p.get("link"), v["id"]))
         if media_id:
             try:
                 wp.beeld_in_artikel(p["id"])
             except Exception:  # noqa: BLE001  (het uitgelichte beeld staat er in elk geval)
                 pass
-    return q1("""UPDATE nieuws_voorstellen SET wp_post_id = %s, wp_link = %s, fout = NULL, bijgewerkt = now() WHERE id = %s RETURNING *""",
-              (p["id"], p.get("link"), v["id"]))
+    pid = int(v["wp_post_id"])
+    try:
+        p = wp._wp("POST", f"/wp/v2/posts/{pid}", data={  # pylint: disable=protected-access
+            "status": "publish" if live else "draft", "title": v["titel"], "content": inhoud_html(v), "excerpt": v["intro"] or ""})
+    except wp.WpFout as e:
+        # Een plugin kan bij het publiceren een fout geven terwijl het bericht wel live staat: dan even nakijken.
+        if not live or e.code < 500:
+            raise
+        p = wp._wp("GET", f"/wp/v2/posts/{pid}?context=edit&_fields=id,status,link")  # pylint: disable=protected-access
+        if (p or {}).get("status") != "publish":
+            raise RuntimeError(f"{e}. Het bericht staat als concept in WordPress (bericht {pid}); publiceren lukte niet.") from None
+    return q1("""UPDATE nieuws_voorstellen SET wp_link = %s, fout = NULL, bijgewerkt = now() WHERE id = %s RETURNING *""",
+              ((p or {}).get("link") or v["wp_link"], v["id"]))
 
 
 def besluit(vid, wat, via="scherm", reden=None, toelichting=None):
