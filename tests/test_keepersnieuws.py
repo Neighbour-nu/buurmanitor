@@ -107,10 +107,10 @@ def test_beeld_samenstellen_en_terugval(monkeypatch):
     assert bron == "huisstijl" and not fout and Image.open(io.BytesIO(png)).size == (1920, 1080)
     # met sleutel, maar de beeldmaker weigert: huisstijl met de reden
     monkeypatch.setattr(ai_beeld, "OPENAI_KEY", "sk-x")
-    monkeypatch.setattr(ai_beeld, "sfeerbeeld", lambda scene: (_ for _ in ()).throw(ai_beeld.BeeldFout("Beeldmaker gaf fout 400. geweigerd")))
+    monkeypatch.setattr(ai_beeld, "sfeerbeeld", lambda scene, sport="": (_ for _ in ()).throw(ai_beeld.BeeldFout("Beeldmaker gaf fout 400. geweigerd")))
     png, bron, fout = ai_beeld.maak("Kop", "scene")
     assert bron == "huisstijl" and "geweigerd" in fout
-    monkeypatch.setattr(ai_beeld, "sfeerbeeld", lambda scene: b.getvalue())
+    monkeypatch.setattr(ai_beeld, "sfeerbeeld", lambda scene, sport="": b.getvalue())
     assert ai_beeld.maak("Kop", "scene")[1] == "ai-openai"
 
 
@@ -127,6 +127,11 @@ def test_beeldmaker_verzoek(monkeypatch):
     assert "generativelanguage" in gezien["url"] and gezien["headers"] == {"x-goog-api-key": "g-key"}
     prompt = gezien["body"]["contents"][0]["parts"][0]["text"]
     assert "NO recognizable people" in prompt and "No text" in prompt and "gloves on wet grass" in prompt
+    ai_beeld.sfeerbeeld("", "handbal")  # handbal: geen handschoenen, wel de gestreepte palen
+    prompt = gezien["body"]["contents"][0]["parts"][0]["text"]
+    assert "do NOT wear gloves" in prompt and "red-and-white" in prompt and "Scene: an empty handball goal" in prompt
+    assert "hands in gloves" not in ai_beeld.REGELS
+    assert ai_beeld.sport_prompt("korfbal").startswith("SPORT: korfbal") and "helmet with a face cage" in ai_beeld.sport_prompt("veldhockey")
 
 
 def test_telegram_alleen_eigen_chat(monkeypatch):
@@ -296,7 +301,7 @@ def test_kosten_budget_en_beeldkeuze(nep, klant, monkeypatch):
     monkeypatch.setattr(ai_beeld, "OPENAI_KEY", "sk-x")
     b = io.BytesIO()
     Image.new("RGB", (1536, 1024), (40, 90, 60)).save(b, "PNG")
-    monkeypatch.setattr(ai_beeld, "sfeerbeeld", lambda scene: b.getvalue())
+    monkeypatch.setattr(ai_beeld, "sfeerbeeld", lambda scene, sport="": b.getvalue())
     kn.ronde()
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
     assert v["beeld_bron"] == "ai-openai" and v["beelden"] == {"openai": 1}
@@ -423,3 +428,19 @@ def test_wp_melding_uit():
 def test_sport_categorie():
     assert [kn.sport_categorie(x) for x in ("voetbal", "Handbal", "veldhockey", "ijshockey", "waterpolo", "lacrosse", "", None)] == \
         [32, 34, 31, 30, 33, 35, 36, 36]
+
+
+def test_eigen_aanwijzing_voor_het_beeld(nep, klant, monkeypatch):
+    b = io.BytesIO()
+    Image.new("RGB", (1536, 1024), (40, 90, 60)).save(b, "PNG")
+    gevraagd = []
+    monkeypatch.setattr(ai_beeld, "GEMINI_KEY", "g-key")
+    monkeypatch.setattr(ai_beeld, "sfeerbeeld", lambda scene, sport="": gevraagd.append((scene, sport)) or b.getvalue())
+    kn.ronde()
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
+    assert "Wat het AI-beeld moet laten zien" in klant.get(f"/zerohero/keepersnieuws/{v['id']}", headers=KOP).text
+    r = klant.post(f"/zerohero/keepersnieuws/{v['id']}/beeld", headers=FORM, follow_redirects=True,
+                   data={"soort": "ai", "scene": "Een leeg doel met rode stoeltjes"})
+    assert "Nieuw beeld gemaakt." in r.text
+    assert gevraagd[-1] == ("Een leeg doel met rode stoeltjes", "voetbal")
+    assert kn.q1("SELECT beeld_scene FROM nieuws_voorstellen WHERE id = %s", (v["id"],))["beeld_scene"] == "Een leeg doel met rode stoeltjes"

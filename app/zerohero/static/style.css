@@ -541,3 +541,6 @@ form.inline { display: inline-block; margin-top: 8px; }
 .kn-werk { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 22px; align-items: start; }
 .kn-beeld { width: 100%; border-radius: 6px; border: 1px solid var(--lijn); }
 @media (max-width: 860px) { .kn-werk { grid-template-columns: 1fr; } .kn-mini { width: 96px; } }
+
+.kn-scene { margin: .4rem 0; }
+.kn-scene textarea { width: 100%; margin-top: .3rem; }

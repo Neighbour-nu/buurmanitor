@@ -27,9 +27,13 @@
     {% if v.heeft_beeld %}<img src="/keepersnieuws/{{ v.id }}/beeld.png" alt="Beeld bij het bericht" class="kn-beeld">{% endif %}
     <p class="noot">{{ {'ai-openai': 'AI-sfeerbeeld (OpenAI) met huisstijl', 'ai-google': 'AI-sfeerbeeld (Google) met huisstijl', 'huisstijl': 'Huisstijlbeeld'}.get(v.beeld_bron, '') }}{% if v.beeld_fout %} · {{ v.beeld_fout }}{% endif %}</p>
     {% if v.status not in ('bezig', 'overgeslagen', 'fout') %}
-    <form method="post" action="/keepersnieuws/{{ v.id }}/beeld" class="acties">
+    <form method="post" action="/keepersnieuws/{{ v.id }}/beeld">
+      {% if aanbieder %}<details class="kn-scene"><summary class="noot">Wat het AI-beeld moet laten zien</summary>
+        <textarea name="scene" rows="4" placeholder="Bijvoorbeeld: een leeg handbaldoel in een zaal met rode tribunestoeltjes, avondlicht">{{ v.beeld_scene or '' }}</textarea>
+        <p class="noot">Mag in het Nederlands. Het beeld volgt ook altijd de regels van de sport ({{ v.sport or 'onbekend' }}).</p></details>{% endif %}
+      <div class="acties">
       {% if aanbieder %}<button class="knop knop-klein" name="soort" value="ai">Nieuw AI-beeld</button>{% endif %}
-      <button class="knop knop-klein" name="soort" value="huisstijl">Huisstijlbeeld</button>
+      <button class="knop knop-klein" name="soort" value="huisstijl">Huisstijlbeeld</button></div>
     </form>{% endif %}
     {% if items %}<h3 class="kleinkop">Uit het nieuws</h3>
     <ul class="bronnenlijst">{% for x in items %}<li><a href="{{ x.url }}" target="_blank" rel="noopener">{{ x.titel }}</a> <span class="noot">{{ x.bron }} · score {{ x.score }}</span></li>{% endfor %}</ul>{% endif %}

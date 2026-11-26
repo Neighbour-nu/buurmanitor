@@ -32,9 +32,53 @@ ICONEN = os.path.join(os.path.dirname(__file__), "fonts", "sport")
 SPORTNAMEN = {"voetbal": "voetbal", "handbal": "handbal", "hockey": "hockey", "veldhockey": "hockey", "ijshockey": "ijshockey",
               "waterpolo": "waterpolo"}
 
-REGELS = ("Photorealistic editorial sports photograph, cinematic light, shallow depth of field, landscape 3:2. "
-          "Strictly NO recognizable people: no faces, at most a silhouette or hands in gloves seen from behind or cropped. "
-          "No text, no letters, no numbers, no logos, no club crests, no sponsor names, no jersey numbers, no flags. ")
+REGELS = ("Photorealistic editorial sports photograph, cinematic light, shallow depth of field, landscape 16:9. "
+          "Strictly NO recognizable people: no faces. At most an anonymous goalkeeper seen from behind, in silhouette or cropped "
+          "so the face is not visible. "
+          "No text, no letters, no numbers, no logos, no club crests, no sponsor names, no jersey numbers, no flags. "
+          "Every object must belong to the sport described below; never mix equipment from different sports. ")
+
+# Wat bij de sport hoort en wat er nooit in mag (zodat er bijvoorbeeld geen keepershandschoenen bij handbal liggen).
+SPORT_BEELD = {
+    "voetbal": ("SPORT: association football (soccer). Setting: outdoor grass pitch (or artificial grass) with white line markings, "
+                "a full-size goal with white posts and crossbar (7.32 m wide, 2.44 m high) and a net. Ball: size-5 football. "
+                "The goalkeeper wears padded goalkeeper gloves and a long-sleeve keeper shirt in a colour different from the "
+                "outfield players. NEVER show: indoor court floors, ice, skates, sticks, helmets, pucks, swimming pools."),
+    "handbal": ("SPORT: team handball (indoor). Setting: indoor sports hall with a smooth coloured court floor (often blue, orange "
+                "or grey) and the curved 6-metre goal-area line; goal 3 m wide and 2 m high with posts painted in alternating "
+                "red-and-white (or black-and-white) stripes and a net. Ball: small handball with grip that fits in one hand. "
+                "Handball goalkeepers do NOT wear gloves: NEVER show goalkeeper gloves. NEVER show: grass, outdoor pitches, "
+                "football boots with studs, large footballs, sticks, helmets, ice."),
+    "hockey": ("SPORT: field hockey. Setting: outdoor water-based artificial turf (usually blue or green, often wet) with the "
+               "white semicircular shooting circle; goal 3.66 m wide and 2.14 m high with a low wooden backboard and sideboards "
+               "and a net. Ball: small hard white ball; players use curved hockey sticks. The goalkeeper wears heavy protective "
+               "gear: helmet with a face cage, large foam leg guards and kickers, padded hand protectors and a padded body "
+               "protector under a contrasting smock. NEVER show: footballs, ice, skates, pucks, thin football keeper gloves, grass."),
+    "ijshockey": ("SPORT: ice hockey. Setting: indoor ice rink with white ice, red goal line and blue goal crease, boards and "
+                  "plexiglass. Goal: red metal frame 1.83 m wide and 1.22 m high with a white net. Puck: black rubber disc. "
+                  "The goalie wears a goalie mask, large leg pads, a blocker and a catching glove, skates, and holds a goalie "
+                  "stick with a wide paddle. NEVER show: grass, footballs, field hockey balls, handball goals."),
+    "waterpolo": ("SPORT: water polo. Setting: swimming pool with clear blue water, a floating goal with a net in the water, "
+                  "lane ropes or floating boundary markers. Ball: yellow water polo ball. The goalkeeper wears a red swim cap "
+                  "with ear guards and treads water with arms raised. NEVER show: gloves, shoes, grass, a dry pitch, sticks."),
+}
+STANDAARD_SCENE = {
+    "voetbal": "an empty football goal at dusk under floodlights, a ball resting on the penalty spot",
+    "handbal": "an empty handball goal with red-and-white striped posts in a quiet indoor hall, a handball on the 6-metre line",
+    "hockey": "an empty field hockey goal on wet blue turf under floodlights, a white ball in the shooting circle",
+    "ijshockey": "an empty ice hockey goal on fresh ice under arena lights, a puck in the blue crease",
+    "waterpolo": "a floating water polo goal on calm blue pool water, a yellow ball drifting in front of it",
+}
+
+
+def sport_prompt(sport):
+    """De sportregels voor de beeldmaker. Pure functie."""
+    s = sport_van(sport)
+    if s:
+        return SPORT_BEELD[s] + " "
+    if sport:
+        return f"SPORT: {sport}. Show only the setting and equipment that really belong to this sport. "
+    return "Show only the setting and equipment that really belong to the sport in the scene. "
 
 
 class BeeldFout(Exception):
@@ -60,9 +104,10 @@ def _post(url, body, headers, timeout=180):
         raise BeeldFout(f"Beeldmaker niet bereikbaar: {e}") from None
 
 
-def sfeerbeeld(scene):
+def sfeerbeeld(scene, sport=""):
     """Het AI-beeld als PNG-bytes (zonder huisstijl). BeeldFout als het niet lukt of er geen sleutel is."""
-    prompt = REGELS + "Scene: " + (scene or "an empty goal at dusk, goalkeeper gloves resting on the grass")[:800]
+    standaard = STANDAARD_SCENE.get(sport_van(sport), "an empty goal under floodlights, seen from the pitch")
+    prompt = REGELS + sport_prompt(sport) + "Scene: " + (scene or standaard)[:900]
     if OPENAI_KEY:
         j = _post("https://api.openai.com/v1/images/generations",
                   {"model": OPENAI_MODEL, "prompt": prompt, "size": "1536x1024", "quality": "medium", "n": 1},
@@ -160,7 +205,7 @@ def maak(kop, scene, sport="", kernzin="", ai=True):
     """(png, bron, fout): het samengestelde AI-beeld, of anders (of met ai=False) het huisstijlbeeld met de reden waarom."""
     if aanbieder() and ai:
         try:
-            return samenstellen(sfeerbeeld(scene), kop, sport), f"ai-{aanbieder()}", ""
+            return samenstellen(sfeerbeeld(scene, sport), kop, sport), f"ai-{aanbieder()}", ""
         except BeeldFout as e:
             fout = str(e)
         except Exception as e:  # noqa: BLE001  (een onleesbaar beeld en dergelijke)

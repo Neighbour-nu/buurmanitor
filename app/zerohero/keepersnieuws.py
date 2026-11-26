@@ -164,13 +164,23 @@ Schrijfregels (ZEROHERO-stijl):
 - Zelfdoding, depressie of verslaving: geen methode, omstandigheden of plaats; geen simpele oorzaak; noem depressie een
   ziekte; zet aan het eind: "Denk je aan zelfdoding? Praat erover: bel 113 of 0800-0113, of chat via 113.nl."
 - Zet "gevoelig" op true bij overlijden, ernstige ziekte en de onderwerpen hierboven, zodat Martijn extra goed kijkt.
-- Beeld bij gevoelig nieuws: ingetogen en stil (een leeg doel in avondlicht, handschoenen op het gras), geen dramatiek.
+- Beeld bij gevoelig nieuws: ingetogen en stil (een leeg doel van de juiste sport in avondlicht), geen dramatiek.
+
+Het beeld (beeld_scene, in het Engels): een sfeerbeeld dat past bij de sport én bij dit nieuws.
+- Alleen wat echt bij de sport hoort. Voetbal: grasveld, wit doel, keepershandschoenen. Handbal: zaalvloer, doel met
+  rood-wit gestreepte palen, kleine bal, GEEN handschoenen. Hockey: kunstgras (blauw of groen), doel met plank, witte bal,
+  keeper met helm, legguards en handbeschermers. IJshockey: ijsbaan, rood doel, puck, goalie met masker, pads, blocker en
+  vanger. Waterpolo: zwembad, drijvend doel, gele bal, rode cap. Nooit spullen van een andere sport.
+- Bij het nieuws: transfer: het doel of de zaal in de clubkleuren van de nieuwe club, als sfeer en zonder logo (bijvoorbeeld
+  rode stoeltjes op de tribune); prestatie of record: het moment van een redding, de keeper van achteren of als
+  silhouet; groot nieuws: wat het verhaal zegt (bijvoorbeeld een lege kleedkamer bij een blessure); memoriam: stil en leeg.
+- Geen herkenbare personen, geen tekst, cijfers, logo's of rugnummers. Beschrijf licht, plek en hoek concreet (2 tot 4 zinnen).
 
 Antwoord ALLEEN met precies één JSON-object (de berichten samen zijn één verhaal; geen tekst ervoor of erna):
 {"geschikt": true/false, "oordeel": "een zin: waarom wel of niet, met het leerpunt uit eerdere besluiten als dat meespeelt",
  "categorie": "transfer|prestatie|statistiek|groot|memoriam", "gevoelig": true/false, "titel": "...", "intro": "...", "tekst": "alinea's gescheiden door een lege regel",
  "kernzin": "de sterkste zin van hooguit 12 woorden, voor het beeld", "keepers": ["..."], "sport": "voetbal|handbal|hockey|ijshockey|waterpolo",
- "beeld_scene": "Engelse beschrijving van een sfeerbeeld zonder herkenbare personen, tekst, logo's of nummers, passend bij sport en nieuws",
+ "beeld_scene": "Engelse beschrijving van het sfeerbeeld volgens de regels hierboven",
  "bronnen": [{"titel": "...", "url": "..."}]}"""
 
 
@@ -728,11 +738,13 @@ def opnieuw(request: Request, vid: int):
 
 
 @router.post("/keepersnieuws/{vid}/beeld")
-def beeld_opnieuw(request: Request, vid: int, soort: str = Form("ai")):
+def beeld_opnieuw(request: Request, vid: int, soort: str = Form("ai"), scene: str = Form(None)):
     controleer_herkomst(request)
     v = q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (vid,))
     if not v:
         raise HTTPException(404)
+    if scene is not None and soort == "ai" and scene.strip() != (v["beeld_scene"] or ""):
+        v = q1("UPDATE nieuws_voorstellen SET beeld_scene = %s WHERE id = %s RETURNING *", (scene.strip()[:900], vid))
     v = nieuw_beeld(v, zonder_ai=(soort == "huisstijl"))
     if v["wp_post_id"] and v["beeld"] is not None:
         try:
