@@ -95,16 +95,16 @@ def test_beeld_samenstellen_en_terugval(monkeypatch):
     Image.new("RGB", (1536, 1024), (40, 90, 60)).save(b, "PNG")
     png = ai_beeld.samenstellen(b.getvalue(), "Verbruggen houdt drie penalty's tegen", "voetbal")
     img = Image.open(io.BytesIO(png))
-    assert img.size == (1800, 1200)
+    assert img.size == (1920, 1080)  # 16:9, zoals de overzichten op de site
     # het sporticoon rechtsboven: daar staat nu wit, zonder sport niet
-    hoek = (1800 - 150 - 190, 120, 1800 - 150, 310)
+    hoek = (1920 - 150 - 190, 120, 1920 - 150, 310)
     wit = lambda i: sum(1 for p in i.crop(hoek).getdata() if min(p[:3]) > 200)  # noqa: E731
     zonder = Image.open(io.BytesIO(ai_beeld.samenstellen(b.getvalue(), "Kop", "")))
     assert wit(img) > 2000 and wit(zonder) < 50
     assert ai_beeld.sport_van("IJshockey") == "ijshockey" and ai_beeld.sport_van("veldhockey") == "hockey" and ai_beeld.sport_van("korfbal") == ""
     # zonder sleutel: het huisstijlbeeld, zonder foutmelding
     png, bron, fout = ai_beeld.maak("Kop", "scene")
-    assert bron == "huisstijl" and not fout and Image.open(io.BytesIO(png)).size == (1800, 1200)
+    assert bron == "huisstijl" and not fout and Image.open(io.BytesIO(png)).size == (1920, 1080)
     # met sleutel, maar de beeldmaker weigert: huisstijl met de reden
     monkeypatch.setattr(ai_beeld, "OPENAI_KEY", "sk-x")
     monkeypatch.setattr(ai_beeld, "sfeerbeeld", lambda scene: (_ for _ in ()).throw(ai_beeld.BeeldFout("Beeldmaker gaf fout 400. geweigerd")))

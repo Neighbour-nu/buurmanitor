@@ -71,7 +71,7 @@ def sfeerbeeld(scene):
     elif GEMINI_KEY:
         j = _post(f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
                   {"contents": [{"parts": [{"text": prompt}]}],
-                   "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "3:2"}}},
+                   "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "16:9"}}},
                   {"x-goog-api-key": GEMINI_KEY})
         delen = (((j.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
         b64 = next(((p.get("inlineData") or p.get("inline_data") or {}).get("data") for p in delen
@@ -106,21 +106,23 @@ def icoon(img, sport, grootte=190):
     alfa = ic.getchannel("A").point(lambda a: int(a * 0.92))
     ic.putalpha(alfa)
     img = img.convert("RGBA")
-    img.alpha_composite(ic, (hs.B - 150 - ic.width, 120 + (grootte - ic.height) // 2))
+    img.alpha_composite(ic, (img.width - 150 - ic.width, 120 + (grootte - ic.height) // 2))
     return img.convert("RGB")
 
 
-def huisstijl(kernzin, sport):
-    """Het gewone huisstijlbeeld, met het sporticoon erbij."""
-    img = icoon(Image.open(io.BytesIO(hs.maak_beeld(kernzin, None, sport_van(sport) or sport))), sport)
-    uit = io.BytesIO()
-    img.save(uit, "PNG", optimize=True)
-    return uit.getvalue()
+# Keepersnieuws-beelden zijn 16:9: zo valt er in de overzichten van de site (Breakdance, 16:9 bijgesneden) niets weg.
+B, H = 1920, 1080
+
+
+def huisstijl(kop, sport):
+    """Het huisstijlbeeld zonder AI: zwart, met dezelfde opmaak als het AI-beeld (1920 x 1080 PNG)."""
+    zwart = io.BytesIO()
+    Image.new("RGB", (B, H), hs.ZWART).save(zwart, "PNG")
+    return samenstellen(zwart.getvalue(), kop, sport)
 
 
 def samenstellen(achtergrond, kop, sport=""):
-    """Huisstijl over een sfeerbeeld: 1800 x 1200 PNG."""
-    B, H = hs.B, hs.H
+    """Huisstijl over een sfeerbeeld: 1920 x 1080 PNG."""
     img = _vullend(Image.open(io.BytesIO(achtergrond)).convert("RGB"), B, H)
     # Donker verloop: onderaan bijna zwart (voor de kop), bovenaan licht (voor het woordmerk).
     verloop = Image.new("L", (1, H))
@@ -129,7 +131,7 @@ def samenstellen(achtergrond, kop, sport=""):
     zwart = Image.new("RGB", (B, H), hs.ZWART)
     img = Image.composite(zwart, img, verloop.resize((B, H)))
     d = ImageDraw.Draw(img)
-    hs._hoekjes(d)  # pylint: disable=protected-access
+    hs._hoekjes(d, B, H)  # pylint: disable=protected-access
     hs._woordmerk(img)  # pylint: disable=protected-access
     img = icoon(img, sport)
     d = ImageDraw.Draw(img)
@@ -138,11 +140,11 @@ def samenstellen(achtergrond, kop, sport=""):
     naam = sport_van(sport) or (sport or "")
     tekst = "KEEPERSNIEUWS" + (f" · {naam.upper()}" if naam else "")
     # Kop: zo groot als past, onderaan
-    vak_l, vak_r, onder = 150, B - 150, H - 170
-    for grootte in (104, 96, 88, 80, 72, 64, 56):
+    vak_l, vak_r, onder = 150, B - 150, H - 150
+    for grootte in (100, 92, 84, 76, 68, 60, 54):
         f = hs._font("Anton.woff", grootte)  # pylint: disable=protected-access
         regels = hs._regels((kop or "").upper(), f, vak_r - vak_l, d)  # pylint: disable=protected-access
-        if len(regels) <= 4:
+        if len(regels) <= 3:
             break
     hoogte = len(regels) * grootte * 1.12
     y = onder - hoogte
@@ -165,4 +167,4 @@ def maak(kop, scene, sport="", kernzin="", ai=True):
             fout = f"Het AI-beeld lukte niet: {str(e)[:150]}"
     else:
         fout = ""
-    return huisstijl(kernzin or kop, sport), "huisstijl", fout
+    return huisstijl(kop or kernzin, sport), "huisstijl", fout

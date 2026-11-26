@@ -20,9 +20,9 @@ def _font(naam, grootte):
     return ImageFont.truetype(os.path.join(MAP, naam), grootte)
 
 
-def _hoekjes(d):
+def _hoekjes(d, b=B, h=H):
     arm, dik, rand = 100, 26, 48
-    for x, y, sx, sy in [(rand, rand, 1, 1), (B - rand, rand, -1, 1), (rand, H - rand, 1, -1), (B - rand, H - rand, -1, -1)]:
+    for x, y, sx, sy in [(rand, rand, 1, 1), (b - rand, rand, -1, 1), (rand, h - rand, 1, -1), (b - rand, h - rand, -1, -1)]:
         d.rectangle([min(x, x + sx * arm), min(y, y + sy * dik), max(x, x + sx * arm), max(y, y + sy * dik)], fill=GROEN)
         d.rectangle([min(x, x + sx * dik), min(y, y + sy * arm), max(x, x + sx * dik), max(y, y + sy * arm)], fill=GROEN)
 
