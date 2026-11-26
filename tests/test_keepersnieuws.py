@@ -224,7 +224,7 @@ def test_ronde_voorstel_en_plaatsen_via_telegram(nep, klant):
     uit = kn.op_knop(f"kn:{v['id']}:p", {"message_id": 501})
     assert uit["toast"] == "Geplaatst op zerohero.one." and uit["knoppen"] == [] and "✅ <b>Geplaatst</b>" in uit["tekst"]
     post = next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts")  # eerst als concept, zoals de blogs
-    assert post["status"] == "draft" and post["categories"] == [31] and post["featured_media"] == 55 and "zh-intro" in post["content"]
+    assert post["status"] == "draft" and post["categories"] == [31, 32] and post["featured_media"] == 55 and "zh-intro" in post["content"]
     assert next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts/777")["status"] == "publish"  # daarna publiceren
     v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (v["id"],))
     assert v["besluit"] == "geplaatst" and v["wp_post_id"] == 777 and v["besloten_via"] == "telegram"
@@ -418,3 +418,8 @@ def test_wp_melding_uit():
     assert wp.melding_uit(b'{"code":"rest_x","message":"Mag niet."}') == "Mag niet. \u00b7 rest_x"
     assert wp.melding_uit(b"<html><body><h1>Fout</h1>  boom</body></html>") == "Fout boom"
     assert wp.stap("POST", "/wp/v2/media") == "het beeld uploaden"
+
+
+def test_sport_categorie():
+    assert [kn.sport_categorie(x) for x in ("voetbal", "Handbal", "veldhockey", "ijshockey", "waterpolo", "lacrosse", "", None)] == \
+        [32, 34, 31, 30, 33, 35, 36, 36]

@@ -429,6 +429,17 @@ def categorie_id():
     return cid
 
 
+def sport_categorie(sport):
+    """De bestaande sportcategorie op de site (dezelfde als bij de blogs). Pure functie."""
+    from .artikel import CAT  # pylint: disable=import-outside-toplevel
+    s = re.sub(r"[^a-z]", "", str(sport or "").lower())
+    s = {"veldhockey": "hockey", "zaalhockey": "hockey", "football": "voetbal", "soccer": "voetbal", "icehockey": "ijshockey",
+         "handball": "handbal", "waterpolo": "waterpolo"}.get(s, s)
+    if not s or s in ("alle", "allesporten", "meerdere"):
+        return CAT["alle"]
+    return CAT.get(s, CAT["anders"])
+
+
 def inhoud_html(v):
     """De inhoud voor WordPress (blokken). Pure functie."""
     e = lambda t: html.escape(str(t or ""), quote=False)  # noqa: E731
@@ -464,7 +475,7 @@ def plaats(v, live=True):
             v = q1("UPDATE nieuws_voorstellen SET wp_media_id = %s WHERE id = %s RETURNING *", (media_id, v["id"]))
         p = wp._wp("POST", "/wp/v2/posts", data={  # pylint: disable=protected-access
             "status": "draft", "title": v["titel"], "content": inhoud_html(v), "excerpt": v["intro"] or "", "slug": _slug(v["titel"]),
-            "categories": [categorie_id()], **({"featured_media": media_id} if media_id else {})})
+            "categories": [categorie_id(), sport_categorie(v.get("sport"))], **({"featured_media": media_id} if media_id else {})})
         v = q1("UPDATE nieuws_voorstellen SET wp_post_id = %s, wp_link = %s WHERE id = %s RETURNING *", (p["id"], p.get("link"), v["id"]))
         if media_id:
             try:
