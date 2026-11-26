@@ -210,7 +210,9 @@ def nep(klant, monkeypatch):
     monkeypatch.setattr(wp, "beeld_in_artikel", lambda post_id: True)
     monkeypatch.setattr(wp, "zet_uitgelicht", lambda post_id, media_id: n["wp"].append(("uitgelicht", post_id, media_id)))
     monkeypatch.setattr(wp, "naar_prullenbak_als_concept", lambda post_id: n["wp"].append(("prullenbak", post_id)))
-    return n
+    yield n
+    # niets achterlaten voor de andere tests (Vera en de portal lezen dezelfde database)
+    kn.q("DELETE FROM items WHERE miniflux_id >= 9010 RETURNING 1")
 
 
 def test_ronde_voorstel_en_plaatsen_via_telegram(nep, klant):
