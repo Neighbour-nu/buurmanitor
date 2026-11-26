@@ -794,6 +794,12 @@ from .li_titel import MIGRATIES as _LI_MIGRATIES, router as _li_router  # noqa: 
 MIGRATIES.extend(_LI_MIGRATIES)
 app.include_router(_li_router)
 
+# ---------- keepersnieuws: voorstellen voor de sectie op zerohero.one, goedkeuren via Telegram ----------
+from .keepersnieuws import MIGRATIES as _KN_MIGRATIES, router as _kn_router  # noqa: E402
+
+MIGRATIES.extend(_KN_MIGRATIES)
+app.include_router(_kn_router)
+
 # ---------- geen <cite>- en andere HTML-code in het nieuws (ook niet als n8n het schrijft) ----------
 from ..kern import tekst as _tekst  # noqa: E402
 

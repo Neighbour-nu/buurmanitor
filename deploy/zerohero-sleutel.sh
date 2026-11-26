@@ -11,6 +11,7 @@
 #   bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh tickettailor   Ticket Tailor API-sleutel
 #   bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh youtube        YouTube API-sleutel
 #   bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh wordpress      WordPress-gebruiker en applicatiewachtwoord
+#   bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh beeld          Sleutel voor AI-sfeerbeelden (OpenAI of Google Gemini)
 #
 # De waarden komen in ~/buurmanitor/zerohero.env (alleen leesbaar voor jou); daarna start Buurmanitor opnieuw.
 set -euo pipefail
@@ -43,6 +44,15 @@ case "${1:-}" in
   threads) geheim THREADS_TOKEN "Threads-token" ;;
   tickettailor) geheim TT_API_KEY "Ticket Tailor API-sleutel (begint met sk_)" ;;
   youtube) geheim YOUTUBE_API_KEY "YouTube API-sleutel" ;;
+  beeld)
+    echo "AI-sfeerbeelden bij keepersnieuws. Kies de beeldmaker:"
+    echo "  1) OpenAI (platform.openai.com, API keys)   2) Google Gemini (aistudio.google.com, Get API key)"
+    read -r -p "Keuze [1/2]: " k
+    case "$k" in
+      1) geheim OPENAI_API_KEY "OpenAI API-sleutel (begint met sk-)"; $HULP leeg "$ENVB" ZEROHERO_GEMINI_API_KEY ;;
+      2) geheim GEMINI_API_KEY "Google Gemini API-sleutel"; $HULP leeg "$ENVB" ZEROHERO_OPENAI_API_KEY ;;
+      *) echo "Niets gekozen; er is niets veranderd."; exit 1 ;;
+    esac ;;
   wordpress)
     gewoon WP_USER "WordPress-gebruikersnaam"
     geheim WP_APP_PASSWORD "WordPress-applicatiewachtwoord (24 tekens, zonder spaties)" ;;

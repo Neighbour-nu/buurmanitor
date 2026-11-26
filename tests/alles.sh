@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 fout=0
-for deel in tests/test_kern.py tests/test_clara.py tests/test_bram.py tests/test_bijlagen.py tests/test_taken.py tests/test_vera.py tests/test_jesse.py tests/test_aankondigen.py tests/test_crm.py tests/test_overzichten.py tests/test_advies.py tests/test_signaal.py tests/test_taken_google.py tests/test_chats.py tests/politiek tests/test_portal_politiek.py tests/zerohero tests/test_portal_zerohero.py; do
+for deel in tests/test_kern.py tests/test_clara.py tests/test_bram.py tests/test_bijlagen.py tests/test_taken.py tests/test_vera.py tests/test_jesse.py tests/test_aankondigen.py tests/test_crm.py tests/test_overzichten.py tests/test_advies.py tests/test_signaal.py tests/test_taken_google.py tests/test_chats.py tests/test_keepersnieuws.py tests/politiek tests/test_portal_politiek.py tests/zerohero tests/test_portal_zerohero.py; do
   echo "== $deel"
   python -m pytest -q "$deel" || fout=1
 done

@@ -23,7 +23,7 @@ from .signaal import teams as signaal_teams, verwerken as signaal_verwerken, web
 from .taken import noor, web as taken_web
 from .jesse import luisteren as jesse_luisteren, web as jesse_web  # noqa: F401  (luisteren registreert de planner-taak)
 from .vera import nieuws as vera_nieuws, web as vera_web  # noqa: F401  (nieuws registreert de planner-taak)
-from .kern import claude, config, db, gezondheid, meldingen, planner, prefix, snelheid, web
+from .kern import claude, config, db, gezondheid, meldingen, planner, prefix, snelheid, telegram, web
 from .kern.db import q, q1, uitvoeren
 from .kern.web import controleer_herkomst, ctx, templates
 from .schema import MIGRATIES
@@ -79,6 +79,7 @@ async def lifespan(_app):
         db.migreer(c, MIGRATIES)
         planner.opruimen(c)
     lus = asyncio.create_task(planner.lus(db.achtergrond)) if config.PLANNER_AAN else None
+    telegram.start()  # tikken op knoppen in Telegram (keepersnieuws) ophalen
     async with AsyncExitStack() as werkruimtes:
         # Gekoppelde apps krijgen hun eigen opstart (database, migraties, planner) niet vanzelf; die starten we hier.
         if politiek:

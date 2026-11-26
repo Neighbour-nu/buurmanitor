@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<h1 class="titel">Keepersnieuws</h1>
+<p class="uitleg">Buurmanitor kijkt elk kwartier naar het gewogen nieuws en schrijft een eigen bericht als een keeper van club wisselt,
+  iets unieks presteert, een record of mijlpaal haalt of om een andere reden groot in het nieuws is. Je krijgt het in Telegram met het beeld
+  en drie knoppen: <b>Plaatsen</b> (meteen live in de categorie Keepersnieuws), <b>Ik kijk zelf</b> (concept in WordPress) of
+  <b>Niet plaatsen</b> (met een reden). Van je besluiten en redenen leert hij.</p>
+{% if melding %}<p class="melding ok">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="melding fout">⚠️ {{ fout }}</p>{% endif %}
+{% if not claude_actief %}<p class="melding fout">⚠️ Er is geen Claude-sleutel: <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh claude</code></p>{% endif %}
+{% if not wp_actief %}<p class="melding fout">⚠️ Er zijn geen WordPress-gegevens: <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh wordpress</code></p>{% endif %}
+{% if not telegram_actief %}<p class="melding herinnering">Telegram is niet ingesteld: voorstellen staan dan alleen hieronder.</p>
+{% elif telegram_status.fout %}<p class="melding fout">⚠️ Telegram: {{ telegram_status.fout }}</p>{% endif %}
+{% if not aanbieder %}<p class="melding herinnering">Nog geen AI-beeldmaker: de berichten krijgen het huisstijlbeeld. Een sleutel instellen:
+  <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh beeld</code></p>{% endif %}
+
+<div class="lijst">
+{% for v in rijen %}
+<a class="kaart kn-kaart kn-{{ v.status }}" href="/keepersnieuws/{{ v.id }}">
+  {% if v.heeft_beeld %}<img src="/keepersnieuws/{{ v.id }}/beeld.png" alt="" loading="lazy" class="kn-mini">{% endif %}
+  <span class="kn-tekst">
+    <span class="kn-regel"><span class="badge kn-status-{{ v.status }}">{{ statussen.get(v.status, v.status) }}</span>
+      {% if v.categorie %}<span class="badge">{{ categorieen.get(v.categorie, v.categorie) }}</span>{% endif %}
+      {% if v.sport %}<span class="badge">{{ v.sport }}</span>{% endif %}
+      <span class="tijd">{{ geleden(v.aangemaakt) }}</span></span>
+    <b>{{ v.titel or ('Nieuws over ' ~ (v.keepers | join(', ')) if v.keepers else 'Voorstel ' ~ v.id) }}</b>
+    <span class="noot">{% if v.status == 'overgeslagen' %}{{ v.oordeel }}{% elif v.besluit == 'afgewezen' and v.reden %}Reden: {{ redenen_namen.get(v.reden, v.reden) }}{% if v.toelichting %}, {{ v.toelichting }}{% endif %}{% elif v.fout %}{{ v.fout }}{% else %}{{ v.intro }}{% endif %}</span>
+  </span>
+</a>
+{% else %}
+<p class="leeg">Nog geen voorstellen. Ze komen vanzelf zodra er keepersnieuws boven de drempel binnenkomt.</p>
+{% endfor %}
+</div>
+
+<details class="kaart" style="margin-top:18px" {{ 'open' if not rijen }}>
+  <summary><b>Instellingen en wat Buurmanitor leerde</b></summary>
+  <form method="post" action="/keepersnieuws/instellingen" class="formulier">
+    <label class="reden"><span><input type="checkbox" name="kn_aan" value="1" {{ 'checked' if i.kn_aan == '1' }}> Voorstellen maken</span></label>
+    <label>Drempel (score van het gewogen nieuws)<input type="number" name="kn_drempel" min="0" max="100" value="{{ i.kn_drempel }}"></label>
+    <label>Hooguit per dag<input type="number" name="kn_per_dag" min="0" max="20" value="{{ i.kn_per_dag }}"></label>
+    <label>Hooguit per kwartier<input type="number" name="kn_per_ronde" min="1" max="5" value="{{ i.kn_per_ronde }}"></label>
+    <label>Zoekopdrachten om feiten te controleren<input type="number" name="kn_zoeken" min="0" max="5" value="{{ i.kn_zoeken }}"></label>
+    <label class="breed">Jouw richtlijnen (gaan voor alles)
+      <textarea name="kn_richtlijnen" rows="4" placeholder="Bijvoorbeeld: transfers alleen als het officieel is. Meer handbal en hockey. Geen jeugdkeepers onder de 18.">{{ i.kn_richtlijnen }}</textarea></label>
+    <button class="knop" type="submit">Opslaan</button>
+  </form>
+  <p class="noot">Vandaag {{ vandaag }} van de {{ i.kn_per_dag }} voorstellen gemaakt. Beeld: {{ {'openai': 'AI-sfeerbeeld van OpenAI', 'google': 'AI-sfeerbeeld van Google'}.get(aanbieder, 'huisstijlbeeld') }}.</p>
+  <form method="post" action="/keepersnieuws/zoek"><button class="knop" type="submit" {{ 'disabled' if not claude_actief }}>Nu naar het nieuws kijken</button></form>
+  {% if tel %}
+  <h3 class="kleinkop">Jouw besluiten per soort</h3>
+  <table class="tabel"><tr><th>Soort</th><th>Geplaatst</th><th>Zelf bekeken</th><th>Niet geplaatst</th></tr>
+    {% for t in tel %}<tr><td>{{ categorieen.get(t.categorie, t.categorie) }}</td><td>{{ t.ja }}</td><td>{{ t.later }}</td><td>{{ t.nee }}</td></tr>{% endfor %}</table>
+  {% endif %}
+  {% if redenen %}<p class="noot">Redenen om niet te plaatsen: {% for r in redenen %}{{ redenen_namen.get(r.reden, r.reden) }} ({{ r.n }}){{ ', ' if not loop.last }}{% endfor %}.
+    Buurmanitor krijgt je laatste veertig besluiten met redenen en je richtlijnen mee bij elk nieuw voorstel.</p>{% endif %}
+</details>
+{% endblock %}

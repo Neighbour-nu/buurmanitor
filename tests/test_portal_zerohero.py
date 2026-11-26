@@ -28,7 +28,7 @@ FORMULIER = KOP | {"Origin": "https://buurmanitor.neighbour.nu"}
 SCHERMEN = ["/", "/inbox", "/inbox?status=bewaard", "/artikelen", "/concepten", "/congres", "/dashboard",
             "/dashboard?periode=90", "/dashboard/cijfers", "/dashboard/linkedin", "/dashboard/podcast",
             "/dashboard/profielbezoek", "/dashboard/ssi", "/bereik/youtube", "/bereik/podcast", "/links", "/adviseur",
-            "/filter"]
+            "/filter", "/keepersnieuws"]
 LINK = re.compile(r'\b(?:href|action|src|formaction|hx-(?:get|post|put|patch|delete))="(/[^"]*)"'
                   r"|fetch\(\s*['\"](/[^'\"]*)|location(?:\.href)?\s*=\s*['\"](/[^'\"]*)")
 
@@ -74,10 +74,12 @@ def test_huisstijl_logo_en_htmx_lokaal(klant):
 def test_htmx_actie_en_herkomst(klant):
     item = klant.get("/zerohero/inbox", headers=KOP)
     assert 'hx-post="/zerohero/' in item.text
-    r = klant.post("/zerohero/items/status", headers=FORMULIER | {"HX-Request": "true"}, data={"ids": "1", "status": "bewaard"})
+    from app.zerohero import main as zh  # pylint: disable=import-outside-toplevel
+    iid = str(zh.q1("SELECT min(id) AS i FROM items WHERE miniflux_id BETWEEN 1 AND 5")["i"])
+    r = klant.post("/zerohero/items/status", headers=FORMULIER | {"HX-Request": "true"}, data={"ids": iid, "status": "bewaard"})
     assert r.status_code == 200, r.text[:300]
     kwaad = klant.post("/zerohero/items/status", headers=KOP | {"Origin": "https://cockpit.zerohero.one"},
-                       data={"ids": "1", "status": "bewaard"})
+                       data={"ids": iid, "status": "bewaard"})
     assert kwaad.status_code == 403
 
 
@@ -134,14 +136,16 @@ def test_jesse_reacties_op_eigen_posts(klant, monkeypatch):
             ON CONFLICT (id) DO NOTHING RETURNING 1""")
     monkeypatch.setattr(meta, "actief", lambda: True)
     monkeypatch.setattr(meta, "kies_pagina", lambda: {"id": "pag1", "access_token": "pt", "instagram_business_account": {"username": "zerohero.one"}})
+    import datetime as dt  # pylint: disable=import-outside-toplevel
+    RECENT = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=5)).strftime("%Y-%m-%dT%H:%M:%S+0000")  # noqa: N806
     antwoorden = {
-        "ig7/comments": {"data": [{"id": "c1", "text": "Waar kan ik je boek kopen?", "username": "keeperfan", "timestamp": "2026-11-01T10:00:00+0000"},
-                                  {"id": "c2", "text": "Dank je!", "username": "zerohero.one", "timestamp": "2026-11-01T11:00:00+0000"}]},
-        "fb7/comments": {"data": [{"id": "f1", "message": "Mooie aflevering", "from": {"id": "u9", "name": "Kees"}, "created_time": "2026-11-01T09:00:00+0000"}]}}
+        "ig7/comments": {"data": [{"id": "c1", "text": "Waar kan ik je boek kopen?", "username": "keeperfan", "timestamp": RECENT},
+                                  {"id": "c2", "text": "Dank je!", "username": "zerohero.one", "timestamp": RECENT}]},
+        "fb7/comments": {"data": [{"id": "f1", "message": "Mooie aflevering", "from": {"id": "u9", "name": "Kees"}, "created_time": RECENT}]}}
     monkeypatch.setattr(meta, "_get", lambda pad, params=None, token=None: antwoorden[pad])
     monkeypatch.setattr(threads, "_q_token", lambda q: ("tt", None))
     monkeypatch.setattr(threads, "_get", lambda pad, params, token: {"username": "zerohero_one"} if pad == "me" else
-                        {"data": [{"id": "r1", "text": "Geldt dit ook voor handbal?", "username": "anna", "timestamp": "2026-11-01T12:00:00+0000",
+                        {"data": [{"id": "r1", "text": "Geldt dit ook voor handbal?", "username": "anna", "timestamp": RECENT,
                                    "permalink": "https://threads.net/t/r1"}]})
     with db.pool.connection() as c:
         c.execute("DELETE FROM jesse_berichten")

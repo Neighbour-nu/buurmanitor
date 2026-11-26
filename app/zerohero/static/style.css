@@ -527,3 +527,17 @@ form.inline { display: inline; margin: 0; }
 .spaarstand .keuze { display: block; margin: 8px 0; line-height: 1.4; }
 .spaarstand .keuze small { color: var(--grijs); margin-left: 24px; display: inline-block; }
 form.inline { display: inline-block; margin-top: 8px; }
+
+/* Keepersnieuws */
+.kn-kaart { display: flex; gap: 14px; align-items: flex-start; text-decoration: none; color: inherit; }
+.kn-kaart:hover { border-left-color: var(--groen); }
+.kn-mini { width: 150px; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 4px; flex: none; }
+.kn-tekst { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kn-regel { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.kn-verstuurd, .kn-klaar { border-left-color: var(--groen); }
+.kn-overgeslagen, .kn-afgewezen { opacity: .7; }
+.kn-status-verstuurd, .kn-status-klaar, .kn-status-geplaatst { border-color: var(--groen); color: var(--groen); }
+.kn-status-fout, .kn-status-afgewezen { border-color: var(--rood); color: var(--rood); }
+.kn-werk { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 22px; align-items: start; }
+.kn-beeld { width: 100%; border-radius: 6px; border: 1px solid var(--lijn); }
+@media (max-width: 860px) { .kn-werk { grid-template-columns: 1fr; } .kn-mini { width: 96px; } }

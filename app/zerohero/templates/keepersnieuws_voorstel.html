@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block inhoud %}
+<p class="terug-link"><a href="/keepersnieuws">← Keepersnieuws</a></p>
+<h1 class="titel">{{ v.titel or 'Voorstel ' ~ v.id }}</h1>
+<p class="uitleg"><span class="badge kn-status-{{ v.status }}">{{ statussen.get(v.status, v.status) }}</span>
+  {% if v.categorie %}<span class="badge">{{ categorieen.get(v.categorie, v.categorie) }}</span>{% endif %}
+  {% if v.sport %}<span class="badge">{{ v.sport }}</span>{% endif %}
+  {{ geleden(v.aangemaakt) }}{% if v.besloten_via %}, besloten via {{ v.besloten_via }}{% endif %}{% if v.wp_link %} · <a href="{{ v.wp_link }}" target="_blank" rel="noopener">bekijk in WordPress of op de site</a>{% endif %}</p>
+{% if melding %}<p class="melding ok">{{ melding }}</p>{% endif %}
+{% if fout %}<p class="melding fout">⚠️ {{ fout }}</p>{% endif %}
+{% if v.oordeel %}<p class="noot">Buurmanitor: {{ v.oordeel }}</p>{% endif %}
+
+<div class="kn-werk">
+  <div>
+    {% if v.heeft_beeld %}<img src="/keepersnieuws/{{ v.id }}/beeld.png" alt="Beeld bij het bericht" class="kn-beeld">{% endif %}
+    <p class="noot">{{ {'ai-openai': 'AI-sfeerbeeld (OpenAI) met huisstijl', 'ai-google': 'AI-sfeerbeeld (Google) met huisstijl', 'huisstijl': 'Huisstijlbeeld'}.get(v.beeld_bron, '') }}{% if v.beeld_fout %} · {{ v.beeld_fout }}{% endif %}</p>
+    {% if v.status not in ('bezig', 'overgeslagen', 'fout') %}
+    <form method="post" action="/keepersnieuws/{{ v.id }}/beeld" class="acties">
+      {% if aanbieder %}<button class="knop knop-klein" name="soort" value="ai">Nieuw AI-beeld</button>{% endif %}
+      <button class="knop knop-klein" name="soort" value="huisstijl">Huisstijlbeeld</button>
+    </form>{% endif %}
+    {% if items %}<h3 class="kleinkop">Uit het nieuws</h3>
+    <ul class="bronnenlijst">{% for x in items %}<li><a href="{{ x.url }}" target="_blank" rel="noopener">{{ x.titel }}</a> <span class="noot">{{ x.bron }} · score {{ x.score }}</span></li>{% endfor %}</ul>{% endif %}
+    {% if v.bronnen %}<h3 class="kleinkop">Bronnen in het bericht</h3>
+    <ul class="bronnenlijst">{% for b in v.bronnen %}<li><a href="{{ b.url }}" target="_blank" rel="noopener">{{ b.titel }}</a></li>{% endfor %}</ul>{% endif %}
+  </div>
+  <form method="post" action="/keepersnieuws/{{ v.id }}" class="artikelformulier">
+    <label>Kop<input name="titel" maxlength="160" value="{{ v.titel or '' }}" required></label>
+    <label>Intro<textarea name="intro" rows="2">{{ v.intro or '' }}</textarea></label>
+    <label>Tekst (een lege regel tussen alinea's)<textarea name="tekst" rows="14">{{ v.tekst or '' }}</textarea></label>
+    <label>Soort<select name="categorie">{% for k, n in categorieen.items() %}<option value="{{ k }}" {{ 'selected' if v.categorie == k }}>{{ n }}</option>{% endfor %}</select></label>
+    <div class="acties">
+      {% if v.besluit != 'geplaatst' %}<button class="knop knop-publiceer" name="actie" value="plaatsen">Plaatsen</button>
+      {% if v.besluit != 'later' %}<button class="knop" name="actie" value="concept">Als concept in WordPress</button>{% endif %}{% endif %}
+      <button class="knop" name="actie" value="opslaan">{{ 'Opslaan en op de site bijwerken' if v.besluit == 'geplaatst' else 'Opslaan' }}</button>
+    </div>
+    {% if v.besluit != 'geplaatst' and v.besluit != 'afgewezen' %}
+    <fieldset class="keuzes"><legend>Niet plaatsen, omdat</legend>
+      {% for k, n in redenen.items() %}<label class="reden"><input type="radio" name="reden" value="{{ k }}"> {{ n }}</label>{% endfor %}
+      <input name="toelichting" maxlength="500" placeholder="Toelichting (optioneel): daar leert Buurmanitor van">
+      <button class="knop knop-weg" name="actie" value="afwijzen" formnovalidate>Niet plaatsen</button>
+    </fieldset>{% endif %}
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,246 @@
+"""Keepersnieuws: voorstellen uit het gewogen nieuws, beeld, Telegram-knoppen, plaatsen in WordPress en leren.
+
+Claude, de beeldmaker, Telegram en WordPress worden nagebootst. De database-tests draaien alleen met
+TEST_DATABASE_URL en TEST_ZEROHERO_DATABASE_URL. Draaien in een eigen proces (zie tests/alles.sh).
+"""
+import io
+import json
+import os
+import pathlib
+
+BM, ZH = os.environ.get("TEST_DATABASE_URL"), os.environ.get("TEST_ZEROHERO_DATABASE_URL")
+os.environ["DATABASE_URL"] = BM or "postgresql://niemand@localhost/niets"
+os.environ["ZEROHERO_DATABASE_URL"] = ZH or "postgresql://niemand@localhost/niets"
+os.environ.pop("POLITIEK_DATABASE_URL", None)
+os.environ["PROXY_GEHEIM"] = "test-geheim"
+os.environ["BUURMANITOR_PLANNER"] = "0"
+os.environ["ZEROHERO_ACHTERGROND"] = "0"
+os.environ["PORTAL_HOST"] = "buurmanitor.neighbour.nu"
+os.environ["TELEGRAM_BOT_TOKEN"] = "123:abc"
+os.environ["TELEGRAM_CHAT_ID"] = "4242"
+os.environ["ZEROHERO_ANTHROPIC_API_KEY"] = "sk-test"
+os.environ["ZEROHERO_WP_USER"] = "wp"
+os.environ["ZEROHERO_WP_APP_PASSWORD"] = "geheim"
+os.environ.pop("ZEROHERO_OPENAI_API_KEY", None)
+os.environ.pop("ZEROHERO_GEMINI_API_KEY", None)
+
+import pytest  # noqa: E402
+from PIL import Image  # noqa: E402
+
+from app.kern import telegram  # noqa: E402
+from app.zerohero import main as _zh  # noqa: E402,F401  (eerst main: die laadt keepersnieuws)
+from app.zerohero import ai_beeld, keepersnieuws as kn  # noqa: E402
+
+DB = bool(BM and ZH)
+KOP = {"Remote-User": "martijn", "X-Proxy-Geheim": "test-geheim"}
+FORM = KOP | {"Origin": "https://buurmanitor.neighbour.nu"}
+
+ANTWOORD = {"geschikt": True, "oordeel": "Officiële transfer van een Nederlandse keeper.", "categorie": "transfer",
+            "titel": "Bart Verbruggen tekent bij Ajax — voor vier jaar", "intro": "De keeper keert terug naar Nederland.",
+            "tekst": "Ajax heeft Bart Verbruggen vastgelegd, meldt de club.\n\nHij tekent voor vier jaar.", "kernzin": "Terug in Nederland",
+            "keepers": ["Bart Verbruggen"], "sport": "voetbal", "beeld_scene": "an empty goal in a stadium at night",
+            "bronnen": [{"titel": "Ajax.nl", "url": "https://www.ajax.nl/nieuws"}, {"titel": "kwaad", "url": "javascript:alert(1)"}]}
+
+
+# ---------------------------------------------------------------- zonder database
+
+def test_schoon_antwoord():
+    a = kn.schoon_antwoord(ANTWOORD | {"categorie": "gerucht"})
+    assert a["geschikt"] and a["categorie"] == "groot" and "—" not in a["titel"] and a["titel"] == "Bart Verbruggen tekent bij Ajax, voor vier jaar"
+    assert a["bronnen"] == [{"titel": "Ajax.nl", "url": "https://www.ajax.nl/nieuws"}]
+    assert not kn.schoon_antwoord(ANTWOORD | {"tekst": ""})["geschikt"]
+    assert not kn.schoon_antwoord(ANTWOORD | {"geschikt": False})["geschikt"]
+    with pytest.raises(ValueError):
+        kn.schoon_antwoord([1])
+
+
+def test_inhoud_en_telegramtekst():
+    v = {"id": 7, "titel": "Kop <b>", "intro": "Intro", "tekst": "Een.\n\nTwee & drie.", "bronnen": [{"titel": "Bron", "url": "https://x.nl/a?b=1&c=2"}],
+         "categorie": "prestatie", "sport": "hockey", "score": 81, "oordeel": "Uniek."}
+    h = kn.inhoud_html(v)
+    assert '<p class="zh-intro"><strong>Intro</strong></p>' in h and "<p>Twee &amp; drie.</p>" in h and "https://x.nl/a?b=1&amp;c=2" in h
+    t = kn.bericht_tekst(v, "slot")
+    assert t.startswith("<b>Kop &lt;b&gt;</b>") and "Unieke prestatie · hockey · score 81" in t and t.endswith("slot")
+    assert "/zerohero/keepersnieuws/7" in t
+    lang = kn.bericht_tekst(v | {"tekst": "woord " * 1500})
+    assert len(lang) <= 4096 and "(...)" in lang
+
+
+def test_beeld_samenstellen_en_terugval(monkeypatch):
+    b = io.BytesIO()
+    Image.new("RGB", (1536, 1024), (40, 90, 60)).save(b, "PNG")
+    png = ai_beeld.samenstellen(b.getvalue(), "Verbruggen houdt drie penalty's tegen", "Unieke prestatie", "voetbal")
+    img = Image.open(io.BytesIO(png))
+    assert img.size == (1800, 1200)
+    # zonder sleutel: het huisstijlbeeld, zonder foutmelding
+    png, bron, fout = ai_beeld.maak("Kop", "scene")
+    assert bron == "huisstijl" and not fout and Image.open(io.BytesIO(png)).size == (1800, 1200)
+    # met sleutel, maar de beeldmaker weigert: huisstijl met de reden
+    monkeypatch.setattr(ai_beeld, "OPENAI_KEY", "sk-x")
+    monkeypatch.setattr(ai_beeld, "sfeerbeeld", lambda scene: (_ for _ in ()).throw(ai_beeld.BeeldFout("Beeldmaker gaf fout 400. geweigerd")))
+    png, bron, fout = ai_beeld.maak("Kop", "scene")
+    assert bron == "huisstijl" and "geweigerd" in fout
+    monkeypatch.setattr(ai_beeld, "sfeerbeeld", lambda scene: b.getvalue())
+    assert ai_beeld.maak("Kop", "scene")[1] == "ai-openai"
+
+
+def test_beeldmaker_verzoek(monkeypatch):
+    gezien = {}
+
+    def post(url, body, headers, timeout=180):
+        gezien.update(url=url, body=body, headers=headers)
+        import base64  # pylint: disable=import-outside-toplevel
+        return {"candidates": [{"content": {"parts": [{"inlineData": {"data": base64.b64encode(b"png").decode()}}]}}]}
+    monkeypatch.setattr(ai_beeld, "_post", post)
+    monkeypatch.setattr(ai_beeld, "GEMINI_KEY", "g-key")
+    assert ai_beeld.sfeerbeeld("gloves on wet grass") == b"png"
+    assert "generativelanguage" in gezien["url"] and gezien["headers"] == {"x-goog-api-key": "g-key"}
+    prompt = gezien["body"]["contents"][0]["parts"][0]["text"]
+    assert "NO recognizable people" in prompt and "No text" in prompt and "gloves on wet grass" in prompt
+
+
+def test_telegram_alleen_eigen_chat(monkeypatch):
+    gedaan = []
+    monkeypatch.setitem(telegram.HANDLERS, "tst", lambda data, bericht: gedaan.append(data) or {"toast": "ok", "knoppen": []})
+    monkeypatch.setattr(telegram, "_vraag", lambda methode, data=None, timeout=30: gedaan.append(methode) or True)
+    assert telegram.verwerk({"callback_query": {"id": "1", "data": "tst:1", "message": {"message_id": 5, "chat": {"id": 999}}}}) == "niet van mij"
+    assert not gedaan
+    assert telegram.verwerk({"callback_query": {"id": "1", "data": "tst:1", "message": {"message_id": 5, "chat": {"id": 4242}}}}) == "ok"
+    assert gedaan == ["tst:1", "answerCallbackQuery", "editMessageReplyMarkup"]
+    assert telegram.markup([[("Ja", "x" * 80)]])["inline_keyboard"][0][0]["callback_data"] == "x" * 64
+
+
+# ---------------------------------------------------------------- met database
+
+@pytest.fixture(scope="module")
+def klant():
+    if not DB:
+        pytest.skip("geen TEST_DATABASE_URL en TEST_ZEROHERO_DATABASE_URL")
+    import psycopg  # pylint: disable=import-outside-toplevel
+    with psycopg.connect(ZH, autocommit=True) as c:
+        c.execute(pathlib.Path(__file__).with_name("zerohero").joinpath("basis_schema.sql").read_text())
+    from fastapi.testclient import TestClient  # pylint: disable=import-outside-toplevel
+    from app import main  # pylint: disable=import-outside-toplevel
+    with TestClient(main.app) as k:
+        yield k
+
+
+@pytest.fixture
+def nep(klant, monkeypatch):
+    """Claude, Telegram en WordPress nagebootst; schone tabellen met drie nieuwsberichten."""
+    from app.zerohero import claude_api, wp  # pylint: disable=import-outside-toplevel
+    kn.q("DELETE FROM nieuws_voorstellen RETURNING 1")
+    kn.q("DELETE FROM items WHERE miniflux_id >= 9000 RETURNING 1")
+    kn.q("DELETE FROM instellingen WHERE sleutel LIKE 'kn_%%' RETURNING 1")
+    kn.q("""INSERT INTO items (miniflux_id, bron, url, titel, binnen, sport, keepers, score, samenvatting, status) VALUES
+            (9001, 'NOS', 'https://nos.nl/1', 'Verbruggen naar Ajax', now(), 'voetbal', ARRAY['Bart Verbruggen'], 88, 'Officieel.', 'nieuw'),
+            (9002, 'VI', 'https://vi.nl/2', 'Ajax haalt Verbruggen', now(), 'voetbal', ARRAY['Bart Verbruggen'], 75, 'Ook.', 'nieuw'),
+            (9003, 'Hockey.nl', 'https://hockey.nl/3', 'Recordaantal shoot-outs gestopt', now(), 'hockey', ARRAY['Anne Veenendaal'], 70, 'Record.', 'nieuw'),
+            (9004, 'Blog', 'https://blog.nl/4', 'Iets kleins', now(), 'voetbal', ARRAY['Iemand'], 20, 'Klein.', 'nieuw')
+            RETURNING 1""")
+    n = {"claude": [], "telegram": [], "wp": [], "bewerkt": []}
+    antwoorden = [dict(ANTWOORD), ANTWOORD | {"geschikt": False, "oordeel": "Te klein nieuws.", "titel": "Shoot-outs", "keepers": ["Anne Veenendaal"]}]
+    monkeypatch.setattr(claude_api, "gesprek", lambda s, berichten, **kw: n["claude"].append(berichten[-1]["content"]) or (
+        json.dumps(antwoorden[(len(n["claude"]) - 1) % 2]), {"input_tokens": 100, "output_tokens": 50, "zoekopdrachten": 1}, []))
+    teller = iter(range(500, 600))
+    monkeypatch.setattr(telegram, "stuur_foto", lambda png, bijschrift="", knoppen=None, bestandsnaam="": n["telegram"].append(("foto", bijschrift)) or {"message_id": next(teller)})
+    monkeypatch.setattr(telegram, "stuur", lambda tekst, knoppen=None, antwoord_op=None: n["telegram"].append(("tekst", tekst, knoppen)) or {"message_id": next(teller)})
+    monkeypatch.setattr(telegram, "bewerk", lambda bid, tekst=None, knoppen=None: n["bewerkt"].append((bid, tekst, knoppen)))
+
+    def nep_wp(methode, pad, data=None, **kw):
+        n["wp"].append((methode, pad, data))
+        if pad.startswith("/wp/v2/categories?"):
+            return []
+        if pad == "/wp/v2/categories":
+            return {"id": 31}
+        if pad.startswith("/wp/v2/posts"):
+            return {"id": 777, "link": "https://zerohero.one/keepersnieuws/verbruggen", "status": (data or {}).get("status")}
+        return {}
+    monkeypatch.setattr(wp, "_wp", nep_wp)
+    monkeypatch.setattr(wp, "upload", lambda inhoud, naam, alt="", bijschrift="", mime="image/png": n["wp"].append(("upload", naam, bijschrift)) or (55, ""))
+    monkeypatch.setattr(wp, "beeld_in_artikel", lambda post_id: True)
+    monkeypatch.setattr(wp, "zet_uitgelicht", lambda post_id, media_id: n["wp"].append(("uitgelicht", post_id, media_id)))
+    monkeypatch.setattr(wp, "naar_prullenbak_als_concept", lambda post_id: n["wp"].append(("prullenbak", post_id)))
+    return n
+
+
+def test_ronde_voorstel_en_plaatsen_via_telegram(nep, klant):
+    assert kn.ronde() == "1 voorgesteld, 1 geen keepersnieuws"
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
+    ids = {r["miniflux_id"]: r["id"] for r in kn.q("SELECT id, miniflux_id FROM items WHERE miniflux_id >= 9000")}
+    assert sorted(v["item_ids"]) == sorted([ids[9001], ids[9002]]) and v["categorie"] == "transfer" and "—" not in v["titel"] and v["beeld_bron"] == "huisstijl"
+    assert v["telegram_foto"] == 500 and v["telegram_tekst"] == 501 and v["tokens_in"] == 100
+    assert nep["telegram"][1][2] == kn.KNOPPEN(v["id"]) and "Bart Verbruggen tekent bij Ajax, voor vier jaar" in nep["telegram"][1][1]
+    over = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'overgeslagen'")
+    assert over["oordeel"] == "Te klein nieuws." and over["item_ids"] == [ids[9003]]
+    assert "Iets kleins" not in "".join(nep["claude"])  # onder de drempel
+    assert kn.ronde() == "geen nieuw keepersnieuws boven de drempel"  # niets dubbel
+    # Plaatsen in Telegram: live in de categorie Keepersnieuws, met het beeld
+    uit = kn.op_knop(f"kn:{v['id']}:p", {"message_id": 501})
+    assert uit["toast"] == "Geplaatst op zerohero.one." and uit["knoppen"] == [] and "✅ <b>Geplaatst</b>" in uit["tekst"]
+    post = next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts")
+    assert post["status"] == "publish" and post["categories"] == [31] and post["featured_media"] == 55 and "zh-intro" in post["content"]
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (v["id"],))
+    assert v["besluit"] == "geplaatst" and v["wp_post_id"] == 777 and v["besloten_via"] == "telegram"
+    assert kn.inst()["kn_categorie_id"] == "31"
+    assert kn.op_knop(f"kn:{v['id']}:n", {})["toast"] == "Dit voorstel is al afgehandeld."
+    # en de pagina's
+    r = klant.get("/zerohero/keepersnieuws", headers=KOP)
+    assert r.status_code == 200 and "Bart Verbruggen tekent bij Ajax" in r.text and "Te klein nieuws." in r.text
+    assert 'href="/zerohero/keepersnieuws/' in r.text and 'src="/zerohero/keepersnieuws/' in r.text
+    r = klant.get(f"/zerohero/keepersnieuws/{v['id']}", headers=KOP)
+    assert r.status_code == 200 and "Opslaan en op de site bijwerken" in r.text
+    assert klant.get(f"/zerohero/keepersnieuws/{v['id']}/beeld.png", headers=KOP).headers["content-type"] == "image/png"
+
+
+def test_niet_plaatsen_met_reden_en_leren(nep, klant):
+    kn.ronde()
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
+    uit = kn.op_knop(f"kn:{v['id']}:n", {})
+    assert [r[0][1] for r in uit["knoppen"]][:2] == [f"kn:{v['id']}:r:geen_nieuws", f"kn:{v['id']}:r:niet_relevant"]
+    kn.op_knop(f"kn:{v['id']}:r:oud", {})
+    assert kn.op_antwoord(501, "Transfers pas als het officieel is") == "Dank je, je toelichting is bewaard. Daar leer ik van."
+    assert kn.op_antwoord(12345, "iets") is None
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE id = %s", (v["id"],))
+    assert (v["besluit"], v["reden"], v["toelichting"]) == ("afgewezen", "oud", "Transfers pas als het officieel is")
+    leer = kn.leerstof()
+    assert "[NIET GEPLAATST] Bart Verbruggen tekent bij Ajax" in leer and "Te laat, al oud nieuws (Transfers pas als het officieel is)" in leer
+    assert "Transfer: 0 geplaatst, 0 zelf bekeken, 1 niet geplaatst" in leer
+    # richtlijnen en besluiten gaan mee in de volgende opdracht
+    klant.post("/zerohero/keepersnieuws/instellingen", headers=FORM, data={"kn_aan": "1", "kn_drempel": "50", "kn_per_dag": "5", "kn_per_ronde": "2",
+                                                                          "kn_zoeken": "2", "kn_richtlijnen": "Meer handbal."})
+    kn.q("""INSERT INTO items (miniflux_id, bron, url, titel, binnen, sport, keepers, score, status) VALUES
+            (9010, 'Handbal.nl', 'https://handbal.nl/1', 'Keeper stopt zeven strafworpen', now(), 'handbal', ARRAY['Rinka Duijndam'], 66, 'nieuw') RETURNING 1""")
+    kn.ronde()
+    assert "Richtlijnen van Martijn (gaan voor alles):\nMeer handbal." in nep["claude"][-1] and "NIET GEPLAATST" in nep["claude"][-1]
+
+
+def test_scherm_aanpassen_concept_en_dagmaximum(nep, klant):
+    kn.zet("kn_per_dag", 1)
+    assert kn.ronde() == "1 voorgesteld, 0 geen keepersnieuws"
+    assert kn.ronde() == "dagmaximum bereikt"
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
+    r = klant.post(f"/zerohero/keepersnieuws/{v['id']}", headers=FORM, follow_redirects=True, data={
+        "titel": "Verbruggen terug in Amsterdam", "intro": "Intro", "tekst": "Alinea een.\n\nAlinea twee – met streepje.", "categorie": "transfer", "actie": "concept"})
+    assert "Staat als concept in WordPress." in r.text
+    post = next(d for m, p, d in nep["wp"] if p == "/wp/v2/posts")
+    assert post["status"] == "draft" and post["title"] == "Verbruggen terug in Amsterdam" and "–" not in post["content"]
+    assert nep["bewerkt"] and nep["bewerkt"][-1][2] == []  # de knoppen in Telegram zijn weg
+    # nieuw huisstijlbeeld: ook in WordPress
+    r = klant.post(f"/zerohero/keepersnieuws/{v['id']}/beeld", headers=FORM, data={"soort": "huisstijl"}, follow_redirects=True)
+    assert "Nieuw beeld gemaakt." in r.text and ("uitgelicht", 777, 55) in nep["wp"]
+    # afwijzen vanaf het scherm: het concept gaat naar de prullenbak
+    r = klant.post(f"/zerohero/keepersnieuws/{v['id']}", headers=FORM, follow_redirects=True, data={
+        "titel": "Verbruggen terug in Amsterdam", "actie": "afwijzen", "reden": "tekst", "toelichting": "Kop te lang"})
+    assert "Niet geplaatst." in r.text and ("prullenbak", 777) in nep["wp"]
+    assert klant.post(f"/zerohero/keepersnieuws/{v['id']}", headers=KOP, data={"titel": "x"}).status_code == 403  # zonder herkomst
+
+
+def test_uit_en_zonder_telegram(nep, klant, monkeypatch):
+    kn.zet("kn_aan", "0")
+    assert kn.ronde() == "staat uit"
+    monkeypatch.setattr(telegram, "actief", lambda: False)
+    kn.zet("kn_aan", "1")
+    kn.ronde()
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
+    assert v["fout"].startswith("Telegram is niet ingesteld") and not nep["telegram"]
