@@ -484,3 +484,27 @@ def test_items_uniek_voor_de_ochtendbriefing(nep, klant):
             (9023, 'Y', 'https://y.nl/c', 'Een heel ander bericht over een keeper', now(), 70, 'nieuw') RETURNING 1""")
     uniek = {r["miniflux_id"] for r in kn.q("SELECT miniflux_id FROM items_uniek WHERE miniflux_id BETWEEN 9020 AND 9029")}
     assert uniek == {9020, 9023}
+
+
+def test_archiveren(nep, klant):
+    kn.ronde()
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
+    over = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'overgeslagen'")
+    r = klant.get("/zerohero/keepersnieuws", headers=KOP)
+    assert "Afgehandelde naar het archief (1)" in r.text and "Archief (0)" in r.text and "Te klein nieuws." in r.text
+    # in één keer: alleen wat afgehandeld is (geen keepersnieuws), het voorstel dat op Martijn wacht blijft staan
+    r = klant.post("/zerohero/keepersnieuws/archiveren", headers=FORM, follow_redirects=True)
+    assert "1 afgehandelde voorstel(len) naar het archief." in r.text and "Te klein nieuws." not in r.text
+    assert "Bart Verbruggen tekent bij Ajax" in r.text and "Archief (1)" in r.text
+    assert kn.q1("SELECT gearchiveerd FROM nieuws_voorstellen WHERE id = %s", (over["id"],))["gearchiveerd"]
+    r = klant.get("/zerohero/keepersnieuws?archief=1", headers=KOP)
+    assert "Te klein nieuws." in r.text and "Bart Verbruggen tekent bij Ajax" not in r.text and "Terugzetten" in r.text
+    # één voorstel archiveren vanaf het voorstel, en weer terugzetten
+    r = klant.post(f"/zerohero/keepersnieuws/{v['id']}/archief", headers=FORM, data={"naar": "lijst"}, follow_redirects=True)
+    assert "Naar het archief." in r.text and "Bart Verbruggen tekent bij Ajax" not in r.text
+    assert "Dit voorstel staat in het archief." in klant.get(f"/zerohero/keepersnieuws/{v['id']}", headers=KOP).text
+    r = klant.post(f"/zerohero/keepersnieuws/{v['id']}/archief", headers=FORM, data={"terug": "1", "naar": "voorstel"}, follow_redirects=True)
+    assert "Terug in de lijst." in r.text and kn.q1("SELECT gearchiveerd FROM nieuws_voorstellen WHERE id = %s", (v["id"],))["gearchiveerd"] is None
+    # gearchiveerd telt nog mee: hetzelfde nieuws komt niet opnieuw
+    assert kn.ronde() == "geen nieuw keepersnieuws boven de drempel"
+    assert klant.post(f"/zerohero/keepersnieuws/{v['id']}/archief", headers=KOP).status_code == 403  # zonder herkomst

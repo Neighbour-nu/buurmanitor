@@ -54,6 +54,7 @@ MIGRATIES = [
     "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS beelden jsonb NOT NULL DEFAULT '{}'",
     "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS gevoelig boolean NOT NULL DEFAULT false",
     "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS wp_media_id int",
+    "ALTER TABLE nieuws_voorstellen ADD COLUMN IF NOT EXISTS gearchiveerd timestamptz",
 ]
 SNEL = os.environ.get("ZEROHERO_KN_SNEL_MODEL", "claude-haiku-4-5")
 
@@ -63,6 +64,8 @@ REDENEN = {"geen_nieuws": "Geen echt nieuws", "niet_relevant": "Niet interessant
            "oud": "Te laat, al oud nieuws", "dubbel": "Al eerder gebracht", "tekst": "Tekst of kop niet goed", "beeld": "Beeld niet goed"}
 STATUSSEN = {"bezig": "Wordt geschreven", "klaar": "Klaar", "verstuurd": "Wacht op jou", "geplaatst": "Geplaatst", "later": "Concept in WordPress",
              "afgewezen": "Niet geplaatst", "overgeslagen": "Geen keepersnieuws", "fout": "Mislukt"}
+# Afgehandeld: hier valt niets meer te beslissen, dus kan in één keer naar het archief.
+AFGEHANDELD = ("geplaatst", "afgewezen", "overgeslagen")
 STANDAARD = {"kn_aan": "1", "kn_drempel": "60", "kn_per_dag": "5", "kn_per_ronde": "2", "kn_richtlijnen": "", "kn_categorie_id": "",
              "kn_zoeken": "2", "kn_budget": "15", "kn_ai_beeld": "1", "kn_voorselectie": "1", "kn_via_n8n": "0",
              "kn_hoofdcat_klaar": "0"}
@@ -493,12 +496,7 @@ def plaats(v, live=True):
             "status": "draft", "title": v["titel"], "content": inhoud_html(v), "excerpt": v["intro"] or "", "slug": _slug(v["titel"]),
             "categories": [categorie_id(), sport_categorie(v.get("sport"))], **({"featured_media": media_id} if media_id else {})})
         v = q1("UPDATE nieuws_voorstellen SET wp_post_id = %s, wp_link = %s WHERE id = %s RETURNING *", (p["id"], p.get("link"), v["id"]))
-        hoofdcategorie(p["id"])
-        if media_id:
-            try:
-                wp.beeld_in_artikel(p["id"])
-            except Exception:  # noqa: BLE001  (het uitgelichte beeld staat er in elk geval)
-                pass
+        hoofdcategorie(p["id"])  # het uitgelichte beeld toont de site-template boven de tekst, dus niet ook in de tekst
     pid = int(v["wp_post_id"])
     try:
         p = wp._wp("POST", f"/wp/v2/posts/{pid}", data={  # pylint: disable=protected-access
@@ -625,7 +623,7 @@ def taak_keepersnieuws(_c):
 def _terug(pad, melding="", fout=""):
     from urllib.parse import urlencode  # pylint: disable=import-outside-toplevel
     params = {k: v for k, v in (("melding", melding), ("fout", fout)) if v}
-    return RedirectResponse(pad + ("?" + urlencode(params) if params else ""), status_code=303)
+    return RedirectResponse(pad + (("&" if "?" in pad else "?") + urlencode(params) if params else ""), status_code=303)
 
 
 def _rij(v):
@@ -637,9 +635,14 @@ def _rij(v):
 
 
 @router.get("/keepersnieuws", response_class=HTMLResponse)
-def overzicht(request: Request, melding: str = "", fout: str = ""):
-    rijen = [_rij(v) for v in q("""SELECT * FROM nieuws_voorstellen ORDER BY CASE WHEN status IN ('verstuurd', 'klaar', 'later') THEN 0 ELSE 1 END,
-                                    aangemaakt DESC LIMIT 80""")]
+def overzicht(request: Request, melding: str = "", fout: str = "", archief: str = ""):
+    archief = archief == "1"
+    rijen = [_rij(v) for v in q(f"""SELECT * FROM nieuws_voorstellen WHERE gearchiveerd IS {'NOT ' if archief else ''}NULL
+                                    ORDER BY {'gearchiveerd DESC,' if archief else "CASE WHEN status IN ('verstuurd', 'klaar', 'later') THEN 0 ELSE 1 END,"}
+                                    aangemaakt DESC LIMIT {200 if archief else 80}""")]
+    aantallen = q1("""SELECT count(*) FILTER (WHERE gearchiveerd IS NOT NULL) AS archief,
+                             count(*) FILTER (WHERE gearchiveerd IS NULL AND status = ANY(%s)) AS afgehandeld FROM nieuws_voorstellen""",
+                   (list(AFGEHANDELD),))
     tel = q("""SELECT categorie, count(*) FILTER (WHERE besluit = 'geplaatst') AS ja, count(*) FILTER (WHERE besluit = 'later') AS later,
                       count(*) FILTER (WHERE besluit = 'afgewezen') AS nee FROM nieuws_voorstellen WHERE besluit IS NOT NULL GROUP BY categorie""")
     redenen = q("""SELECT reden, count(*) AS n FROM nieuws_voorstellen WHERE besluit = 'afgewezen' AND reden IS NOT NULL
@@ -649,7 +652,7 @@ def overzicht(request: Request, melding: str = "", fout: str = ""):
         statussen=STATUSSEN, aanbieder=ai_beeld.aanbieder(), telegram_actief=BOT.actief(), telegram_status=BOT.status,
         eigen_bot=bool(os.environ.get("ZEROHERO_TELEGRAM_BOT_TOKEN")),
         wp_actief=wp.wp_actief(), claude_actief=claude_api.actief(), vandaag=vandaag_gemaakt(), maand=kosten_maand(),
-        budget_op=budget_op(), melding=melding, fout=fout))
+        budget_op=budget_op(), melding=melding, fout=fout, archief=archief, aantallen=aantallen, afgehandeld=AFGEHANDELD))
 
 
 @router.post("/keepersnieuws/instellingen")
@@ -685,11 +688,37 @@ def nu_zoeken(request: Request):
 def alles_opnieuw(request: Request):
     """Alle mislukte voorstellen van de laatste 36 uur opnieuw: ze tellen dan weer mee bij de volgende ronde."""
     controleer_herkomst(request)
-    n = len(q("""DELETE FROM nieuws_voorstellen WHERE status = 'fout' AND aangemaakt > now() - interval '36 hours' RETURNING 1"""))
+    n = len(q("""DELETE FROM nieuws_voorstellen WHERE status = 'fout' AND gearchiveerd IS NULL
+                 AND aangemaakt > now() - interval '36 hours' RETURNING 1"""))
     if n:
         threading.Thread(target=ronde, kwargs={"forceer": True}, name="keepersnieuws", daemon=True).start()
     return _terug("/keepersnieuws", melding=f"{n} mislukte voorstel(len) worden opnieuw geprobeerd (binnen de grenzen per ronde en per dag)."
                   if n else "Er zijn geen recente mislukte voorstellen.")
+
+
+@router.post("/keepersnieuws/archiveren")
+def alles_archiveren(request: Request):
+    """Alles wat afgehandeld is (geplaatst, niet geplaatst, geen keepersnieuws) uit de lijst naar het archief."""
+    controleer_herkomst(request)
+    n = len(q("UPDATE nieuws_voorstellen SET gearchiveerd = now() WHERE gearchiveerd IS NULL AND status = ANY(%s) RETURNING 1",
+              (list(AFGEHANDELD),)))
+    return _terug("/keepersnieuws", melding=f"{n} afgehandelde voorstel(len) naar het archief." if n else "Er is niets afgehandeld om te archiveren.")
+
+
+@router.post("/keepersnieuws/{vid}/archief")
+def archief_wissel(request: Request, vid: int, terug: str = Form(""), naar: str = Form("lijst")):
+    """Eén voorstel naar het archief, of (met terug=1) weer terug in de lijst. Aan het voorstel zelf verandert niets."""
+    controleer_herkomst(request)
+    v = q1("SELECT id, status FROM nieuws_voorstellen WHERE id = %s", (vid,))
+    if not v:
+        raise HTTPException(404)
+    if v["status"] == "bezig" and not terug:
+        return _terug(f"/keepersnieuws/{vid}", fout="Dit voorstel wordt nog geschreven; archiveren kan straks.")
+    q("UPDATE nieuws_voorstellen SET gearchiveerd = " + ("NULL" if terug else "now()") + " WHERE id = %s RETURNING 1", (vid,))
+    melding = "Terug in de lijst." if terug else "Naar het archief."
+    if naar == "voorstel":
+        return _terug(f"/keepersnieuws/{vid}", melding=melding)
+    return _terug("/keepersnieuws?archief=1" if naar == "archief" else "/keepersnieuws", melding=melding)
 
 
 @router.get("/keepersnieuws/{vid}", response_class=HTMLResponse)
@@ -780,8 +809,7 @@ def beeld_opnieuw(request: Request, vid: int, soort: str = Form("ai"), scene: st
     if v["wp_post_id"] and v["beeld"] is not None:
         try:
             media_id, _ = wp.upload(bytes(v["beeld"]), f"{_slug(v['titel'])}.png", alt=v["titel"] or "")
-            wp.zet_uitgelicht(v["wp_post_id"], media_id)
-            wp.beeld_in_artikel(v["wp_post_id"])
+            wp.zet_uitgelicht(v["wp_post_id"], media_id)  # de site-template toont het boven de tekst
         except Exception as e:  # noqa: BLE001
             return _terug(f"/keepersnieuws/{vid}", fout=f"Nieuw beeld gemaakt, maar WordPress bijwerken lukte niet: {str(e)[:150]}")
     return _terug(f"/keepersnieuws/{vid}", fout=v["beeld_fout"] or "", melding="" if v["beeld_fout"] else "Nieuw beeld gemaakt.")

@@ -6,6 +6,12 @@
   {% if v.categorie %}<span class="badge">{{ categorieen.get(v.categorie, v.categorie) }}</span>{% endif %}
   {% if v.sport %}<span class="badge">{{ v.sport }}</span>{% endif %}
   {{ geleden(v.aangemaakt) }}{% if v.besloten_via %}, besloten via {{ v.besloten_via }}{% endif %}{% if v.wp_link %} · <a href="{{ v.wp_link }}" target="_blank" rel="noopener">bekijk in WordPress of op de site</a>{% endif %}</p>
+{% if v.gearchiveerd %}<form method="post" action="/keepersnieuws/{{ v.id }}/archief" class="melding herinnering">
+  <input type="hidden" name="terug" value="1"><input type="hidden" name="naar" value="voorstel">
+  Dit voorstel staat in het archief. <button class="knop knop-klein" type="submit">Terug in de lijst</button></form>
+{% elif v.status != 'bezig' %}<form method="post" action="/keepersnieuws/{{ v.id }}/archief" class="acties">
+  <input type="hidden" name="naar" value="lijst"><button class="knop knop-klein" type="submit">Archiveren</button>
+  <span class="noot">Haalt het voorstel uit de lijst; aan het bericht zelf verandert niets.</span></form>{% endif %}
 {% if melding %}<p class="melding ok">{{ melding }}</p>{% endif %}
 {% if fout %}<p class="melding fout">⚠️ {{ fout }}</p>{% endif %}
 {% if v.status == 'fout' %}<form method="post" action="/keepersnieuws/{{ v.id }}/opnieuw" class="acties">

@@ -17,8 +17,19 @@
 {% if not aanbieder %}<p class="melding herinnering">Nog geen AI-beeldmaker: de berichten krijgen het huisstijlbeeld. Een sleutel instellen:
   <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh beeld</code></p>{% endif %}
 
+<div class="kn-lijstkop">
+  {% if archief %}<a class="knop knop-klein" href="/keepersnieuws">← Terug naar de lijst</a>
+  <span class="noot">Het archief: {{ aantallen.archief }} voorstel(len). Ze tellen nog steeds mee, dus Buurmanitor stelt hetzelfde nieuws niet opnieuw voor.</span>
+  {% else %}
+  {% if aantallen.afgehandeld %}<form method="post" action="/keepersnieuws/archiveren"><button class="knop knop-klein" type="submit"
+    title="Geplaatst, niet geplaatst en geen keepersnieuws">Afgehandelde naar het archief ({{ aantallen.afgehandeld }})</button></form>{% endif %}
+  <a class="knop knop-klein" href="/keepersnieuws?archief=1">Archief ({{ aantallen.archief }})</a>
+  {% endif %}
+</div>
+
 <div class="lijst">
 {% for v in rijen %}
+<div class="kn-rij">
 <a class="kaart kn-kaart kn-{{ v.status }}" href="/keepersnieuws/{{ v.id }}">
   {% if v.heeft_beeld %}<img src="/keepersnieuws/{{ v.id }}/beeld.png" alt="" loading="lazy" class="kn-mini">{% endif %}
   <span class="kn-tekst">
@@ -31,12 +42,18 @@
     <span class="noot">{% if v.status == 'overgeslagen' %}{{ v.oordeel }}{% elif v.besluit == 'afgewezen' and v.reden %}Reden: {{ redenen_namen.get(v.reden, v.reden) }}{% if v.toelichting %}, {{ v.toelichting }}{% endif %}{% elif v.fout %}{{ v.fout }}{% else %}{{ v.intro }}{% endif %}</span>
   </span>
 </a>
+{% if v.status != 'bezig' %}<form method="post" action="/keepersnieuws/{{ v.id }}/archief" class="kn-archief">
+  {% if archief %}<input type="hidden" name="terug" value="1"><input type="hidden" name="naar" value="archief">{% endif %}
+  <button class="knop knop-klein" type="submit" title="{{ 'Terug in de lijst' if archief else 'Uit de lijst, naar het archief' }}">{{ 'Terugzetten' if archief else 'Archiveren' }}</button>
+</form>{% endif %}
+</div>
 {% else %}
-<p class="leeg">Nog geen voorstellen. Ze komen vanzelf zodra er keepersnieuws boven de drempel binnenkomt.</p>
+<p class="leeg">{% if archief %}Het archief is leeg.{% else %}Geen voorstellen in de lijst. Nieuwe komen vanzelf zodra er keepersnieuws boven de drempel binnenkomt.{% endif %}</p>
 {% endfor %}
 </div>
 
-<details class="kaart" style="margin-top:18px" {{ 'open' if not rijen }}>
+{% if not archief %}
+<details class="kaart" style="margin-top:18px" {{ 'open' if not rijen and not aantallen.archief }}>
   <summary><b>Instellingen en wat Buurmanitor leerde</b></summary>
   <form method="post" action="/keepersnieuws/instellingen" class="formulier">
     <label class="reden"><span><input type="checkbox" name="kn_aan" value="1" {{ 'checked' if i.kn_aan == '1' }}> Voorstellen maken</span></label>
@@ -67,4 +84,5 @@
   {% if redenen %}<p class="noot">Redenen om niet te plaatsen: {% for r in redenen %}{{ redenen_namen.get(r.reden, r.reden) }} ({{ r.n }}){{ ', ' if not loop.last }}{% endfor %}.
     Buurmanitor krijgt je laatste veertig besluiten met redenen en je richtlijnen mee bij elk nieuw voorstel.</p>{% endif %}
 </details>
+{% endif %}
 {% endblock %}
