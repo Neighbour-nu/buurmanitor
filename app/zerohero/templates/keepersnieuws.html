@@ -11,7 +11,7 @@
 {% if not wp_actief %}<p class="melding fout">⚠️ Er zijn geen WordPress-gegevens: <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh wordpress</code></p>{% endif %}
 {% if not telegram_actief %}<p class="melding herinnering">Telegram is niet ingesteld: voorstellen staan dan alleen hieronder. Je ZEROHERO Doellijn-bot instellen:
   <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh telegram</code></p>
-{% elif telegram_status.conflict %}<p class="melding herinnering">Telegram: {{ telegram_status.fout }}</p>
+{% elif telegram_status.conflict and i.kn_via_n8n != '1' %}<p class="melding herinnering">Telegram: {{ telegram_status.fout }}</p>
 {% elif telegram_status.fout %}<p class="melding fout">⚠️ Telegram: {{ telegram_status.fout }}</p>{% endif %}
 {% if budget_op %}<p class="melding herinnering">Het maandbudget voor keepersnieuws is op: er komen tot de volgende maand geen nieuwe voorstellen. Verhoog het bij Instellingen als je wilt.</p>{% endif %}
 {% if not aanbieder %}<p class="melding herinnering">Nog geen AI-beeldmaker: de berichten krijgen het huisstijlbeeld. Een sleutel instellen:
@@ -46,12 +46,13 @@
     <label>Zoekopdrachten om feiten te controleren<input type="number" name="kn_zoeken" min="0" max="5" value="{{ i.kn_zoeken }}"></label>
     <label>Maandbudget in euro (0 = geen grens)<input type="text" inputmode="decimal" name="kn_budget" value="{{ i.kn_budget }}"></label>
     <label class="reden"><span><input type="checkbox" name="kn_voorselectie" value="1" {{ 'checked' if i.kn_voorselectie == '1' }}> Eerst een goedkope voorselectie</span></label>
+    {% if telegram_status.conflict or i.kn_via_n8n == '1' %}<label class="reden"><span><input type="checkbox" name="kn_via_n8n" value="1" {{ 'checked' if i.kn_via_n8n == '1' }}> n8n stuurt de tikken door (tikknoppen in plaats van links)</span></label>{% endif %}
     <label class="reden"><span><input type="checkbox" name="kn_ai_beeld" value="1" {{ 'checked' if i.kn_ai_beeld == '1' }}> AI-sfeerbeelden (anders het gratis huisstijlbeeld)</span></label>
     <label class="breed">Jouw richtlijnen (gaan voor alles)
       <textarea name="kn_richtlijnen" rows="4" placeholder="Bijvoorbeeld: transfers alleen als het officieel is. Meer handbal en hockey. Geen jeugdkeepers onder de 18.">{{ i.kn_richtlijnen }}</textarea></label>
     <button class="knop" type="submit">Opslaan</button>
   </form>
-  <p class="noot">Telegram: {{ 'de ZEROHERO Doellijn-bot' if eigen_bot else ('de bot van Buurmanitor' if telegram_actief else 'niet ingesteld') }}{% if telegram_status.conflict %}, met linkknoppen naar de Doellijn (tikken ophalen kan niet naast n8n){% elif telegram_actief %}, met tikknoppen{% endif %}.</p>
+  <p class="noot">Telegram: {{ 'de ZEROHERO Doellijn-bot' if eigen_bot else ('de bot van Buurmanitor' if telegram_actief else 'niet ingesteld') }}{% if telegram_status.conflict and i.kn_via_n8n == '1' %}, met tikknoppen die n8n doorstuurt{% elif telegram_status.conflict %}, met linkknoppen naar de Doellijn (tikken ophalen kan niet naast n8n){% elif telegram_actief %}, met tikknoppen{% endif %}.</p>
   <p class="noot"><b>Kosten deze maand: € {{ '%.2f' | format(maand[0]) | replace('.', ',') }}</b>{% if i.kn_budget not in ('', '0') %} van € {{ i.kn_budget }}{% endif %},
     {{ maand[1] }} voorstellen{% if maand[1] %} (gemiddeld € {{ '%.2f' | format(maand[0] / maand[1]) | replace('.', ',') }}){% endif %}. Een schatting
     op basis van tokens, zoekopdrachten en beelden; de echte bedragen staan bij Anthropic en de beeldmaker.

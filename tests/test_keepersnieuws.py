@@ -20,6 +20,7 @@ os.environ["TELEGRAM_BOT_TOKEN"] = "123:abc"
 os.environ["TELEGRAM_CHAT_ID"] = "4242"
 os.environ["ZEROHERO_ANTHROPIC_API_KEY"] = "sk-test"
 os.environ["ZEROHERO_WP_USER"] = "wp"
+os.environ["ZEROHERO_CONCEPT_SECRET"] = "conceptgeheim"
 os.environ["ZEROHERO_WP_APP_PASSWORD"] = "geheim"
 os.environ.pop("ZEROHERO_OPENAI_API_KEY", None)
 os.environ.pop("ZEROHERO_GEMINI_API_KEY", None)
@@ -318,3 +319,26 @@ def test_linkknoppen_als_n8n_de_bot_bezet(nep, klant, monkeypatch):
     assert "Geplaatst op zerohero.one." in r.text
     assert "Je koos in Telegram" not in klant.get(f"/zerohero/keepersnieuws/{v['id']}?snel=plaatsen", headers=KOP).text  # al besloten
     assert "linkknoppen naar de Doellijn" in klant.get("/zerohero/keepersnieuws", headers=KOP).text
+
+
+def test_tikken_via_n8n(nep, klant, monkeypatch):
+    """n8n heeft de webhook van de Doellijn-bot en stuurt tikken door naar /intern/telegram."""
+    import threading  # pylint: disable=import-outside-toplevel
+    monkeypatch.setitem(kn.BOT.status, "conflict", True)
+    kn.zet("kn_via_n8n", "1")
+    kn.ronde()
+    v = kn.q1("SELECT * FROM nieuws_voorstellen WHERE status = 'verstuurd'")
+    assert nep["telegram"][1][2] == [[("✅ Plaatsen", f"kn:{v['id']}:p"), ("👀 Ik kijk zelf", f"kn:{v['id']}:l")], [("❌ Niet plaatsen", f"kn:{v['id']}:n")]]
+    beantwoord = []
+    monkeypatch.setattr(kn.BOT, "_vraag", lambda methode, data=None, timeout=30: beantwoord.append((methode, data)) or True)
+    update = {"update_id": 1, "callback_query": {"id": "cq1", "data": f"kn:{v['id']}:l", "message": {"message_id": 501, "chat": {"id": 4242}}}}
+    assert klant.post("/intern/telegram", json=update).status_code == 403  # zonder geheim
+    r = klant.post("/intern/telegram", json=[{"body": update}], headers={"X-Doellijn-Secret": "conceptgeheim"})
+    assert r.json() == {"ok": True, "verwerkt": True}
+    for th in threading.enumerate():
+        if th.name == "telegram-via-n8n":
+            th.join(10)
+    assert kn.q1("SELECT besluit FROM nieuws_voorstellen WHERE id = %s", (v["id"],))["besluit"] == "later"
+    assert beantwoord[0][0] == "answerCallbackQuery" and beantwoord[0][1]["text"] == "Staat als concept in WordPress."
+    assert klant.post("/intern/telegram", json={"update_id": 2}, headers={"X-Doellijn-Secret": "conceptgeheim"}).json()["verwerkt"] is False
+    assert "met tikknoppen die n8n doorstuurt" in klant.get("/zerohero/keepersnieuws", headers=KOP).text

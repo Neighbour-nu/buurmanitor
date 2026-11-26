@@ -33,7 +33,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from ..kern import config as kern_config, planner, telegram
 from . import ai_beeld, claude_api, omgeving, wp
-from .main import STATUS_OPEN, clusteren, controleer_herkomst, ctx, q, q1, templates, zelfde
+from .main import CONCEPT_SECRET, STATUS_OPEN, clusteren, controleer_herkomst, ctx, q, q1, templates, zelfde
 
 router = APIRouter()
 
@@ -63,7 +63,7 @@ REDENEN = {"geen_nieuws": "Geen echt nieuws", "niet_relevant": "Niet interessant
 STATUSSEN = {"bezig": "Wordt geschreven", "klaar": "Klaar", "verstuurd": "Wacht op jou", "geplaatst": "Geplaatst", "later": "Concept in WordPress",
              "afgewezen": "Niet geplaatst", "overgeslagen": "Geen keepersnieuws", "fout": "Mislukt"}
 STANDAARD = {"kn_aan": "1", "kn_drempel": "60", "kn_per_dag": "5", "kn_per_ronde": "2", "kn_richtlijnen": "", "kn_categorie_id": "",
-             "kn_zoeken": "2", "kn_budget": "15", "kn_ai_beeld": "1", "kn_voorselectie": "1"}
+             "kn_zoeken": "2", "kn_budget": "15", "kn_ai_beeld": "1", "kn_voorselectie": "1", "kn_via_n8n": "0"}
 _slot = threading.Lock()
 
 
@@ -316,8 +316,9 @@ BOT = telegram.registreer(telegram.Bot(os.environ.get("ZEROHERO_TELEGRAM_BOT_TOK
 
 
 def KNOPPEN(vid):  # noqa: N802
-    """Tikknoppen; kan Buurmanitor de tikken niet ophalen (webhook van n8n op dezelfde bot), dan linkknoppen naar de Doellijn."""
-    if BOT.status.get("conflict"):
+    """Tikknoppen; kan Buurmanitor de tikken niet ophalen (webhook van n8n op dezelfde bot) en stuurt n8n ze niet door
+    (kn_via_n8n), dan linkknoppen naar de Doellijn."""
+    if BOT.status.get("conflict") and inst()["kn_via_n8n"] != "1":
         return [[("✅ Plaatsen", f"{link(vid)}?snel=plaatsen"), ("👀 Ik kijk zelf", f"{link(vid)}?snel=concept")],
                 [("❌ Niet plaatsen", f"{link(vid)}?snel=afwijzen")]]
     return [[("✅ Plaatsen", f"kn:{vid}:p"), ("👀 Ik kijk zelf", f"kn:{vid}:l")], [("❌ Niet plaatsen", f"kn:{vid}:n")]]
@@ -485,6 +486,26 @@ def besluit(vid, wat, via="scherm", reden=None, toelichting=None):
     return "Geplaatst op zerohero.one." if wat == "geplaatst" else "Staat als concept in WordPress."
 
 
+@router.post("/intern/telegram")
+async def intern_telegram(request: Request):
+    """Tikken die n8n doorstuurt (als n8n de webhook van de Doellijn-bot heeft). Het werk gaat op de achtergrond, zodat
+    n8n meteen verder kan; Buurmanitor beantwoordt de tik zelf bij Telegram."""
+    if not CONCEPT_SECRET or request.headers.get("X-Doellijn-Secret") != CONCEPT_SECRET:
+        raise HTTPException(403)
+    try:
+        update = await request.json()
+    except ValueError:
+        raise HTTPException(400) from None
+    if isinstance(update, list):  # n8n stuurt soms een lijst items
+        update = update[0] if update else {}
+    update = update.get("body", update) if isinstance(update, dict) else {}
+    if not (update.get("callback_query") or update.get("message")):
+        return {"ok": True, "verwerkt": False}
+    zet("kn_via_n8n_laatst", dt.datetime.now(dt.timezone.utc).isoformat())
+    threading.Thread(target=BOT.verwerk, args=(update,), name="telegram-via-n8n", daemon=True).start()
+    return {"ok": True, "verwerkt": True}
+
+
 telegram.HANDLERS["kn"] = op_knop
 telegram.ANTWOORDEN.append(op_antwoord)
 
@@ -557,8 +578,9 @@ def overzicht(request: Request, melding: str = "", fout: str = ""):
 @router.post("/keepersnieuws/instellingen")
 def instellingen_opslaan(request: Request, kn_aan: str = Form(""), kn_drempel: int = Form(60), kn_per_dag: int = Form(5),
                          kn_per_ronde: int = Form(2), kn_richtlijnen: str = Form(""), kn_zoeken: int = Form(2), kn_budget: str = Form("15"),
-                         kn_ai_beeld: str = Form(""), kn_voorselectie: str = Form("")):
+                         kn_ai_beeld: str = Form(""), kn_voorselectie: str = Form(""), kn_via_n8n: str = Form("")):
     controleer_herkomst(request)
+    zet("kn_via_n8n", "1" if kn_via_n8n else "0")
     zet("kn_aan", "1" if kn_aan else "0")
     zet("kn_ai_beeld", "1" if kn_ai_beeld else "0")
     zet("kn_voorselectie", "1" if kn_voorselectie else "0")
