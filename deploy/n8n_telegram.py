@@ -30,6 +30,8 @@ TRIGGER = "n8n-nodes-base.telegramTrigger"
 MERK = "buurmanitor-keepersnieuws"
 IF_NAAM = "Keepersnieuws?"
 HTTP_NAAM = "Keepersnieuws naar Buurmanitor"
+TOEGESTAAN_NAAM = "Toegestaan?"
+BEPERKING = "|beperking|"
 URL = os.environ.get("BM_INTERN_URL", "http://cockpit-app:8000/intern/telegram")
 # Waar: een tik op een keepersnieuws-knop, of een antwoord op een keepersnieuwsbericht (die hebben kn:-knoppen of de link
 # "Aanpassen in de Doellijn").
@@ -64,11 +66,12 @@ def vind(werkstromen, webhook_url):
 
 
 def eigen(wf):
-    """Onze twee nodes, als ze er al in staan: (if_node, http_node)."""
+    """Onze nodes, als ze er al in staan: (if_node, http_node, toegestaan_node)."""
     gevonden = [n for n in wf.get("nodes") or [] if str(n.get("notes") or "").startswith(MERK)]
-    a = next((n for n in gevonden if n.get("type") == "n8n-nodes-base.if"), None)
+    a = next((n for n in gevonden if n.get("type") == "n8n-nodes-base.if" and BEPERKING not in str(n.get("notes"))), None)
     b = next((n for n in gevonden if n.get("type") == "n8n-nodes-base.httpRequest"), None)
-    return a, b
+    c = next((n for n in gevonden if n.get("type") == "n8n-nodes-base.if" and BEPERKING in str(n.get("notes"))), None)
+    return a, b, c
 
 
 def _uniek(naam, namen):
@@ -85,21 +88,62 @@ def _http_parameters(url, geheim):
             "options": {"timeout": 15000}}
 
 
+def _ids(waarde):
+    return [x.strip() for x in str(waarde or "").split(",") if x.strip()]
+
+
+def _toegestaan_voorwaarde(gebruikers, chats):
+    """Dezelfde beperking als 'Restrict to User/Chat IDs' van de trigger, maar ook voor tikken op knoppen."""
+    delen = []
+    if gebruikers:
+        delen.append(f"{json.dumps(gebruikers)}.includes(String($json.message?.from?.id || $json.callback_query?.from?.id || ''))")
+    if chats:
+        delen.append(f"{json.dumps(chats)}.includes(String(($json.message || $json.callback_query?.message)?.chat?.id || ''))")
+    return "={{ " + " && ".join(delen) + " }}"
+
+
+def _verplaats_beperking(wf, t, bron_naam, uitgang):
+    """De trigger laat met 'Restrict to User IDs' of 'Restrict to Chat IDs' geen tikken op knoppen door (bekend in n8n).
+    Daarom gaat die beperking van de trigger naar een IF 'Toegestaan?' achter de uitgang van bron_naam."""
+    af = (t.get("parameters") or {}).get("additionalFields") or {}
+    gebruikers, chats = _ids(af.get("userIds")), _ids(af.get("chatIds"))
+    if not (gebruikers or chats):
+        return False
+    oud = {k: af[k] for k in ("userIds", "chatIds") if k in af}
+    t["parameters"]["additionalFields"] = {k: v for k, v in af.items() if k not in ("userIds", "chatIds")}
+    naam = _uniek(TOEGESTAAN_NAAM, {n.get("name") for n in wf["nodes"]})
+    x, y = (t.get("position") or [0, 0])[:2]
+    wf["nodes"].append({"id": str(uuid.uuid4()), "name": naam, "type": "n8n-nodes-base.if", "typeVersion": 1,
+                        "position": [x + 220, y - 180],
+                        "parameters": {"conditions": {"boolean": [{"value1": _toegestaan_voorwaarde(gebruikers, chats), "value2": True}]}},
+                        "notes": MERK + BEPERKING + json.dumps(oud) + ". De beperking van de trigger, nu ook voor tikken op knoppen."})
+    verb = wf.setdefault("connections", {})
+    uitgangen = (verb.setdefault(bron_naam, {}).setdefault("main", []))
+    while len(uitgangen) <= uitgang:
+        uitgangen.append([])
+    doelen = list(uitgangen[uitgang] or [])
+    uitgangen[uitgang] = [{"node": naam, "type": "main", "index": 0}]
+    verb[naam] = {"main": [doelen, []]}
+    return True
+
+
 def koppel(wf, trigger_naam, url, geheim):
-    """Geeft (nieuwe werkstroom, veranderd). Staat de koppeling er al, dan worden alleen adres en geheim bijgewerkt."""
+    """Geeft (nieuwe werkstroom, veranderd). Staat de koppeling er al, dan worden adres, geheim en beperking bijgewerkt."""
     wf = copy.deepcopy(wf)
-    a, b = eigen(wf)
-    if a and b:
-        nieuw = _http_parameters(url, geheim)
-        if b.get("parameters") == nieuw:
-            return wf, False
-        b["parameters"] = nieuw
-        return wf, True
-    if a or b:
-        raise Fout("De werkstroom heeft maar één van de twee keepersnieuws-nodes. Draai eerst 'terug'.")
+    a, b, c = eigen(wf)
     t = next((n for n in wf["nodes"] if n.get("name") == trigger_naam), None)
     if not t:
         raise Fout("De Telegram-trigger staat niet meer in de werkstroom.")
+    if a and b:
+        veranderd = False
+        nieuw = _http_parameters(url, geheim)
+        if b.get("parameters") != nieuw:
+            b["parameters"], veranderd = nieuw, True
+        if not c and _verplaats_beperking(wf, t, a["name"], 1):
+            veranderd = True
+        return wf, veranderd
+    if a or b:
+        raise Fout("De werkstroom heeft maar één van de twee keepersnieuws-nodes. Draai eerst 'terug'.")
     p = t.setdefault("parameters", {})
     updates = p.get("updates")
     updates = list(updates) if isinstance(updates, list) else ([updates] if updates else [])
@@ -123,42 +167,65 @@ def koppel(wf, trigger_naam, url, geheim):
     oud = (verb.get(trigger_naam) or {}).get("main") or [[]]
     verb[trigger_naam] = dict(verb.get(trigger_naam) or {}, main=[[{"node": if_naam, "type": "main", "index": 0}]] + oud[1:])
     verb[if_naam] = {"main": [[{"node": http_naam, "type": "main", "index": 0}], list(oud[0] or [])]}
+    _verplaats_beperking(wf, t, if_naam, 1)
     return wf, True
 
 
-def ontkoppel(wf):
-    """Haalt de koppeling weer weg: de trigger gaat weer rechtstreeks naar wat eerst achter hem zat."""
-    wf = copy.deepcopy(wf)
-    a, b = eigen(wf)
-    if not (a or b):
-        return wf, False
-    weg = {n["name"] for n in (a, b) if n}
+def _haal_weg(wf, naam, uitgang):
+    """Haalt een node weg; wat naar hem toe ging, gaat naar de doelen van zijn uitgang (None: nergens heen)."""
     verb = wf.setdefault("connections", {})
-    doelen = ((verb.get(a["name"]) or {}).get("main") or [[], []]) if a else [[], []]
-    doelen = list(doelen[1]) if len(doelen) > 1 else []
-    voor_if = {bron for bron, soorten in verb.items() if bron not in weg and a
-               for uitgangen in (soorten or {}).values() for uit in uitgangen or [] for d in uit or [] if d.get("node") == a["name"]}
+    eigen_uit = (verb.get(naam) or {}).get("main") or []
+    doelen = list(eigen_uit[uitgang] or []) if uitgang is not None and len(eigen_uit) > uitgang else []
+    bronnen = set()
     for bron, soorten in list(verb.items()):
-        if bron in weg:
+        if bron == naam:
             continue
         for soort, uitgangen in (soorten or {}).items():
             nieuw = []
             for uit in uitgangen or []:
                 rij = []
                 for d in uit or []:
-                    if d.get("node") == (a or {}).get("name"):
+                    if d.get("node") == naam:
+                        bronnen.add(bron)
                         rij += [x for x in doelen if x not in rij]
-                    elif d.get("node") not in weg:
+                    else:
                         rij.append(d)
                 nieuw.append(rij)
             soorten[soort] = nieuw
-    for naam in weg:
-        verb.pop(naam, None)
-    if a and ";callback_query" in str(a.get("notes") or ""):
-        for t in wf["nodes"]:
-            if t.get("name") in voor_if and t.get("type") == TRIGGER and isinstance((t.get("parameters") or {}).get("updates"), list):
-                t["parameters"]["updates"] = [u for u in t["parameters"]["updates"] if u != "callback_query"]
-    wf["nodes"] = [n for n in wf["nodes"] if n.get("name") not in weg]
+    verb.pop(naam, None)
+    wf["nodes"] = [n for n in wf["nodes"] if n.get("name") != naam]
+    return bronnen
+
+
+def ontkoppel(wf):
+    """Haalt de koppeling weer weg: de trigger gaat weer rechtstreeks naar wat eerst achter hem zat, met zijn oude beperking."""
+    wf = copy.deepcopy(wf)
+    a, b, c = eigen(wf)
+    if not (a or b or c):
+        return wf, False
+    triggers_naar_a = set()
+    if a:
+        verb = wf.get("connections") or {}
+        triggers_naar_a = {bron for bron, soorten in verb.items() for uitgangen in (soorten or {}).values()
+                           for uit in uitgangen or [] for d in uit or [] if d.get("node") == a["name"]}
+    alle_triggers = [n for n in wf["nodes"] if n.get("type") == TRIGGER]
+    terug_naar = [n for n in alle_triggers if n["name"] in triggers_naar_a] or (alle_triggers if len(alle_triggers) == 1 else [])
+    if c:
+        try:
+            oud = json.loads(str(c.get("notes")).split(BEPERKING, 1)[1].split("}", 1)[0] + "}")
+        except (ValueError, IndexError):
+            oud = {}
+        for t in terug_naar:
+            t.setdefault("parameters", {}).setdefault("additionalFields", {}).update(oud)
+        _haal_weg(wf, c["name"], 0)
+    if b:
+        _haal_weg(wf, b["name"], None)
+    if a:
+        _haal_weg(wf, a["name"], 1)
+        if ";callback_query" in str(a.get("notes") or ""):
+            for t in terug_naar:
+                if isinstance((t.get("parameters") or {}).get("updates"), list):
+                    t["parameters"]["updates"] = [u for u in t["parameters"]["updates"] if u != "callback_query"]
     return wf, True
 
 

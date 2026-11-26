@@ -41,7 +41,7 @@ def test_koppel_zet_if_en_http_ertussen():
     assert veranderd
     assert wf["nodes"][0]["parameters"]["updates"] == ["message"]  # origineel onaangeroerd
     assert nieuw["nodes"][0]["parameters"]["updates"] == ["message", "callback_query"]
-    a, b = nt.eigen(nieuw)
+    a, b, _ = nt.eigen(nieuw)
     assert a["type"] == "n8n-nodes-base.if" and a["typeVersion"] == 1
     assert b["parameters"]["url"].endswith("/intern/telegram")
     assert b["parameters"]["headerParameters"]["parameters"] == [{"name": "X-Doellijn-Secret", "value": "s3"}]
@@ -90,7 +90,7 @@ def test_unieke_namen():
     wf = werkstroom()
     wf["nodes"].append({"id": "4", "name": nt.IF_NAAM, "type": "n8n-nodes-base.noOp", "parameters": {}})
     nieuw, _ = nt.koppel(wf, "Telegram Trigger", "http://u", "s")
-    a, _ = nt.eigen(nieuw)
+    a, _, _ = nt.eigen(nieuw)
     assert a["name"] == nt.IF_NAAM + " 2"
     assert len({n["name"] for n in nieuw["nodes"]}) == len(nieuw["nodes"])
 
@@ -99,7 +99,7 @@ def test_trigger_zonder_vervolg():
     wf = werkstroom()
     wf["connections"] = {}
     nieuw, _ = nt.koppel(wf, "Telegram Trigger", "http://u", "s")
-    a, _ = nt.eigen(nieuw)
+    a, _, _ = nt.eigen(nieuw)
     assert nieuw["connections"][a["name"]]["main"][1] == []
     terug, _ = nt.ontkoppel(nieuw)
     assert terug["connections"] == {"Telegram Trigger": {"main": [[]]}}
@@ -116,7 +116,7 @@ def test_put_body_laat_onbekende_instellingen_weg():
 
 def test_half_gekoppeld_stopt():
     nieuw, _ = nt.koppel(werkstroom(), "Telegram Trigger", "http://u", "s")
-    a, _ = nt.eigen(nieuw)
+    a, _, _ = nt.eigen(nieuw)
     nieuw["nodes"] = [n for n in nieuw["nodes"] if n is not a]
     try:
         nt.koppel(nieuw, "Telegram Trigger", "http://u", "s")
@@ -125,3 +125,40 @@ def test_half_gekoppeld_stopt():
         pass
     terug, veranderd = nt.ontkoppel(nieuw)
     assert veranderd and len(terug["nodes"]) == 3
+
+
+def met_beperking():
+    wf = werkstroom(updates=("callback_query", "message"))
+    wf["nodes"][0]["parameters"]["additionalFields"] = {"userIds": "111, 222", "download": True}
+    return wf
+
+
+def test_beperking_gaat_van_trigger_naar_toegestaan():
+    """n8n laat met 'Restrict to User IDs' geen tikken op knoppen door; die beperking komt nu achter Keepersnieuws?."""
+    wf = met_beperking()
+    nieuw, _ = nt.koppel(wf, "Telegram Trigger", "http://u", "s")
+    assert nieuw["nodes"][0]["parameters"]["additionalFields"] == {"download": True}
+    a, b, c = nt.eigen(nieuw)
+    assert c and c["name"] == nt.TOEGESTAAN_NAAM
+    v = nieuw["connections"]
+    assert v[a["name"]]["main"] == [[{"node": b["name"], "type": "main", "index": 0}], [{"node": c["name"], "type": "main", "index": 0}]]
+    assert v[c["name"]]["main"] == [[{"node": "Switch", "type": "main", "index": 0}], []]
+    voorwaarde = c["parameters"]["conditions"]["boolean"][0]["value1"]
+    assert '["111", "222"].includes(' in voorwaarde and "callback_query?.from?.id" in voorwaarde
+    terug, _ = nt.ontkoppel(nieuw)
+    assert terug["nodes"] == wf["nodes"] and terug["connections"] == wf["connections"]
+
+
+def test_beperking_bij_bestaande_koppeling():
+    wf = met_beperking()
+    af = wf["nodes"][0]["parameters"].pop("additionalFields")
+    eerst, _ = nt.koppel(wf, "Telegram Trigger", "http://u", "s")  # zoals de eerste versie van het script
+    eerst["nodes"][0]["parameters"]["additionalFields"] = af
+    nieuw, veranderd = nt.koppel(eerst, "Telegram Trigger", "http://u", "s")
+    assert veranderd and nt.eigen(nieuw)[2] and "userIds" not in nieuw["nodes"][0]["parameters"]["additionalFields"]
+    nogmaals, veranderd = nt.koppel(nieuw, "Telegram Trigger", "http://u", "s")
+    assert not veranderd and nogmaals == nieuw
+    terug, _ = nt.ontkoppel(nieuw)
+    assert terug["nodes"][0]["parameters"]["additionalFields"]["userIds"] == "111, 222"
+    assert terug["connections"]["Telegram Trigger"]["main"] == [[{"node": "Switch", "type": "main", "index": 0}]]
+    assert len(terug["nodes"]) == 3
