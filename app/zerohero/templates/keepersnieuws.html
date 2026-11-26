@@ -11,7 +11,7 @@
 {% if not wp_actief %}<p class="melding fout">⚠️ Er zijn geen WordPress-gegevens: <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh wordpress</code></p>{% endif %}
 {% if not telegram_actief %}<p class="melding herinnering">Telegram is niet ingesteld: voorstellen staan dan alleen hieronder. Je ZEROHERO Doellijn-bot instellen:
   <code>bash ~/buurmanitor/app/deploy/zerohero-sleutel.sh telegram</code></p>
-{% elif telegram_status.conflict and i.kn_via_n8n != '1' %}<p class="melding herinnering">Telegram: {{ telegram_status.fout }}</p>
+{% elif telegram_status.conflict and i.kn_via_n8n != '1' %}<p class="melding herinnering">Telegram: {{ telegram_status.fout }} Wil je gewone tikknoppen? Laat n8n de tikken doorsturen met <code>bash ~/buurmanitor/app/deploy/n8n-telegram.sh</code> op de server.</p>
 {% elif telegram_status.fout %}<p class="melding fout">⚠️ Telegram: {{ telegram_status.fout }}</p>{% endif %}
 {% if budget_op %}<p class="melding herinnering">Het maandbudget voor keepersnieuws is op: er komen tot de volgende maand geen nieuwe voorstellen. Verhoog het bij Instellingen als je wilt.</p>{% endif %}
 {% if not aanbieder %}<p class="melding herinnering">Nog geen AI-beeldmaker: de berichten krijgen het huisstijlbeeld. Een sleutel instellen:
