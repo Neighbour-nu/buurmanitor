@@ -96,10 +96,15 @@ def kandidaten(i=None, nu=None):
                  AND NOT EXISTS (SELECT 1 FROM nieuws_voorstellen v WHERE v.item_ids && ARRAY[items.id])
                  AND NOT EXISTS (SELECT 1 FROM concepten c WHERE c.item_ids && ARRAY[items.id])
                  ORDER BY score DESC NULLS LAST LIMIT 120""", (_getal(i, "kn_drempel"), list(STATUS_OPEN)))
-    recent = q("""SELECT keepers, NULL AS verhaal FROM nieuws_voorstellen WHERE aangemaakt > now() - interval '5 days'
-                  AND status NOT IN ('fout')""")
-    verhalen = [v for v in clusteren([dict(r) for r in rijen]) if not any(zelfde(v, r) for r in recent)]
-    return verhalen
+    # Al gebracht (of al beoordeeld): dezelfde keeper in een echt voorstel van de laatste vijf dagen, of hetzelfde
+    # bericht (kop, link of verhaal) in een voorstel van de laatste week, ook als het via een andere feed opnieuw binnenkwam.
+    recent = [dict(r) for r in q("""SELECT keepers, NULL AS verhaal FROM nieuws_voorstellen WHERE aangemaakt > now() - interval '5 days'
+                                    AND status NOT IN ('fout', 'overgeslagen')""")]
+    recent += [dict(r) | {"keepers": []} for r in q("""SELECT i.titel, i.url, i.verhaal FROM items i
+                     JOIN nieuws_voorstellen v ON i.id = ANY(v.item_ids)
+                     WHERE v.aangemaakt > now() - interval '7 days' AND v.status <> 'fout'""")]
+    return [v for v in clusteren([dict(r) for r in rijen])
+            if not any(zelfde(lid, r) for lid in (v.get("leden") or [v]) for r in recent)]
 
 
 def vandaag_gemaakt():

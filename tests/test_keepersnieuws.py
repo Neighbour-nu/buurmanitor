@@ -444,3 +444,25 @@ def test_eigen_aanwijzing_voor_het_beeld(nep, klant, monkeypatch):
     assert "Nieuw beeld gemaakt." in r.text
     assert gevraagd[-1] == ("Een leeg doel met rode stoeltjes", "voetbal")
     assert kn.q1("SELECT beeld_scene FROM nieuws_voorstellen WHERE id = %s", (v["id"],))["beeld_scene"] == "Een leeg doel met rode stoeltjes"
+
+
+def test_zelfde_kop_of_link():
+    from app.zerohero.main import titel_sleutel, zelfde  # pylint: disable=import-outside-toplevel
+    a = {"titel": "New series spotlights the NHL goalie mental health crisis - NHL.com", "url": "https://www.nhl.com/news/a?x=1"}
+    b = {"titel": "New series spotlights the NHL goalie mental-health crisis", "url": "https://news.google.com/rss/1"}
+    c = {"titel": "Iets heel anders over een keeper", "url": "https://nhl.com/news/a"}
+    assert titel_sleutel(a) == titel_sleutel(b) and zelfde(a, b) and zelfde(a, c)  # zelfde kop; zelfde link
+    assert not zelfde({"titel": "Kort"}, {"titel": "Kort"})  # te kort om op te vergelijken
+    assert not zelfde(b, c)
+
+
+def test_zelfde_bericht_via_andere_feed_niet_opnieuw(nep, klant):
+    kn.q("""INSERT INTO items (miniflux_id, bron, url, titel, binnen, sport, keepers, score, samenvatting, status) VALUES
+            (9010, 'NHL', 'https://nhl.com/x', 'New series spotlights the NHL goalie mental health crisis', now(), 'ijshockey', '{}', 80, 'Serie.', 'nieuw')
+            RETURNING 1""")
+    kn.ronde()
+    assert kn.q1("SELECT 1 AS x FROM nieuws_voorstellen v JOIN items i ON i.id = ANY(v.item_ids) WHERE i.miniflux_id = 9010")
+    kn.q("""INSERT INTO items (miniflux_id, bron, url, titel, binnen, sport, keepers, score, samenvatting, status) VALUES
+            (9011, 'Google News', 'https://news.google.com/y', 'New series spotlights the NHL goalie mental health crisis - ESPN', now(), 'ijshockey', '{}', 80, 'Serie.', 'nieuw')
+            RETURNING 1""")
+    assert not any(9011 in [lid.get("miniflux_id") for lid in v["leden"]] for v in kn.kandidaten())

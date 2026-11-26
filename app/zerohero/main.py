@@ -10,6 +10,7 @@ import hmac
 import html
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from contextlib import asynccontextmanager
@@ -163,8 +164,26 @@ def keepers_van(x):
     return {str(k).strip().lower() for k in (x.get("keepers") or []) if k}
 
 
+def titel_sleutel(x):
+    """De kop zonder bronnaam erachter, leestekens en hoofdletters; leeg als hij te kort is om op te vergelijken."""
+    t = str(x.get("titel") or "").lower().strip()
+    t = re.sub(r"\s+[-|\u2013\u2014]\s+[^-|\u2013\u2014]{2,40}$", "", t)  # " - NHL.com", " | NOS"
+    t = re.sub(r"[^0-9a-z\u00e0-\u00ff]+", " ", t).strip()
+    return t if len(t) >= 20 else ""
+
+
+def url_sleutel(x):
+    u = urlsplit(str(x.get("url") or ""))
+    return (u.netloc.lower().removeprefix("www.") + u.path.rstrip("/")) if u.netloc and len(u.path) > 1 else ""
+
+
 def zelfde(a, b):
+    """Hetzelfde verhaal: zelfde verhaalsleutel, zelfde kop, zelfde link of een gedeelde keeper."""
     if a.get("verhaal") and a.get("verhaal") == b.get("verhaal"):
+        return True
+    if titel_sleutel(a) and titel_sleutel(a) == titel_sleutel(b):
+        return True
+    if url_sleutel(a) and url_sleutel(a) == url_sleutel(b):
         return True
     return bool(keepers_van(a) & keepers_van(b))
 
