@@ -225,3 +225,35 @@ def test_herschrijven_met_schermafbeelding(klant, monkeypatch):
     klein = Image.open(io.BytesIO(__import__("base64").b64decode(blok["source"]["data"])))
     assert max(klein.size) == 1800 and klein.mode == "RGB"
     pol.uitvoeren("DELETE FROM concepten WHERE id IN (%s, %s)", (k, nieuw))
+
+
+def test_agendapunt_verwijderen_en_terugzetten(klant, monkeypatch):
+    import datetime as dt  # pylint: disable=import-outside-toplevel
+    from app.politiek import main as pol, notubiz  # pylint: disable=import-outside-toplevel
+    start = dt.datetime(2026, 12, 1, 19, 0)
+
+    def punt(o, tijd=""):
+        return {"onderwerp": o, "standaard": False, "sectie": "Adviserend", "diepte": 0, "tijd": tijd, "portefeuillehouder": ""}
+    avond = {"id": 2, "naam": "Commissieavond", "start": start, "url": "https://helmond.notubiz.nl/y", "commissies": [
+        {"naam": "Commissie A", "plek": "Raadzaal", "agenda": [punt("Bestedingsplan Wonen", "19.05-19.50"),
+                                                               punt("10 minuten t.b.v. uitloop agendapunt en wissel commissieleden")]}]}
+    monkeypatch.setattr(notubiz, "evenementen", lambda van, tot: [
+        {"id": 2, "soort": "commissie", "type": "assembly", "naam": "Commissieavond", "start": start, "plek": "", "url": ""}])
+    monkeypatch.setattr(notubiz, "commissieavond", lambda nummer: avond)
+    pol.uitvoeren("DELETE FROM agenda_verborgen")
+    week = "/politiek/whaller?week=2026-11-30"
+    pagina = klant.get(week, headers=KOP).text
+    assert "10 minuten t.b.v. uitloop" in pagina and 'action="/politiek/agenda/verbergen"' in pagina
+    r = klant.post("/politiek/agenda/verbergen", headers=FORMULIER, follow_redirects=False, data={
+        "onderwerp": "10 minuten t.b.v. uitloop agendapunt en wissel commissieleden", "soort": "commissie",
+        "datum": "2026-12-01", "terug": "whaller", "bereik": "overal"})
+    assert r.status_code == 303 and r.headers["location"].startswith("/politiek/whaller?week=2026-12-01")
+    pagina = klant.get(week, headers=KOP).text
+    assert "Verwijderde agendapunten (1)" in pagina and "bij elke vergadering" in pagina
+    assert "uitloop agendapunt en wissel commissieleden - " not in pagina and "| @?" not in pagina.split("Bestedingsplan Wonen")[-1][:60]
+    assert "10 minuten t.b.v. uitloop" not in klant.get("/politiek/agenda?wie=alle", headers=KOP).text.split("Verwijderde agendapunten")[0]
+    rid = pol.q1("SELECT id FROM agenda_verborgen")["id"]
+    r = klant.post(f"/politiek/agenda/verborgen/{rid}/terug", headers=FORMULIER, data={"terug": "agenda", "wie": "alle"}, follow_redirects=True)
+    assert "staat weer op de agenda" in r.text and "Verwijderde agendapunten" not in r.text
+    assert klant.post("/politiek/agenda/verbergen", headers=FORMULIER, data={"onderwerp": "x", "soort": "raad", "datum": "nee",
+                                                                             "bereik": "hier"}).status_code == 400

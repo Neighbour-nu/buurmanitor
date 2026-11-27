@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_verwijderen.html" as vw %}
 {% macro dag(d) %}{{ lang(d) }}{% endmacro %}
 {% macro keuze(naam, waarde, lijst, leeg='(niemand)') %}
 <select name="{{ naam }}" aria-label="{{ naam }}" style="min-width:150px">
@@ -105,7 +106,8 @@
       <tbody>{% for p in v.punten %}{% set kies = v.soort == 'commissie' or p.rubriek == 'bespreek' %}<tr>
         <td>{% if kies %}<input type="hidden" name="onderwerp_{{ loop.index }}" value="{{ p.onderwerp }}">{% endif %}{{ p.onderwerp }}
           <br><span class="noot">{{ [p.commissie, p.sectie or (p.rubriek == 'hamer' and 'Hamerstuk') or '', p.tijd and p.tijd ~ ' uur']|select|join(' · ') }}</span>
-          {% if kies and not p.vast and (p.woordvoerder or p.voorstel_wv) %}<br><span class="label grijs" title="{{ p.voorstel }}">voorstel: {{ p.voorstel }}</span>{% elif kies and not p.woordvoerder and not p.voorstel_wv %}<br><span class="label rood">nog niemand</span>{% endif %}</td>
+          {% if kies and not p.vast and (p.woordvoerder or p.voorstel_wv) %}<br><span class="label grijs" title="{{ p.voorstel }}">voorstel: {{ p.voorstel }}</span>{% elif kies and not p.woordvoerder and not p.voorstel_wv %}<br><span class="label rood">nog niemand</span>{% endif %}
+          <br>{{ vw.verwijder('vb-' ~ v.soort ~ '-' ~ v.datum.isoformat() ~ '-' ~ loop.index) }}</td>
         {% if kies %}
         <td>{{ keuze('wv_' ~ loop.index, p.woordvoerder or p.voorstel_wv, personen if v.soort == 'commissie' else raadsleden) }}</td>
         {% if v.soort == 'commissie' %}<td>{{ keuze('erbij_' ~ loop.index, p.zit_erbij, personen) }}</td>{% endif %}
@@ -119,6 +121,7 @@
       {% if v.soort == 'raad' %}<a class="knop" style="flex:0 0 auto" href="/stemadvies">Stemadvies</a>{% endif %}
     </p>
   </form>
+  {% for p in v.punten %}{% call vw.verwijder_form('vb-' ~ v.soort ~ '-' ~ v.datum.isoformat() ~ '-' ~ loop.index, p, v.soort, v.datum.isoformat(), 'agenda') %}<input type="hidden" name="wie" value="{{ wie }}"><input type="hidden" name="weken" value="{{ weken }}">{% endcall %}{% endfor %}
   {% elif v.alleen_leden %}<p class="noot">De agenda is alleen te zien als je bent ingelogd in Notubiz.</p>
   {% elif v.soort not in ('commissie', 'raad') %}<p class="noot">Geen agendapunten voor de fractie.</p>{% endif %}
 </div>
@@ -126,5 +129,6 @@
 <div class="leeg">Geen vergaderingen gevonden.</div>
 {% endfor %}
 {% if fouten %}<p class="noot">Niet gelukt: {{ fouten|join('; ') }}</p>{% endif %}
+{{ vw.verwijderd_lijst(verborgen, 'agenda', '<input type="hidden" name="wie" value="' ~ (wie|e) ~ '"><input type="hidden" name="weken" value="' ~ weken ~ '">') }}
 <p class="noot">Regio (MRE, Raadstafel21 en gemeenschappelijke regelingen) komt in fase 3 op dit scherm.</p>
 {% endblock %}

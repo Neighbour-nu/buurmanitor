@@ -155,6 +155,13 @@ MIGRATIES = [
     "UPDATE fractie_acties SET status = 'nieuw' WHERE status = 'open'",
     "UPDATE fractie_acties SET status = 'afgerond' WHERE status = 'klaar'",
     "ALTER TABLE fractie_acties ADD COLUMN IF NOT EXISTS gewijzigd timestamptz NOT NULL DEFAULT now()",
+    """CREATE TABLE IF NOT EXISTS agenda_verborgen (
+        id serial PRIMARY KEY,
+        sleutel text NOT NULL,
+        onderwerp text NOT NULL,
+        soort text,
+        datum date,
+        aangemaakt timestamptz NOT NULL DEFAULT now())""",
     """CREATE TABLE IF NOT EXISTS agenda_voortgang (
         sleutel text PRIMARY KEY,
         onderwerp text NOT NULL,

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_verwijderen.html" as vw %}
 {% macro keuze(naam, waarde, lijst, leeg='(niemand)') %}
 <select name="{{ naam }}" aria-label="{{ naam }}">
   <option value="">{{ leeg }}</option>
@@ -65,7 +66,8 @@
           {% if p.bron == 'pdf' %}<br><span class="label blauw">uit de PDF: {{ p.pdf.namen|join(' en ') }}</span>
           {% elif p.zoals_pdf %}<br><span class="label groen">✓ zoals in de PDF</span>
           {% elif p.bron == 'eerder' %}<br><span class="label grijs">voorstel uit een eerdere vergadering</span>{% elif not p.bron %}<br><span class="label rood">nog niemand</span>{% endif %}
-          {% if p.pdf and p.pdf.onbekend %}<br><span class="label rood">{{ p.pdf.onbekend|join(' en ') }} niet gevonden bij de fractieleden</span>{% endif %}</td>
+          {% if p.pdf and p.pdf.onbekend %}<br><span class="label rood">{{ p.pdf.onbekend|join(' en ') }} niet gevonden bij de fractieleden</span>{% endif %}
+          <br>{{ vw.verwijder('vb-c-' ~ b.datum ~ '-' ~ loop.index) }}</td>
         <td>{{ keuze('wv_' ~ loop.index, p.woordvoerder, personen) }}</td>
         <td>{{ keuze('erbij_' ~ loop.index, p.zit_erbij, personen) }}</td>
       </tr>
@@ -74,6 +76,7 @@
     </table></div>
     <p><button class="knop vol" type="submit">{{ 'Bevestigen en opslaan' if b.pdf and b.pdf.wacht else 'Woordvoerders opslaan' }}</button></p>
   </form>
+  {% for p in b.punten %}{% call vw.verwijder_form('vb-c-' ~ b.datum ~ '-' ~ loop.index, p, 'commissie', b.datum, 'whaller') %}{% endcall %}{% endfor %}
   {% elif b.soort == 'raad' %}
   {% if b.indeling.bespreek %}
   <form method="post" action="/whaller/toewijzingen">
@@ -83,13 +86,15 @@
       <tbody>
       {% for p in b.indeling.bespreek %}
       <tr><td><input type="hidden" name="onderwerp_{{ loop.index }}" value="{{ p.onderwerp }}"><b>{{ p.onderwerp }}</b>
-        {% if p.bron == 'commissie' %}<br><span class="label grijs">voorstel uit de commissie</span>{% elif not p.woordvoerder %}<br><span class="label rood">nog niemand</span>{% endif %}</td>
+        {% if p.bron == 'commissie' %}<br><span class="label grijs">voorstel uit de commissie</span>{% elif not p.woordvoerder %}<br><span class="label rood">nog niemand</span>{% endif %}
+        <br>{{ vw.verwijder('vb-r-' ~ b.datum ~ '-' ~ loop.index) }}</td>
         <td>{{ keuze('wv_' ~ loop.index, p.woordvoerder, personen|selectattr('whaller', 'in', raadsleden)|list) }}</td></tr>
       {% endfor %}
       </tbody>
     </table></div>
     <p><button class="knop vol" type="submit">Woordvoerders opslaan</button></p>
   </form>
+  {% for p in b.indeling.bespreek %}{% call vw.verwijder_form('vb-r-' ~ b.datum ~ '-' ~ loop.index, p, 'raad', b.datum, 'whaller') %}{% endcall %}{% endfor %}
   {% endif %}
   {% endif %}
 
@@ -148,4 +153,5 @@ async function kopieer(id, knop) {
   setTimeout(() => knop.textContent = tekst, 2500);
 }
 </script>
+{{ vw.verwijderd_lijst(verborgen, 'whaller') }}
 {% endblock %}

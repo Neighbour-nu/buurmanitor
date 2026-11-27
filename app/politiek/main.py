@@ -731,7 +731,56 @@ def agenda_scherm(request: Request, wie: str = "", weken: int = 6, vernieuw: int
         request, "agenda", vergaderingen=vergaderingen, fouten=fouten, fout=fout, mijn=mijn, wie=wie, ik=ik,
         weken=weken, personen=personen, raadsleden=[p for p in personen if (p["rol"] or "").startswith("raadslid")], stap_naam=agenda.STAP_NAAM, lang=whaller.lang,
         deadlines=agenda.mijn_deadlines(vergaderingen, wie, dagen=7) if wie != "alle" else [],
-        vandaag=dt.date.today(), melding=request.query_params.get("melding", "")))
+        vandaag=dt.date.today(), melding=request.query_params.get("melding", ""), verborgen=_verborgen_lijst()))
+
+
+def _verborgen_lijst():
+    return q("SELECT * FROM agenda_verborgen ORDER BY datum IS NOT NULL, datum DESC, onderwerp")
+
+
+@app.post("/agenda/verbergen")
+async def agenda_verbergen(request: Request):
+    """Een agendapunt van de agenda halen: alleen bij deze vergadering, of bij elke vergadering (een terugkerend punt
+    zoals uitloop of wissel van commissieleden). Het komt dan ook niet meer in het Whaller-bericht."""
+    controleer_herkomst(request)
+    form = await request.form()
+    onderwerp = str(form.get("onderwerp", "")).strip()
+    soort = form.get("soort")
+    bereik = form.get("bereik")
+    if not onderwerp or soort not in ("commissie", "raad") or bereik not in ("hier", "overal"):
+        raise HTTPException(400)
+    try:
+        datum = dt.date.fromisoformat(str(form.get("datum", "")))
+    except ValueError:
+        raise HTTPException(400) from None
+    sl = whaller.sleutel(onderwerp)
+    if bereik == "overal":
+        q("DELETE FROM agenda_verborgen WHERE sleutel = %s RETURNING 1", (sl,))
+    q("INSERT INTO agenda_verborgen (sleutel, onderwerp, soort, datum) VALUES (%s, %s, %s, %s) RETURNING id",
+      (sl, onderwerp, None if bereik == "overal" else soort, None if bereik == "overal" else datum))
+    melding = (f"'{onderwerp}' staat niet meer op de agenda" + (" van deze vergadering." if bereik == "hier" else ", ook niet bij volgende vergaderingen.")
+               + " Terugzetten kan onderaan de pagina.")
+    return _terug_naar(form, soort, datum, melding)
+
+
+@app.post("/agenda/verborgen/{rid}/terug")
+async def agenda_terugzetten(request: Request, rid: int):
+    controleer_herkomst(request)
+    form = await request.form()
+    r = q1("DELETE FROM agenda_verborgen WHERE id = %s RETURNING *", (rid,))
+    if not r:
+        raise HTTPException(404)
+    return _terug_naar(form, r["soort"] or "", r["datum"], f"'{r['onderwerp']}' staat weer op de agenda.")
+
+
+def _terug_naar(form, soort, datum, melding):
+    if form.get("terug") == "whaller":
+        week = f"week={datum.isoformat()}&" if datum else ""
+        anker = f"#{soort}-{datum.isoformat()}" if soort and datum else "#verwijderd"
+        return RedirectResponse(f"/whaller?{week}" + urlencode({"melding": melding}) + anker, status_code=303)
+    anker = f"#v-{soort}-{datum.isoformat()}" if soort and datum else "#verwijderd"
+    return RedirectResponse(f"/agenda?wie={form.get('wie', '')}&weken={form.get('weken', 6)}&" + urlencode({"melding": melding}) + anker,
+                            status_code=303)
 
 
 @app.post("/agenda/toewijzingen")
@@ -1561,6 +1610,7 @@ def whaller_scherm(request: Request, week: str = ""):
     personen = q("SELECT naam, whaller, rol FROM personen WHERE actief AND coalesce(whaller, '') <> '' ORDER BY volgorde, naam")
     raadsleden = {p["whaller"] for p in personen if (p["rol"] or "").startswith("raadslid")}
     toew = q("SELECT * FROM toewijzingen")
+    verborgen = q("SELECT * FROM agenda_verborgen")
     berichten, fout, overig = [], "", []
     try:
         evenementen = notubiz.evenementen(maandag, zondag)
@@ -1573,7 +1623,7 @@ def whaller_scherm(request: Request, week: str = ""):
                 datum = avond["start"].date()
                 sl = f"commissie:{datum.isoformat()}"
                 inv = _invoer(sl)
-                punten = whaller.commissie_punten(avond, toew)
+                punten = whaller.commissie_punten(avond, toew, verborgen)
                 pdf = _pdf_toepassen(punten, inv.get("pdf"), personen)
                 berichten.append({"soort": "commissie", "sleutel": sl, "datum": datum,
                                   "titel": f"Commissievergadering {whaller.d(datum)}", "url": avond["url"],
@@ -1585,7 +1635,7 @@ def whaller_scherm(request: Request, week: str = ""):
                 datum = verg["start"].date()
                 sl = f"raad:{datum.isoformat()}"
                 inv = _invoer(sl)
-                indeling = whaller.raad_indeling(verg, toew, raadsleden)
+                indeling = whaller.raad_indeling(verg, toew, raadsleden, verborgen)
                 berichten.append({"soort": "raad", "sleutel": sl, "datum": datum,
                                   "titel": f"{verg['naam']} {whaller.d(datum)}", "url": verg["url"],
                                   "indeling": indeling, "invoer": inv,
@@ -1607,7 +1657,7 @@ def whaller_scherm(request: Request, week: str = ""):
         request, "whaller", maandag=maandag, zondag=zondag, berichten=[fractie] + berichten, overig=markeer_besloten(overig),
         fout=fout or request.query_params.get("fout", ""), personen=personen, raadsleden=raadsleden, inst=inst, lang=whaller.lang,
         vorige=(maandag - dt.timedelta(days=7)).isoformat(), volgende=(maandag + dt.timedelta(days=7)).isoformat(),
-        melding=request.query_params.get("melding", "")))
+        melding=request.query_params.get("melding", ""), verborgen=_verborgen_lijst()))
 
 
 def _pdf_toepassen(punten, pdf, personen):

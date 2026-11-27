@@ -59,18 +59,29 @@ def zoek_toewijzing(onderwerp, toewijzingen, soort=None):
     return max(exact, key=lambda t: (t["datum"], t.get("id", 0)))
 
 
+def is_verborgen(onderwerp, soort, datum, regels):
+    """Is dit agendapunt van de agenda gehaald? Een regel zonder datum geldt voor elke vergadering
+    (een terugkerend punt), een regel met datum en soort alleen voor die ene vergadering. Pure functie."""
+    k = sleutel(onderwerp)
+    return any(r["sleutel"] == k and (r.get("datum") is None or (r["datum"] == datum and r.get("soort") in (None, soort)))
+               for r in regels or ())
+
+
 def vermelding(login):
     return f"@{login}" if login else "@?"
 
 
 # ---------- commissie ----------
 
-def commissie_punten(avond, toewijzingen):
-    """De agendapunten van een commissieavond die in het bericht komen, met voorgestelde namen."""
+def commissie_punten(avond, toewijzingen, verborgen=()):
+    """De agendapunten van een commissieavond die in het bericht komen, met voorgestelde namen.
+    verborgen: regels uit agenda_verborgen (punten die van de agenda zijn gehaald)."""
     uit = []
     for c in avond["commissies"]:
         for p in c["agenda"]:
             if p["standaard"] or not p["sectie"] or p["diepte"] > 0:
+                continue
+            if is_verborgen(p["onderwerp"], "commissie", avond["start"].date(), verborgen):
                 continue
             t = zoek_toewijzing(p["onderwerp"], toewijzingen, "commissie")
             vast = t and t["datum"] == avond["start"].date()
@@ -125,11 +136,18 @@ def raad_woordvoerder(onderwerp, toewijzingen, raadsleden):
     return "", ""
 
 
-def raad_indeling(verg, toewijzingen, raadsleden):
-    """Agendapunten in rubrieken: bijzonder (voor de hamerstukken), hamer, bespreek, besloten."""
+def raad_indeling(verg, toewijzingen, raadsleden, verborgen=()):
+    """Agendapunten in rubrieken: bijzonder (voor de hamerstukken), hamer, bespreek, besloten.
+    verborgen: regels uit agenda_verborgen (punten die van de agenda zijn gehaald, met hun deelpunten)."""
     bijzonder, hamer, bespreek, besloten = [], [], [], []
+    weg = False
     for p in verg["agenda"]:
         s = (p["sectie"] or "").lower()
+        if p["diepte"] > 0 and weg:
+            continue  # deelpunt van een verwijderd punt
+        weg = p["diepte"] == 0 and is_verborgen(p["onderwerp"], "raad", verg["start"].date(), verborgen)
+        if weg:
+            continue
         if p["diepte"] > 0:
             doel = bespreek if "bespreek" in s else hamer if "hamer" in s else besloten if "beslot" in s else None
             if doel:  # deelpunten (zoals 9a en 9b) onder het laatste hoofdpunt

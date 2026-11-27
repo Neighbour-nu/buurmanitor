@@ -1,0 +1,15 @@
+{% macro verwijder(fid) %}<details style="display:inline-block;margin-top:4px"><summary class="noot" style="cursor:pointer" title="Van de agenda halen, bijvoorbeeld een procedureel punt">Verwijderen</summary>
+  <span style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+  <button class="knop klein" type="submit" form="{{ fid }}" name="bereik" value="hier">Alleen bij deze vergadering</button>
+  <button class="knop klein" type="submit" form="{{ fid }}" name="bereik" value="overal" title="Voor een punt dat elke keer terugkomt">Bij elke vergadering</button></span></details>{% endmacro %}
+{% macro verwijder_form(fid, p, soort, datum, terug) %}<form id="{{ fid }}" method="post" action="/agenda/verbergen" hidden>
+  <input type="hidden" name="onderwerp" value="{{ p.onderwerp }}"><input type="hidden" name="soort" value="{{ soort }}">
+  <input type="hidden" name="datum" value="{{ datum }}"><input type="hidden" name="terug" value="{{ terug }}">{{ caller() if caller }}</form>{% endmacro %}
+{% macro verwijderd_lijst(verborgen, terug, extra='') %}{% if verborgen %}
+<details class="kaart" id="verwijderd" style="margin-top:18px"><summary><b>Verwijderde agendapunten ({{ verborgen|length }})</b></summary>
+  <p class="noot">Deze punten staan niet op de agenda en niet in het Whaller-bericht.</p>
+  <div class="tabelvak"><table class="tabel"><tbody>{% for r in verborgen %}<tr>
+    <td>{{ r.onderwerp }}<br><span class="noot">{% if r.datum %}alleen {{ r.soort }} van {{ r.datum.strftime('%d-%m-%Y') }}{% else %}bij elke vergadering{% endif %}</span></td>
+    <td style="text-align:right"><form method="post" action="/agenda/verborgen/{{ r.id }}/terug" style="margin:0"><input type="hidden" name="terug" value="{{ terug }}">{{ extra|safe }}
+      <button class="knop klein" type="submit">Terugzetten</button></form></td></tr>{% endfor %}</tbody></table></div>
+</details>{% endif %}{% endmacro %}

@@ -140,6 +140,7 @@ def overzicht(c, van, tot, inst, personen):
     namen = {p["whaller"]: p["naam"] for p in personen}
     voortgang = {r["sleutel"]: r for r in c.execute("SELECT * FROM agenda_voortgang").fetchall()}
     besloten = {r["extern_id"] for r in c.execute("SELECT extern_id FROM stukken WHERE soort = 'besloten'").fetchall()}
+    verborgen = c.execute("SELECT * FROM agenda_verborgen").fetchall()
     concepten = c.execute("""SELECT id, soort, titel, status, bron->>'punt_id' AS punt_id, bron->>'onderwerp' AS onderwerp
                              FROM concepten WHERE status <> 'fout' ORDER BY id""").fetchall()
     evenementen = sorted(_bewaard(("ev", van, tot), lambda: notubiz.evenementen(van, tot)),
@@ -159,9 +160,9 @@ def overzicht(c, van, tot, inst, personen):
             continue
         datum = gegevens["start"].date()
         if ev["soort"] == "commissie":
-            punten = [{**p, "soort": "commissie"} for p in whaller.commissie_punten(gegevens, toew)]
+            punten = [{**p, "soort": "commissie"} for p in whaller.commissie_punten(gegevens, toew, verborgen)]
         else:
-            ind = whaller.raad_indeling(gegevens, toew, raadsleden)
+            ind = whaller.raad_indeling(gegevens, toew, raadsleden, verborgen)
             punten = []
             for rubriek in ("bijzonder", "bespreek", "hamer"):
                 for p in ind[rubriek]:

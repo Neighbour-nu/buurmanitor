@@ -123,3 +123,23 @@ if __name__ == "__main__":
         if naam.startswith("test_"):
             f()
             print("ok", naam)
+
+
+def test_agendapunten_verwijderen():
+    """Van de agenda gehaalde punten: alleen bij die ene vergadering, of bij elke vergadering."""
+    avond = notubiz.commissieavond(1523603)
+    datum = avond["start"].date()
+    hier = {"sleutel": whaller.sleutel("Participatieverordening"), "soort": "commissie", "datum": datum}
+    overal = {"sleutel": whaller.sleutel("Fusie onderwijsgroep Oost Brabant (OGOB)"), "soort": None, "datum": None}
+    elders = {"sleutel": whaller.sleutel("Vaststellen Assetsheets 2027-2031"), "soort": "commissie", "datum": datum + dt.timedelta(days=7)}
+    punten = whaller.commissie_punten(avond, TOEWIJZINGEN, [hier, overal, elders])
+    assert [p["onderwerp"] for p in punten] == [
+        "Afwegingskader sportaccommodaties", "Vaststellen Assetsheets 2027-2031", "Bouwplan Baroniehof 75 appartementen"]
+    assert "Participatieverordening" not in whaller.commissie_bericht(avond, punten, INST)
+    # in de raad: 'overal' geldt ook daar, een commissieregel voor dezelfde datum niet
+    verg = notubiz.vergadering(1434686)
+    raad = whaller.raad_indeling(verg, TOEWIJZINGEN, RAADSLEDEN, [overal, hier | {"datum": verg["start"].date()}])
+    bespreek = [i["onderwerp"] for i in raad["bespreek"]]
+    assert "Fusie onderwijsgroep Oost Brabant (OGOB)" not in bespreek and "Participatieverordening" in bespreek
+    assert whaller.is_verborgen("Hamerstuk: Participatieverordening (19.00-19.30 uur)", "commissie", datum, [hier])
+    assert not whaller.is_verborgen("Participatieverordening", "raad", datum, [hier])
